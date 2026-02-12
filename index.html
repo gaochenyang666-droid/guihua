@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>轨话 Ultra - 闭环版</title>
+    <style>
+        :root { --bg: #000; --card: #161616; --red: #ff2442; --line: #222; --grey: #888; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; }
+
+        /* 顶部导航 */
+        .header { padding: 15px; display: flex; align-items: center; gap: 12px; background: var(--bg); position: sticky; top: 0; z-index: 100; }
+        .search-bar { flex: 1; background: #1a1a1a; border-radius: 20px; display: flex; align-items: center; padding: 6px 15px; border: 1px solid #333; }
+        .search-bar input { background: none; border: none; color: #fff; flex: 1; height: 24px; outline: none; font-size: 14px; }
+        .user-avatar { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid #444; overflow: hidden; cursor: pointer; }
+
+        /* 侧边栏：个人中心 */
+        #userDrawer { position: fixed; inset: 0 0 0 20%; background: #111; z-index: 4000; transform: translateX(100%); transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-left: 1px solid var(--line); padding: 20px; }
+        #userDrawer.active { transform: translateX(0); }
+        .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; z-index: 3999; }
+        .stat-row { display: flex; justify-content: space-around; margin: 25px 0; border-bottom: 1px solid var(--line); padding-bottom: 20px; }
+        .stat-item { text-align: center; }
+        .stat-item b { display: block; font-size: 18px; }
+        .stat-item span { font-size: 12px; color: var(--grey); }
+        .record-list { height: calc(100vh - 200px); overflow-y: auto; }
+        .record-card { padding: 10px; border-bottom: 1px solid #1a1a1a; font-size: 14px; display: flex; gap: 10px; }
+        .record-card img { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; }
+
+        /* 瀑布流 */
+        #main-view { height: 100vh; overflow-y: auto; }
+        .grid { column-count: 2; column-gap: 8px; padding: 8px; }
+        .card { break-inside: avoid; margin-bottom: 8px; background: var(--card); border-radius: 10px; overflow: hidden; position: relative; }
+        .card img { width: 100%; display: block; }
+        .card-info { padding: 8px; }
+
+        /* Overlay 通用样式 */
+        .overlay { position: fixed; inset: 0; background: var(--bg); z-index: 2000; display: none; flex-direction: column; transform: translateY(100%); transition: 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+        .overlay.active { display: flex; transform: translateY(0); }
+
+        /* 登录注册盒 */
+        #authOverlay { background: rgba(0,0,0,0.95); justify-content: center; align-items: center; }
+        .auth-box { width: 85%; max-width: 320px; background: #1a1a1a; padding: 25px; border-radius: 24px; }
+        .auth-tab { display: flex; gap: 20px; margin-bottom: 20px; }
+        .auth-tab span { font-size: 18px; color: var(--grey); cursor: pointer; }
+        .auth-tab span.active { color: #fff; font-weight: bold; border-bottom: 2px solid var(--red); }
+        .auth-box input { width: 100%; padding: 14px; margin-bottom: 12px; background: #252525; border: 1px solid #333; border-radius: 12px; color: #fff; box-sizing: border-box; outline: none; }
+        .auth-btn { width: 100%; padding: 14px; background: var(--red); border: none; border-radius: 12px; color: #fff; font-weight: bold; font-size: 16px; margin-top: 10px; }
+
+        /* 沉浸页脚 */
+        .footer-action { padding: 12px 20px; background: #111; display: flex; justify-content: space-between; border-top: 1px solid var(--line); }
+        .action-item { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+        .action-item.active { color: var(--red); }
+
+        #toast { position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #fff; color: #000; padding: 10px 24px; border-radius: 25px; z-index: 9999; display: none; font-size: 14px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="drawerMask" class="drawer-mask" onclick="UI.toggleDrawer(false)"></div>
+    <div id="userDrawer">
+        <h3 id="drawerName">未登录</h3>
+        <div class="stat-row">
+            <div class="stat-item" onclick="UI.showRecord('like')"><b id="cnt-like">0</b><span>点赞</span></div>
+            <div class="stat-item" onclick="UI.showRecord('fav')"><b id="cnt-fav">0</b><span>收藏</span></div>
+            <div class="stat-item" onclick="UI.showRecord('hist')"><b id="cnt-hist">0</b><span>足迹</span></div>
+        </div>
+        <div id="recordList" class="record-list">
+            <div style="color:#444; text-align:center; margin-top:50px;">点击上方查看记录</div>
+        </div>
+        <button onclick="App.logout()" style="width:100%; margin-top:20px; background:none; border:1px solid #333; color:#666; padding:10px; border-radius:8px;">退出登录</button>
+    </div>
+
+    <div id="main-view">
+        <div class="header">
+            <div class="user-avatar" onclick="UI.openUser()">
+                <img id="myAv" src="https://api.dicebear.com/7.x/bottts/svg?seed=Allen" style="width:100%">
+            </div>
+            <div class="search-bar">
+                <input id="qIn" placeholder="搜索关键词..." onkeypress="if(event.key==='Enter') App.search()">
+            </div>
+        </div>
+        <div id="postGrid" class="grid"></div>
+    </div>
+
+    <div id="postOverlay" class="overlay">
+        <div style="height:50px; display:flex; align-items:center; padding:0 15px; border-bottom:1px solid var(--line);">
+            <div onclick="UI.pop()" style="font-size:24px;">✕</div>
+        </div>
+        <div id="detailContent" style="flex:1; overflow-y:auto; padding:20px;">
+            <div id="detailBody"></div>
+        </div>
+        <div class="footer-action">
+            <div id="det-like" onclick="Act.toggle('like')">❤️ <span id="num-like">0</span></div>
+            <div id="det-fav" onclick="Act.toggle('fav')">⭐ <span id="num-fav">收藏</span></div>
+            <div onclick="toast('暂未开放评论区')">💬 评论</div>
+        </div>
+    </div>
+
+    <div id="authOverlay" class="overlay">
+        <div class="auth-box">
+            <div class="auth-tab">
+                <span id="tab-l" class="active" onclick="UI.switchAuth('l')">登录</span>
+                <span id="tab-r" onclick="UI.switchAuth('r')">注册</span>
+            </div>
+            <input id="uName" placeholder="用户名">
+            <input id="uPass" type="password" placeholder="密码">
+            <button id="authBtn" class="auth-btn" onclick="App.auth()">立即进入</button>
+            <div onclick="UI.pop()" style="text-align:center; margin-top:20px; color:var(--grey); font-size:12px;">取消</div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+        // 核心模拟数据库
+        const DB = Array.from({length:20}).map((_,i)=>({
+            id:2000+i, title:["深渊凝视","代码之魂","雨夜回响","机械之心"][i%4],
+            author:"Allen", likes:Math.floor(Math.random()*99), favs:Math.floor(Math.random()*50),
+            cover:`https://picsum.photos/400/${400+(i%5)*50}?random=${i}`,
+            content:"当你长时间凝视深渊时，深渊也在凝视你。这是一段关于代码与灵魂的终极实验记录。"
+        }));
+
+        // 内存状态：包含足迹、点赞、收藏
+        const State = {
+            user: localStorage.getItem('user') || null,
+            curIdx: -1,
+            likes: new Set(JSON.parse(localStorage.getItem('myLikes') || '[]')),
+            favs: new Set(JSON.parse(localStorage.getItem('myFavs') || '[]')),
+            history: JSON.parse(localStorage.getItem('myHist') || '[]'),
+            authMode: 'l' // l: login, r: reg
+        };
+
+        const UI = {
+            stack: [],
+            push(id) {
+                const el = document.getElementById(id); el.style.display='flex';
+                setTimeout(()=>el.classList.add('active'),10);
+                this.stack.push(id); history.pushState({layer:id},'','#'+id);
+            },
+            pop() {
+                if(!this.stack.length) return;
+                const id = this.stack.pop();
+                const el = document.getElementById(id); el.classList.remove('active');
+                setTimeout(()=>el.style.display='none',300);
+                if(history.state) history.back();
+            },
+            switchAuth(mode) {
+                State.authMode = mode;
+                document.getElementById('tab-l').className = mode==='l'?'active':'';
+                document.getElementById('tab-r').className = mode==='r'?'active':'';
+                document.getElementById('authBtn').innerText = mode==='l'?'立即进入':'确认注册';
+            },
+            openUser() {
+                if(!State.user) return this.push('authOverlay');
+                this.toggleDrawer(true);
+            },
+            toggleDrawer(show) {
+                document.getElementById('userDrawer').className = show?'active':'';
+                document.getElementById('drawerMask').style.display = show?'block':'none';
+                if(show) {
+                    document.getElementById('drawerName').innerText = State.user;
+                    document.getElementById('cnt-like').innerText = State.likes.size;
+                    document.getElementById('cnt-fav').innerText = State.favs.size;
+                    document.getElementById('cnt-hist').innerText = State.history.length;
+                }
+            },
+            showRecord(type) {
+                const list = document.getElementById('recordList');
+                let ids = [];
+                if(type==='like') ids = Array.from(State.likes);
+                else if(type==='fav') ids = Array.from(State.favs);
+                else ids = State.history;
+
+                if(!ids.length) return list.innerHTML = '<div style="color:#444;text-align:center;padding:50px">空空如也</div>';
+
+                list.innerHTML = ids.reverse().map(id => {
+                    const p = DB.find(x => x.id == id);
+                    if(!p) return '';
+                    return `<div class="record-card"><img src="${p.cover}"><div><b>${p.title}</b><br><small>@${p.author}</small></div></div>`;
+                }).join('');
+            }
+        };
+
+        const App = {
+            init() {
+                this.renderGrid(DB);
+                this.initTouch();
+                window.onpopstate = () => UI.pop();
+            },
+            renderGrid(data) {
+                const grid = document.getElementById('postGrid');
+                grid.innerHTML = data.map((p,idx)=>`
+                    <div class="card" onclick="App.open(${idx})">
+                        <img src="${p.cover}">
+                        <div class="card-info"><b>${p.title}</b></div>
+                    </div>
+                `).join('');
+            },
+            open(idx) {
+                State.curIdx = idx;
+                const p = DB[idx];
+                // 记录足迹 (去重)
+                State.history = [p.id, ...State.history.filter(id=>id!==p.id)].slice(0,50);
+                localStorage.setItem('myHist', JSON.stringify(State.history));
+                UI.push('postOverlay');
+                this.renderDetail();
+            },
+            renderDetail() {
+                const p = DB[State.curIdx];
+                document.getElementById('detailBody').innerHTML = `
+                    <img src="${p.cover}" style="width:100%; border-radius:15px; margin-bottom:20px;">
+                    <h1>${p.title}</h1><p style="color:#ccc; line-height:1.7;">${p.content}</p>
+                `;
+                this.syncBtn();
+            },
+            syncBtn() {
+                const p = DB[State.curIdx];
+                const lBtn = document.getElementById('det-like');
+                const fBtn = document.getElementById('det-fav');
+                lBtn.className = State.likes.has(p.id) ? 'action-item active' : 'action-item';
+                fBtn.className = State.favs.has(p.id) ? 'action-item active' : 'action-item';
+                document.getElementById('num-like').innerText = p.likes + (State.likes.has(p.id)?1:0);
+                document.getElementById('num-fav').innerText = State.favs.has(p.id)?'已收藏':'收藏';
+            },
+            auth() {
+                const u = document.getElementById('uName').value;
+                if(!u) return toast("请输入用户名");
+                State.user = u;
+                localStorage.setItem('user', u);
+                UI.pop();
+                toast(State.authMode==='l'?"欢迎回来":"注册成功");
+            },
+            logout() { localStorage.clear(); location.reload(); },
+            initTouch() {
+                let startY = 0;
+                const el = document.getElementById('detailContent');
+                el.ontouchstart = e => startY = e.touches[0].pageY;
+                el.ontouchend = e => {
+                    const delta = e.changedTouches[0].pageY - startY;
+                    if(Math.abs(delta)>100) {
+                        const next = State.curIdx + (delta>0?-1:1);
+                        if(next>=0 && next<DB.length) { State.curIdx=next; this.renderDetail(); }
+                    }
+                };
+            }
+        };
+
+        const Act = {
+            toggle(type) {
+                if(!State.user) return UI.push('authOverlay');
+                const p = DB[State.curIdx];
+                const set = type==='like' ? State.likes : State.favs;
+                const key = type==='like' ? 'myLikes' : 'myFavs';
+
+                if(set.has(p.id)) set.delete(p.id);
+                else set.add(p.id);
+
+                localStorage.setItem(key, JSON.stringify(Array.from(set)));
+                App.syncBtn();
+                if(navigator.vibrate) navigator.vibrate(15);
+            }
+        };
+
+        function toast(m){
+            const t=document.getElementById('toast'); t.innerText=m; t.style.display='block';
+            setTimeout(()=>t.style.display='none',1500);
+        }
+        App.init();
+    </script>
+</body>
+</html>
