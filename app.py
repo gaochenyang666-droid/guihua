@@ -2496,6 +2496,10 @@ def init_db():
 
 
 if __name__ == '__main__':
+    init_db()
+    # 这一步是关键：从环境变量获取端口，默认 10000
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
     def init_db():
         with app.app_context():
             # 创建所有表
