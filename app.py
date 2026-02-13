@@ -2393,6 +2393,34 @@ def init_db():
     with app.app_context():
         db.create_all()
 
+        # 1. 先检查管理员是否存在
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            admin = User(
+                username='admin',
+                nickname='总管',
+                password=bcrypt.generate_password_hash('admin123').decode('utf-8'),
+                role='admin'
+            )
+            db.session.add(admin)
+            db.session.commit()  # 必须先 Commit，确保 admin 拿到 ID
+
+        # 2. 再创建示例帖子
+        if Post.query.count() == 0:
+            sample_posts = [
+                {'title': '深夜宿舍的敲门声', 'content': '...', 'topics': ['校园怪谈']}
+            ]
+            for p_data in sample_posts:
+                post = Post(
+                    title=p_data['title'],
+                    content=p_data['content'],
+                    author_id=admin.id,  # 确保这里用的是上面查到或创建的 admin.id
+                    view_count=100
+                )
+                post.topics_list = p_data['topics']
+                db.session.add(post)
+            db.session.commit()
+
         # 创建管理员账号
         admin = User.query.filter_by(username='admin').first()
         if not admin:
@@ -2468,5 +2496,40 @@ def init_db():
 
 
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    def init_db():
+        with app.app_context():
+            # 创建所有表
+            db.create_all()
+
+            # 1. 先确保管理员存在并提交
+            admin = User.query.filter_by(username='admin').first()
+            if not admin:
+                admin = User(
+                    username='admin',
+                    nickname='总管',
+                    password=bcrypt.generate_password_hash('admin123').decode('utf-8'),
+                    role='admin'
+                )
+                db.session.add(admin)
+                db.session.commit()  # <--- 关键点：必须先提交，确保拿到 admin.id
+                print("管理员账号已创建")
+
+            # 2. 如果没有帖子，再插入示例数据
+            if Post.query.count() == 0:
+                sample_posts = [
+                    {'title': '深夜宿舍的敲门声', 'content': '示例内容...', 'topics': ['校园怪谈']},
+                    {'title': '梦境中的预言', 'content': '示例内容...', 'topics': ['神秘现象']}
+                ]
+
+                for p_data in sample_posts:
+                    post = Post(
+                        title=p_data['title'],
+                        content=p_data['content'],
+                        author_id=admin.id,  # 这里的 admin.id 现在肯定有值了
+                        view_count=100
+                    )
+                    post.topics_list = p_data['topics']
+                    db.session.add(post)
+
+                db.session.commit()
+                print("示例数据已初始化")
