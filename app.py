@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 诡境 - 灵异事件分享平台
-Flask 全栈版本 v4.0
+Flask 全栈版本 (完整修复版)
 """
 
 import os
@@ -22,7 +22,7 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 # 数据库配置
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///guijing.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///guijing_v3.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
@@ -396,7 +396,19 @@ def validate_image_url(url):
 
 
 # ============== 前端页面路由 ==============
+# 注意：这里直接渲染 INDEX_HTML 变量，而不是寻找模板文件
 
+@app.route('/')
+def index():
+    return render_template_string(INDEX_HTML)
+
+@app.route('/post/<int:post_id>')
+def post_page(post_id):
+    return render_template_string(INDEX_HTML)
+
+
+# ============== 前端 HTML 代码 ==============
+# 请将您原有的长 HTML 代码保持不变
 INDEX_HTML = '''
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -2377,51 +2389,14 @@ def serve_static(filename):
     return send_from_directory(static_dir, filename)
 
 
-# ---------- 首页路由 ----------
-@app.route('/')
-def serve_index():
-    return render_template_string(INDEX_HTML)
-
-
-@app.route('/post/<int:post_id>')
-def serve_post_detail(post_id):
-    return render_template_string(INDEX_HTML)
-
-
 # ---------- 初始化数据库 ----------
 def init_db():
+    """初始化数据库和预设数据"""
     with app.app_context():
+        # 创建表
         db.create_all()
 
-        # 1. 先检查管理员是否存在
-        admin = User.query.filter_by(username='admin').first()
-        if not admin:
-            admin = User(
-                username='admin',
-                nickname='总管',
-                password=bcrypt.generate_password_hash('admin123').decode('utf-8'),
-                role='admin'
-            )
-            db.session.add(admin)
-            db.session.commit()  # 必须先 Commit，确保 admin 拿到 ID
-
-        # 2. 再创建示例帖子
-        if Post.query.count() == 0:
-            sample_posts = [
-                {'title': '深夜宿舍的敲门声', 'content': '...', 'topics': ['校园怪谈']}
-            ]
-            for p_data in sample_posts:
-                post = Post(
-                    title=p_data['title'],
-                    content=p_data['content'],
-                    author_id=admin.id,  # 确保这里用的是上面查到或创建的 admin.id
-                    view_count=100
-                )
-                post.topics_list = p_data['topics']
-                db.session.add(post)
-            db.session.commit()
-
-        # 创建管理员账号
+        # 1. 确保管理员存在
         admin = User.query.filter_by(username='admin').first()
         if not admin:
             admin = User(
@@ -2432,59 +2407,48 @@ def init_db():
             )
             admin.password = 'admin123'
             db.session.add(admin)
+            db.session.commit()
+            print(">>> 管理员账号已创建")
 
-            # 创建示例标签
+        # 2. 预设标签
+        if Tag.query.count() == 0:
             tags = ['校园怪谈', '都市传说', '灵异经历', '民间故事', '真实事件',
                     '鬼屋探险', '梦境解析', '神秘现象', '古籍记载', '网友分享']
             for tag_name in tags:
                 tag = Tag(name=tag_name)
                 db.session.add(tag)
+            db.session.commit()
+            print(">>> 标签数据已初始化")
 
-            # 创建示例帖子
+        # 3. 预设帖子
+        if Post.query.count() == 0:
             sample_posts = [
                 {
                     'title': '深夜宿舍的敲门声',
-                    'content': '那是大二的一个雨夜，宿舍其他人都睡了，我正准备关灯。突然听到门外传来轻轻的敲门声，三下，很有规律。我以为是谁忘带钥匙了，就问了一句"谁啊"，没人应。敲门声又响了三下。我透过猫眼往外看，走廊的灯忽明忽暗，但门外什么都没有...',
+                    'content': '那是大二的一个雨夜，宿舍其他人都睡了，我正准备关灯。突然听到门外传来轻轻的敲门声，三下，很有规律...',
                     'topics': ['校园怪谈', '真实经历'],
                     'tags': ['校园怪谈', '真实事件']
                 },
                 {
-                    'title': '爷爷的老宅子',
-                    'content': '老家有一座百年老宅，爷爷说那里住着我们祖上十几代人。小时候我总喜欢去那里玩，但每次去，爷爷都会警告我不要去后院的那口枯井边。直到有一天，我因为追一只蝴蝶，不知不觉走到了后院...',
-                    'topics': ['民间故事', '古籍记载'],
-                    'tags': ['民间故事', '神秘现象']
-                },
-                {
                     'title': '末班地铁的乘客',
-                    'content': '工作到很晚，赶上了末班地铁。车厢里只有我一个人，我坐在角落玩手机。不知过了几站，突然感觉有人坐到了我对面。抬头一看，是个穿着旗袍的女人，低着头，看不清脸。奇怪的是，她的衣服看起来很新，但款式却是民国时期的...',
+                    'content': '工作到很晚，赶上了末班地铁。车厢里只有我一个人，我坐在角落玩手机。不知过了几站，突然感觉有人坐到了我对面...',
                     'topics': ['都市传说', '灵异经历'],
                     'tags': ['都市传说', '灵异经历']
-                },
-                {
-                    'title': '梦境中的预言',
-                    'content': '从小到大，我做过很多奇怪的梦。但最让我毛骨悚然的是，这些梦有时候会成真。上周我梦见一个陌生人在地铁里晕倒，三天后，我在同一班地铁上亲眼目睹了这一幕。更可怕的是，那个陌生人抬起头看了我一眼，说的第一句话是"你又来了"...',
-                    'topics': ['梦境解析', '神秘现象'],
-                    'tags': ['梦境解析', '神秘现象']
-                },
-                {
-                    'title': '废弃医院的探险',
-                    'content': '听说城郊有座废弃的精神病院，很多年前就关闭了。我和几个胆子大的朋友决定去探险。走进大门的那一刻，我就后悔了。走廊里到处都是旧病历和药瓶，墙壁上还有奇怪的抓痕。最诡异的是，我们在三楼的一个病房里发现了一本日记...',
-                    'topics': ['鬼屋探险', '网友分享'],
-                    'tags': ['鬼屋探险', '真实事件']
                 }
             ]
 
-            for i, post_data in enumerate(sample_posts):
+            for post_data in sample_posts:
                 post = Post(
                     title=post_data['title'],
                     content=post_data['content'],
                     author_id=admin.id,
-                    view_count=100 + i * 50
+                    view_count=100
                 )
                 post.topics_list = post_data['topics']
                 db.session.add(post)
                 db.session.flush()
 
+                # 关联标签
                 for tag_name in post_data['tags']:
                     tag = Tag.query.filter_by(name=tag_name).first()
                     if tag:
@@ -2492,48 +2456,12 @@ def init_db():
                         db.session.add(post_tag)
 
             db.session.commit()
-            print("数据库初始化完成！")
+            print(">>> 示例帖子已初始化")
 
+# 执行初始化
+init_db()
 
 if __name__ == '__main__':
-    init_db()
-    # 这一步是关键：从环境变量获取端口，默认 10000
-    port = int(os.environ.get("PORT", 10000))
+    # 从环境变量获取端口
+    port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-    def init_db():
-        with app.app_context():
-            # 创建所有表
-            db.create_all()
-
-            # 1. 先确保管理员存在并提交
-            admin = User.query.filter_by(username='admin').first()
-            if not admin:
-                admin = User(
-                    username='admin',
-                    nickname='总管',
-                    password=bcrypt.generate_password_hash('admin123').decode('utf-8'),
-                    role='admin'
-                )
-                db.session.add(admin)
-                db.session.commit()  # <--- 关键点：必须先提交，确保拿到 admin.id
-                print("管理员账号已创建")
-
-            # 2. 如果没有帖子，再插入示例数据
-            if Post.query.count() == 0:
-                sample_posts = [
-                    {'title': '深夜宿舍的敲门声', 'content': '示例内容...', 'topics': ['校园怪谈']},
-                    {'title': '梦境中的预言', 'content': '示例内容...', 'topics': ['神秘现象']}
-                ]
-
-                for p_data in sample_posts:
-                    post = Post(
-                        title=p_data['title'],
-                        content=p_data['content'],
-                        author_id=admin.id,  # 这里的 admin.id 现在肯定有值了
-                        view_count=100
-                    )
-                    post.topics_list = p_data['topics']
-                    db.session.add(post)
-
-                db.session.commit()
-                print("示例数据已初始化")
