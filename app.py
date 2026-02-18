@@ -19,7 +19,7 @@ CORS(app)
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///guijing.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default-dev-secret-key-please-change-in-prod')
 if not app.config['SECRET_KEY']:
     raise ValueError("No SECRET_KEY set for Flask application")
 
@@ -181,6 +181,10 @@ def token_required(f):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/studio')
+def studio():
+    return render_template('studio.html')
 
 # --- Auth ---
 
