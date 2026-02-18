@@ -1,4 +1,5 @@
-gunicorn==20.1.0
+gunicorn==21.2.0
+setuptools
 Flask==2.3.2
 Flask-SQLAlchemy==3.0.3
 Flask-Cors==3.0.10
@@ -7,6 +8,4 @@ web3==6.0.0
 bleach==6.0.0
 psycopg2-binary==2.9.6
 eth-account==0.8.0
-requests==2.31.0 
-gunicorn==20.1.0
-psycopg2-binary==2.9.6
+requests==2.31.0
