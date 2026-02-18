@@ -3,6 +3,8 @@ import re
 import json
 import secrets
 import bleach
+import requests
+import base64
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, g, render_template
@@ -15,6 +17,9 @@ from web3.middleware import geth_poa_middleware
 
 app = Flask(__name__)
 CORS(app)
+
+# ImgBB Configuration
+IMGBB_API_KEY = os.environ.get('IMGBB_API_KEY', 'your-imgbb-api-key')
 
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///guijing.db')
@@ -74,6 +79,7 @@ class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100))
     content = db.Column(db.Text)
+    cover_image = db.Column(db.String(500), nullable=True)
     images = db.Column(db.Text) # JSON list
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     view_count = db.Column(db.Integer, default=0)
@@ -113,6 +119,7 @@ class Post(db.Model):
             'id': self.id,
             'title': self.title,
             'content': self.content,
+            'cover_image': self.cover_image,
             'images': images_list,
             'author': self.author.to_dict(),
             'view_count': self.view_count,
@@ -160,6 +167,23 @@ class Bookmark(db.Model):
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
 
 # ============== Helpers ==============
+def upload_to_imgbb(file):
+    try:
+        # Convert file to base64
+        img_b64 = base64.b64encode(file.read()).decode('utf-8')
+        # According to docs: don't add expiration for permanent storage
+        payload = {
+            "key": IMGBB_API_KEY,
+            "image": img_b64
+        }
+        response = requests.post("https://api.imgbb.com/1/upload", data=payload)
+        if response.status_code == 200:
+            return response.json()['data']['url'] # Get image URL
+        return None
+    except Exception as e:
+        print(f"ImgBB Error: {e}")
+        return None
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -208,7 +232,18 @@ def verify_signature():
     message = data.get('message')
     
     # In production, verify signature here using web3
-    # w3.eth.account.recover_message(...)
+    from eth_account.messages import encode_defunct
+    from eth_account import Account
+    
+    try:
+        msg = encode_defunct(text=message)
+        recovered_address = Account.recover_message(msg, signature=signature)
+        
+        if recovered_address.lower() != address.lower():
+             return jsonify({'error': 'Invalid signature'}), 401
+    except Exception as e:
+        print(f"Verify Error: {e}")
+        return jsonify({'error': 'Verification failed'}), 400
     
     user = User.query.filter_by(address=address).first()
     if not user: return jsonify({'error': 'User not found'}), 404
@@ -308,7 +343,32 @@ def create_post():
     if not g.current_user.address:
         return jsonify({'error': 'Please connect wallet to post'}), 403
     
-    data = request.get_json()
+    # Check if multipart/form-data (for image upload)
+    if 'image' in request.files:
+        title = request.form.get('title')
+        content = request.form.get('content')
+        image_file = request.files.get('image')
+        tx_hash = request.form.get('tx_hash')
+        
+        if not image_file:
+            return jsonify({'error': 'Cover image is required'}), 400
+            
+        # Upload to ImgBB
+        cover_url = upload_to_imgbb(image_file)
+        if not cover_url:
+            return jsonify({'error': 'Image upload failed'}), 500
+            
+        data = {
+            'title': title,
+            'content': content,
+            'cover_image': cover_url,
+            'tx_hash': tx_hash,
+            'images': []
+        }
+    else:
+        # JSON fallback (if client sends JSON with URL)
+        data = request.get_json()
+    
     tx_hash = data.get('tx_hash')
     
     # 1. Check duplicate tx
@@ -342,6 +402,7 @@ def create_post():
     post = Post(
         title=data.get('title'),
         content=clean_content,
+        cover_image=data.get('cover_image'),
         images=json.dumps(data.get('images', [])),
         author_id=g.current_user.id,
         tx_hash=tx_hash,
@@ -428,8 +489,16 @@ def bookmark_post(post_id):
 @app.route('/api/upload', methods=['POST'])
 @token_required
 def upload():
-    # Placeholder for upload logic
-    return jsonify({'url': 'https://placehold.co/600x400'})
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    url = upload_to_imgbb(file)
+    if url:
+        return jsonify({'url': url})
+    return jsonify({'error': 'Upload failed'}), 500
 
 if __name__ == '__main__':
     # Auto-create tables (SQLite only, or dev env)
