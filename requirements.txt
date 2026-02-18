@@ -1,8 +1,8 @@
 flask
-flask-cors
-flask-sqlalchemy
-flask-bcrypt
+flask_sqlalchemy
+flask_cors
 pyjwt
-gunicorn
 web3
 bleach
+gunicorn
+psycopg2-binary
