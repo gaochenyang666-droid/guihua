@@ -77,7 +77,14 @@
         .main-container {
             max-width: 1200px; margin: 0 auto; padding: 1.5rem; display: grid; grid-template-columns: 200px 1fr; gap: 1.5rem; position: relative; z-index: 2;
         }
-        @media (max-width: 900px) { .main-container { grid-template-columns: 1fr; } .sidebar { display: none; } }
+        @media (max-width: 900px) { 
+            .main-container { grid-template-columns: 1fr; padding: 1rem; } 
+            .sidebar { display: none; } 
+            .navbar { padding: 0.75rem 1rem; }
+            .search-container { display: none; } /* Hide search on mobile for space */
+            .logo { font-size: 1.2rem; }
+            .btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+        }
 
         /* 侧边栏 */
         .sidebar-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--border-color); }
@@ -124,8 +131,9 @@
         }
         
         /* 详情页样式 */
-        .post-detail-modal .modal { max-width: 800px; }
+        .post-detail-modal .modal { max-width: 800px; width: 95%; max-height: 95vh; padding: 1rem; }
         .post-detail-content { padding: 1rem 0; font-size: 1rem; line-height: 1.8; }
+        .post-detail-content img { max-width: 100%; height: auto; }
         .post-detail-images img { max-width: 100%; border-radius: var(--radius-md); margin-bottom: 0.5rem; }
         
         /* 评论区 */
@@ -397,6 +405,45 @@
                 Toast.info('已退出');
             },
 
+            async bindWallet() {
+                if (!window.ethereum && !window.BinanceChain) return Toast.error('请安装钱包');
+                try {
+                    const accounts = await (window.ethereum || window.BinanceChain).request({ method: 'eth_requestAccounts' });
+                    const address = accounts[0];
+                    
+                    // Get nonce (reuse auth nonce endpoint)
+                    const resNonce = await fetch(`${API_BASE}/auth/nonce?address=${address}`);
+                    const { nonce } = await resNonce.json();
+                    
+                    const message = `Bind wallet ${address} to user ${currentUser.username}. Nonce: ${nonce}`;
+                    let signature;
+                    
+                    try {
+                         signature = await (window.web3 || new Web3(window.ethereum || window.BinanceChain)).eth.personal.sign(message, address, '');
+                    } catch (e) {
+                         return Toast.error('签名被拒绝');
+                    }
+                    
+                    const res = await fetch(`${API_BASE}/user/bind_wallet`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({ address, signature, message })
+                    });
+                    
+                    const data = await res.json();
+                    if(res.ok) {
+                        Toast.success('绑定成功');
+                        currentUser = data.user;
+                        UI.updateAuth();
+                    } else {
+                        Toast.error(data.error);
+                    }
+                } catch(e) { Toast.error('绑定失败: ' + e.message); }
+            },
+
             checkAndGoStudio() {
                 if(currentUser) window.location.href = '/studio';
                 else {
@@ -457,6 +504,30 @@
                     authBtns.style.display = 'none';
                     userMenu.style.display = 'flex';
                     document.getElementById('userDisplayName').textContent = currentUser.nickname;
+                    
+                    // Bind Wallet Button Logic
+                    let bindBtn = document.getElementById('bindWalletBtn');
+                    if(!bindBtn) {
+                        bindBtn = document.createElement('button');
+                        bindBtn.id = 'bindWalletBtn';
+                        bindBtn.className = 'btn btn-ghost';
+                        bindBtn.style.padding = '0.3rem 0.6rem';
+                        bindBtn.style.fontSize = '0.8rem';
+                        bindBtn.style.color = 'var(--accent-orange)';
+                        bindBtn.style.borderColor = 'var(--accent-orange)';
+                        bindBtn.textContent = '🔗 绑定钱包';
+                        bindBtn.onclick = Auth.bindWallet;
+                        // Insert before logout
+                        const logoutBtn = document.getElementById('logoutBtn');
+                        logoutBtn.parentNode.insertBefore(bindBtn, logoutBtn);
+                    }
+                    
+                    if(currentUser.address) {
+                        bindBtn.style.display = 'none';
+                    } else {
+                        bindBtn.style.display = 'inline-flex';
+                    }
+
                     if(currentUser.avatar) {
                         const avatarEl = document.getElementById('userAvatarBtn');
                         if (currentUser.avatar.length <= 5) {

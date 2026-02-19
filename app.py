@@ -270,24 +270,34 @@ def verify_signature():
 
 @app.route('/api/auth/web2/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    
-    if User.query.filter_by(username=username).first():
-        return jsonify({'error': 'Username already exists'}), 400
+    try:
+        data = request.get_json()
+        if not data:
+             return jsonify({'error': 'Missing JSON data'}), 400
+             
+        username = data.get('username')
+        password = data.get('password')
         
-    user = User(username=username, nickname=username, avatar=get_random_avatar())
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
-    
-    token = jwt.encode({
-        'user_id': user.id,
-        'exp': datetime.utcnow() + timedelta(days=7)
-    }, app.config['SECRET_KEY'], algorithm='HS256')
-    
-    return jsonify({'token': token, 'user': user.to_dict()}), 201
+        if not username or not password:
+            return jsonify({'error': 'Username and password are required'}), 400
+        
+        if User.query.filter_by(username=username).first():
+            return jsonify({'error': 'Username already exists'}), 400
+            
+        user = User(username=username, nickname=username, avatar=get_random_avatar())
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        
+        token = jwt.encode({
+            'user_id': user.id,
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }, app.config['SECRET_KEY'], algorithm='HS256')
+        
+        return jsonify({'token': token, 'user': user.to_dict()}), 201
+    except Exception as e:
+        print(f"Register Error: {e}")
+        return jsonify({'error': 'Registration failed'}), 500
 
 @app.route('/api/auth/web2/login', methods=['POST'])
 def login():
@@ -309,6 +319,44 @@ def login():
 @token_required
 def get_me():
     return jsonify(g.current_user.to_dict())
+
+@app.route('/api/user/bind_wallet', methods=['POST'])
+@token_required
+def bind_wallet():
+    # Only Web2 users (without address) can bind
+    if g.current_user.address:
+        return jsonify({'error': 'Wallet already bound'}), 400
+        
+    data = request.get_json()
+    address = data.get('address')
+    signature = data.get('signature')
+    message = data.get('message')
+    
+    if not address or not signature or not message:
+        return jsonify({'error': 'Missing parameters'}), 400
+        
+    # Check if address already used
+    if User.query.filter_by(address=address).first():
+        return jsonify({'error': 'Address already bound to another account'}), 400
+        
+    # Verify signature
+    from eth_account.messages import encode_defunct
+    from eth_account import Account
+    
+    try:
+        msg = encode_defunct(text=message)
+        recovered_address = Account.recover_message(msg, signature=signature)
+        
+        if recovered_address.lower() != address.lower():
+             return jsonify({'error': 'Invalid signature'}), 401
+    except Exception as e:
+        print(f"Verify Error: {e}")
+        return jsonify({'error': 'Verification failed'}), 400
+        
+    g.current_user.address = address
+    db.session.commit()
+    
+    return jsonify({'message': 'Wallet bound successfully', 'user': g.current_user.to_dict()})
 
 @app.route('/api/config/fees', methods=['GET'])
 def get_fees():
@@ -436,8 +484,22 @@ def create_post():
 
 @app.route('/api/posts/<int:post_id>', methods=['GET'])
 def get_post_detail(post_id):
-    post = Post.query.get_or_404(post_id)
-    return jsonify(post.to_dict())
+    try:
+        post = Post.query.get_or_404(post_id)
+        # Check if user can see it
+        token = None
+        current_user_id = None
+        if 'Authorization' in request.headers:
+            try:
+                token = request.headers['Authorization'].split(" ")[1]
+                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+                current_user_id = data['user_id']
+            except: pass
+            
+        return jsonify(post.to_dict(current_user_id))
+    except Exception as e:
+        print(f"Post Detail Error: {e}")
+        return jsonify({'error': 'Failed to load post'}), 500
 
 @app.route('/api/posts/<int:post_id>/repost', methods=['POST'])
 @token_required
@@ -1146,7 +1208,7 @@ def init_db_data():
             post = Post(
                 title=title,
                 content=content,
-                cover_image='https://i.ibb.co/hK7j00q/elevator.jpg', # Using a default image
+                cover_image='/static/images/hua_cover.jpg', 
                 author_id=admin.id,
                 is_paid=True
             )
