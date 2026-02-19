@@ -47,6 +47,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     address = db.Column(db.String(42), unique=True, nullable=True, index=True)
     nonce = db.Column(db.String(32), default=lambda: secrets.token_hex(16))
+    nonce_created_at = db.Column(db.DateTime, default=datetime.utcnow) # Added for nonce expiration
     username = db.Column(db.String(50), unique=True, nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=True)
     nickname = db.Column(db.String(50))
@@ -64,6 +65,10 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
     
+    def refresh_nonce(self):
+        self.nonce = secrets.token_hex(16)
+        self.nonce_created_at = datetime.utcnow()
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -90,6 +95,10 @@ class Post(db.Model):
     ipfs_cid = db.Column(db.String(100), nullable=True)
     is_paid = db.Column(db.Boolean, default=False)
     
+    # New: Post Type (web2, web3, mixed)
+    # 0: Web2, 1: Web3 (On-chain), 2: Mixed
+    post_type = db.Column(db.Integer, default=0)
+
     # Admin controls
     is_hidden = db.Column(db.Boolean, default=False)
     allow_comments = db.Column(db.Boolean, default=True)
@@ -136,6 +145,7 @@ class Post(db.Model):
             'is_bookmarked': is_bookmarked,
             'tx_hash': self.tx_hash,
             'ipfs_cid': self.ipfs_cid,
+            'post_type': self.post_type,
             'created_at': self.created_at.isoformat(),
             'is_repost': self.is_repost,
             'original_post_id': self.original_post_id,
@@ -168,12 +178,14 @@ class Like(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='unique_user_post_like'),)
 
 class Bookmark(db.Model):
     __tablename__ = 'bookmarks'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
+    __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='unique_user_post_bookmark'),)
 
 # ============== Helpers ==============
 def get_random_avatar():
@@ -229,12 +241,23 @@ def studio():
 def get_nonce():
     address = request.args.get('address')
     if not address: return jsonify({'error': 'Missing address'}), 400
+    
+    # Normalize address
+    try:
+        address = Web3.to_checksum_address(address)
+    except:
+        return jsonify({'error': 'Invalid address format'}), 400
+
     user = User.query.filter_by(address=address).first()
     if not user:
         # Create Web3 user if not exists
         user = User(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
         db.session.add(user)
-        db.session.commit()
+    
+    # Always refresh nonce
+    user.refresh_nonce()
+    db.session.commit()
+    
     return jsonify({'nonce': user.nonce})
 
 @app.route('/api/auth/verify', methods=['POST'])
@@ -244,10 +267,23 @@ def verify_signature():
     signature = data.get('signature')
     message = data.get('message')
     
+    # Normalize address
+    try:
+        address = Web3.to_checksum_address(address)
+    except:
+        return jsonify({'error': 'Invalid address format'}), 400
+    
     # In production, verify signature here using web3
     from eth_account.messages import encode_defunct
     from eth_account import Account
     
+    user = User.query.filter_by(address=address).first()
+    if not user: return jsonify({'error': 'User not found'}), 404
+
+    # Check nonce expiration (5 mins)
+    if not user.nonce_created_at or datetime.utcnow() - user.nonce_created_at > timedelta(minutes=5):
+        return jsonify({'error': 'Nonce expired, please sign again'}), 401
+
     try:
         msg = encode_defunct(text=message)
         recovered_address = Account.recover_message(msg, signature=signature)
@@ -258,8 +294,9 @@ def verify_signature():
         print(f"Verify Error: {e}")
         return jsonify({'error': 'Verification failed'}), 400
     
-    user = User.query.filter_by(address=address).first()
-    if not user: return jsonify({'error': 'User not found'}), 404
+    # Rotate nonce to prevent replay attacks
+    user.refresh_nonce()
+    db.session.commit()
     
     token = jwt.encode({
         'user_id': user.id,
@@ -468,6 +505,11 @@ def create_post():
     # 3. XSS Clean
     clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
     
+    # Determine Post Type
+    # If tx_hash is present and verified (above), it's Web3 (1) or Mixed (2).
+    # Since we enforce verified tx_hash for web3 users, let's call it Web3 type if created via this endpoint with tx_hash
+    p_type = 1 if tx_hash else 0 # Default to Web2 if no hash, but this endpoint requires hash
+    
     post = Post(
         title=data.get('title'),
         content=clean_content,
@@ -475,7 +517,8 @@ def create_post():
         images=json.dumps(data.get('images', [])),
         author_id=g.current_user.id,
         tx_hash=tx_hash,
-        is_paid=True
+        is_paid=True,
+        post_type=p_type
     )
     db.session.add(post)
     db.session.commit()
@@ -548,29 +591,39 @@ def add_comment(post_id):
 @token_required
 def like_post(post_id):
     post = Post.query.get_or_404(post_id)
-    like = Like.query.filter_by(user_id=g.current_user.id, post_id=post.id).first()
-    if like:
-        db.session.delete(like)
-        msg = 'Unliked'
-    else:
-        db.session.add(Like(user_id=g.current_user.id, post_id=post.id))
-        msg = 'Liked'
-    db.session.commit()
-    return jsonify({'message': msg})
+    try:
+        like = Like.query.filter_by(user_id=g.current_user.id, post_id=post.id).first()
+        if like:
+            db.session.delete(like)
+            msg = 'Unliked'
+        else:
+            db.session.add(Like(user_id=g.current_user.id, post_id=post.id))
+            msg = 'Liked'
+        db.session.commit()
+        return jsonify({'message': msg})
+    except Exception as e:
+        db.session.rollback()
+        # If it's an integrity error, it means we tried to like a liked post (race condition)
+        # We can treat it as 'already liked'
+        return jsonify({'message': 'Operation failed', 'error': str(e)}), 400
 
 @app.route('/api/posts/<int:post_id>/bookmark', methods=['POST'])
 @token_required
 def bookmark_post(post_id):
     post = Post.query.get_or_404(post_id)
-    bm = Bookmark.query.filter_by(user_id=g.current_user.id, post_id=post.id).first()
-    if bm:
-        db.session.delete(bm)
-        msg = 'Unbookmarked'
-    else:
-        db.session.add(Bookmark(user_id=g.current_user.id, post_id=post.id))
-        msg = 'Bookmarked'
-    db.session.commit()
-    return jsonify({'message': msg})
+    try:
+        bm = Bookmark.query.filter_by(user_id=g.current_user.id, post_id=post.id).first()
+        if bm:
+            db.session.delete(bm)
+            msg = 'Unbookmarked'
+        else:
+            db.session.add(Bookmark(user_id=g.current_user.id, post_id=post.id))
+            msg = 'Bookmarked'
+        db.session.commit()
+        return jsonify({'message': msg})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': 'Operation failed', 'error': str(e)}), 400
 
 @app.route('/api/upload', methods=['POST'])
 @token_required
