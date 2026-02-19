@@ -6,6 +6,7 @@ import bleach
 import requests
 import base64
 import random
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, g, render_template
@@ -274,6 +275,9 @@ def verify_transaction(tx_hash, user_address):
     Verify transaction on BSC Testnet
     Checks: Status, Sender, Receiver, Amount, Uniqueness
     """
+    if not user_address:
+        return False, 'User address not bound'
+
     try:
         if not w3.is_connected():
             return False, 'RPC connection failed'
@@ -286,15 +290,23 @@ def verify_transaction(tx_hash, user_address):
         if Post.query.filter_by(tx_hash=tx_hash).first():
             return False, 'Transaction hash already used'
 
-        # Get transaction and receipt
-        try:
-            tx = w3.eth.get_transaction(tx_hash)
-            receipt = w3.eth.get_transaction_receipt(tx_hash)
-        except Exception:
-            return False, 'Transaction not found on chain'
-
+        # Get transaction and receipt with retries
+        tx = None
+        receipt = None
+        
+        # Retry up to 10 times (20 seconds total) to handle RPC indexing delay
+        for i in range(10):
+            try:
+                tx = w3.eth.get_transaction(tx_hash)
+                receipt = w3.eth.get_transaction_receipt(tx_hash)
+                if tx and receipt:
+                    break
+            except Exception:
+                pass
+            time.sleep(2)
+            
         if not tx or not receipt:
-             return False, 'Transaction not found'
+            return False, 'Transaction not found on chain (timeout)'
 
         # 1. Check Status (1 = Success)
         if receipt['status'] != 1:
@@ -325,13 +337,22 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
         if 'Authorization' in request.headers:
-            token = request.headers['Authorization'].split(" ")[1]
+            parts = request.headers['Authorization'].split(" ")
+            if len(parts) == 2:
+                token = parts[1]
+        
         if not token:
             return jsonify({'error': 'Token is missing'}), 401
+        
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            g.current_user = User.query.get(data['user_id'])
-        except:
+            user = User.query.get(data['user_id'])
+            if not user:
+                return jsonify({'error': 'User not found'}), 401
+            g.current_user = user
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token expired'}), 401
+        except Exception:
             return jsonify({'error': 'Token is invalid'}), 401
         return f(*args, **kwargs)
     return decorated
@@ -394,6 +415,10 @@ def verify_signature():
     # Check nonce expiration (5 mins)
     if not user.nonce_created_at or datetime.utcnow() - user.nonce_created_at > timedelta(minutes=5):
         return jsonify({'error': 'Nonce expired, please sign again'}), 401
+
+    # Check nonce in message
+    if user.nonce not in message:
+        return jsonify({'error': 'Message does not contain valid nonce'}), 400
 
     try:
         msg = encode_defunct(text=message)
@@ -669,7 +694,13 @@ def get_posts():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     
-    query = Post.query
+    # Optimize query with eager loading
+    from sqlalchemy.orm import joinedload, subqueryload
+    query = Post.query.options(
+        joinedload(Post.author), # Eager load author
+        # Note: We can't easily eager load 'likes' count efficiently in standard ORM without column_property or similar,
+        # but we can optimize the 'is_liked' check below.
+    )
 
     if sort_by == 'hot':
         # Simple hot sort
@@ -694,8 +725,30 @@ def get_posts():
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     posts = pagination.items
     
+    # Batch fetch likes/bookmarks for current user to avoid N+1
+    user_likes = set()
+    user_bookmarks = set()
+    
+    if current_user_id and posts:
+        post_ids = [p.id for p in posts]
+        likes = Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()
+        user_likes = {l.post_id for l in likes}
+        
+        bookmarks = Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()
+        user_bookmarks = {b.post_id for b in bookmarks}
+
+    # Manual to_dict construction to inject pre-fetched state
+    posts_data = []
+    for p in posts:
+        # We use a modified to_dict logic here or update the object temporarily (not recommended for persistent session)
+        # Better to construct dict manually or pass state to a helper
+        p_dict = p.to_dict() # Call basic to_dict without user_id
+        p_dict['is_liked'] = p.id in user_likes
+        p_dict['is_bookmarked'] = p.id in user_bookmarks
+        posts_data.append(p_dict)
+    
     return jsonify({
-        'posts': [p.to_dict(current_user_id) for p in posts],
+        'posts': posts_data,
         'total': pagination.total,
         'pages': pagination.pages,
         'current_page': page
@@ -706,7 +759,7 @@ def get_posts():
 def create_post():
     # Only Web3 users (with address) can post
     if not g.current_user.address:
-        return jsonify({'error': 'Please connect wallet to post'}), 403
+        return jsonify({'error': '请先绑定钱包地址 (Please bind wallet first)'}), 400
     
     # Check if multipart/form-data (for image upload)
     if 'image' in request.files:
@@ -766,8 +819,17 @@ def create_post():
         is_paid=True,
         post_type=p_type
     )
-    db.session.add(post)
-    db.session.commit()
+    
+    try:
+        db.session.add(post)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        # Check for unique constraint violation (tx_hash)
+        if 'unique' in str(e).lower() and 'tx_hash' in str(e).lower():
+            return jsonify({'error': 'Transaction hash already used'}), 400
+        print(f"Create Post DB Error: {e}")
+        return jsonify({'error': 'Database error'}), 500
     
     return jsonify({'message': 'Post created', 'post': post.to_dict()}), 201
 
@@ -1322,7 +1384,14 @@ def init_db_data():
         # Ensure Admin exists
         admin = User.query.filter_by(username='admin').first()
         if not admin:
-            admin = User(username='admin', nickname='Admin👻', is_admin=True, avatar='👮')
+            # Bind a test address to admin for Web3 testing
+            admin = User(
+                username='admin', 
+                nickname='Admin👻', 
+                is_admin=True, 
+                avatar='👮',
+                address='0x1234567890123456789012345678901234567890' # Dummy address
+            )
             admin.set_password('admin123')
             db.session.add(admin)
             db.session.commit()

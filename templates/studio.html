@@ -622,6 +622,10 @@
                          throw new Error('交易未确认或失败');
                     }
                     
+                    // Force wait for RPC indexing (5s)
+                    document.querySelector('#txLoading h3').textContent = '正在同步节点...';
+                    await new Promise(r => setTimeout(r, 5000));
+                    
                     // Upload to IPFS
                     const ipfsData = {
                         title, content, cover_image: coverImage, 
