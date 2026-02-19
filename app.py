@@ -46,7 +46,8 @@ app.config['BSC'] = {
     'RPC_URL': os.environ.get('BSC_RPC_URL', BSC_RPC_LIST[0]),
     'CHAIN_ID': 97,
     'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS', '0xYourReceiveAddressHere'),
-    # 0.0003 BNB ≈ 1 CNY (Assuming 1 BNB ≈ 4000 CNY)
+    # 0.0003 BNB (Binance Coin) on BSC Testnet
+    # Note: 'ether' unit in Web3.py equals 10^18 Wei, which is 1 BNB
     'POST_FEE': Web3.to_wei(0.0003, 'ether')
 }
 
