@@ -172,9 +172,9 @@
     <div class="main-container">
         <aside class="sidebar">
             <div class="sidebar-card">
-                <div class="nav-item active" data-sort="hot" onclick="Post.load({sort:'hot'})">🔥 热门</div>
-                <div class="nav-item" data-sort="new" onclick="Post.load({sort:'new'})">✨ 最新</div>
-                <div class="nav-item" data-sort="bookmarks" onclick="Post.load({sort:'bookmarks'})">⭐ 收藏</div>
+                <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')">🔥 热门</div>
+                <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')">✨ 最新</div>
+                <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')">⭐ 收藏</div>
             </div>
             <div class="sidebar-card" style="font-size: 0.85rem; color: var(--text-secondary);">
                 <p>👻 <b>Web3 内容映射</b>：所有内容均来自链上或 Web3 创作者。</p>
@@ -457,7 +457,33 @@
                     authBtns.style.display = 'none';
                     userMenu.style.display = 'flex';
                     document.getElementById('userDisplayName').textContent = currentUser.nickname;
-                    if(currentUser.avatar) document.getElementById('userAvatarBtn').src = currentUser.avatar;
+                    if(currentUser.avatar) {
+                        const avatarEl = document.getElementById('userAvatarBtn');
+                        if (currentUser.avatar.length <= 5) {
+                            // Emoji avatar
+                            avatarEl.style.display = 'none'; // hide img
+                            // insert div if not exists
+                            let emojiDiv = document.getElementById('userAvatarEmoji');
+                            if(!emojiDiv) {
+                                emojiDiv = document.createElement('div');
+                                emojiDiv.id = 'userAvatarEmoji';
+                                emojiDiv.className = 'user-avatar';
+                                emojiDiv.style.display = 'flex';
+                                emojiDiv.style.alignItems = 'center';
+                                emojiDiv.style.justifyContent = 'center';
+                                emojiDiv.style.background = 'var(--bg-secondary)';
+                                emojiDiv.style.fontSize = '1.2rem';
+                                avatarEl.parentNode.insertBefore(emojiDiv, avatarEl);
+                            }
+                            emojiDiv.textContent = currentUser.avatar;
+                        } else {
+                            // Image avatar
+                            avatarEl.src = currentUser.avatar;
+                            avatarEl.style.display = 'block';
+                            const emojiDiv = document.getElementById('userAvatarEmoji');
+                            if(emojiDiv) emojiDiv.remove();
+                        }
+                    }
                 } else {
                     authBtns.style.display = 'flex';
                     userMenu.style.display = 'none';
@@ -481,7 +507,7 @@
                                 <div class="post-title">${p.title}</div>
                                 <div class="post-meta">
                                     <div class="author-info">
-                                        <img src="${p.author.avatar}" class="author-avatar" onerror="this.src='/static/default-avatar.png'">
+                                        ${UI.renderAvatar(p.author)}
                                         <span>${p.author.nickname}</span>
                                     </div>
                                     <div style="display:flex; gap:0.5rem; align-items:center;">
@@ -493,6 +519,19 @@
                     </div>`;
                 }).join('');
                 document.getElementById('loadingArea').style.display = 'none';
+            },
+
+            renderAvatar(user) {
+                if (!user.avatar || user.avatar.length > 5) {
+                    return `<img src="${user.avatar || '/static/default-avatar.png'}" class="author-avatar" onerror="this.src='/static/default-avatar.png'">`;
+                }
+                return `<div class="author-avatar" style="display:flex;align-items:center;justify-content:center;font-size:1.2rem;background:var(--bg-secondary);">${user.avatar}</div>`;
+            },
+            
+            handleNav(el, sort) {
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                el.classList.add('active');
+                Post.load({sort});
             }
         };
 
@@ -527,6 +566,20 @@
                     </div>
                 `).join('');
 
+                let adminControls = '';
+                if (currentUser && currentUser.is_admin) {
+                    adminControls = `
+                        <div style="margin-top:1rem; padding-top:1rem; border-top:1px dashed var(--accent-red); color:var(--accent-red);">
+                            <div style="margin-bottom:0.5rem; font-size:0.8rem; font-weight:bold;">👮 管理员操作</div>
+                            <div style="display:flex; gap:0.5rem;">
+                                <button class="btn btn-ghost" onclick="Interact.adminDelete(${p.id})" style="border-color:var(--accent-red); color:var(--accent-red);">删除帖子</button>
+                                <button class="btn btn-ghost" onclick="Interact.adminToggleHide(${p.id})">${p.is_hidden ? '取消隐藏' : '隐藏帖子'}</button>
+                                <button class="btn btn-ghost" onclick="Interact.adminToggleComments(${p.id})">${p.allow_comments ? '关闭评论' : '开启评论'}</button>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 body.innerHTML = `
                     <h2 style="margin-bottom:0.5rem;">${p.title}</h2>
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
@@ -548,12 +601,14 @@
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                     </div>
 
+                    ${adminControls}
+
                     <div class="comments-section">
                         <h4>评论</h4>
                         <div style="margin-bottom:1rem;">${commentsHtml}</div>
                         <div style="display:flex; gap:0.5rem;">
-                            <input type="text" id="commentInput" class="form-input" placeholder="发表评论...">
-                            <button class="btn btn-primary" onclick="Interact.comment(${p.id})">发送</button>
+                            <input type="text" id="commentInput" class="form-input" placeholder="${p.allow_comments ? '发表评论...' : '评论区已关闭'}" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>
+                            <button class="btn btn-primary" onclick="Interact.comment(${p.id})" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>发送</button>
                         </div>
                     </div>
                 `;
@@ -575,6 +630,28 @@
             async do(url) {
                 if(!currentUser) return Modal.open('loginModal');
                 await fetch(url, { method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`} });
+            },
+            
+            async adminDelete(id) {
+                if(!confirm('确定要删除这个帖子吗？此操作不可逆！')) return;
+                const res = await fetch(`${API_BASE}/posts/${id}`, {
+                    method: 'DELETE',
+                    headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                });
+                if(res.ok) { Toast.success('已删除'); Modal.close('postDetailModal'); Post.load(); }
+                else Toast.error('删除失败');
+            },
+            async adminToggleHide(id) {
+                const res = await fetch(`${API_BASE}/posts/${id}/hide`, {
+                    method: 'PUT', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                });
+                if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); Post.load(); }
+            },
+            async adminToggleComments(id) {
+                const res = await fetch(`${API_BASE}/posts/${id}/comments`, {
+                    method: 'PUT', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                });
+                if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); }
             }
         };
 

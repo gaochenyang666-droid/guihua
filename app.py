@@ -5,6 +5,7 @@ import secrets
 import bleach
 import requests
 import base64
+import random
 from datetime import datetime, timedelta
 from functools import wraps
 from flask import Flask, request, jsonify, g, render_template
@@ -52,6 +53,7 @@ class User(db.Model):
     avatar = db.Column(db.String(500), default='/static/default-avatar.png')
     bio = db.Column(db.String(500), default='')
     has_nft_badge = db.Column(db.Boolean, default=False)
+    is_admin = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     posts = db.relationship('Post', backref='author', lazy='dynamic')
@@ -71,6 +73,7 @@ class User(db.Model):
             'nickname': self.nickname or self.username or (self.address[:6] + '...' if self.address else 'Unknown'),
             'avatar': self.avatar,
             'has_nft_badge': self.has_nft_badge,
+            'is_admin': self.is_admin,
             'posts_count': self.posts.count()
         }
 
@@ -87,6 +90,10 @@ class Post(db.Model):
     ipfs_cid = db.Column(db.String(100), nullable=True)
     is_paid = db.Column(db.Boolean, default=False)
     
+    # Admin controls
+    is_hidden = db.Column(db.Boolean, default=False)
+    allow_comments = db.Column(db.Boolean, default=True)
+
     # Repost logic
     is_repost = db.Column(db.Boolean, default=False)
     original_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
@@ -133,7 +140,9 @@ class Post(db.Model):
             'is_repost': self.is_repost,
             'original_post_id': self.original_post_id,
             'original_post': original_post_data,
-            'repost_comment': self.repost_comment
+            'repost_comment': self.repost_comment,
+            'is_hidden': self.is_hidden,
+            'allow_comments': self.allow_comments
         }
 
 class Comment(db.Model):
@@ -167,6 +176,10 @@ class Bookmark(db.Model):
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
 
 # ============== Helpers ==============
+def get_random_avatar():
+    emojis = ['👻', '💀', '👽', '👾', '🤖', '🎃', '🧛', '🧟', '🧞', '🧝', '🧙', '🧚', '🧜', '👼', '👿', '👺', '👹', '🤡', '💩', '🦄']
+    return random.choice(emojis)
+
 def upload_to_imgbb(file):
     try:
         # Convert file to base64
@@ -219,7 +232,7 @@ def get_nonce():
     user = User.query.filter_by(address=address).first()
     if not user:
         # Create Web3 user if not exists
-        user = User(address=address, nickname=f"User_{address[:6]}")
+        user = User(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
         db.session.add(user)
         db.session.commit()
     return jsonify({'nonce': user.nonce})
@@ -264,7 +277,7 @@ def register():
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Username already exists'}), 400
         
-    user = User(username=username, nickname=username)
+    user = User(username=username, nickname=username, avatar=get_random_avatar())
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
@@ -332,6 +345,14 @@ def get_posts():
             return jsonify({'posts': []})
     else: # 'new'
         query = query.order_by(Post.created_at.desc())
+
+    # Filter hidden posts unless admin
+    current_user = None
+    if current_user_id:
+        current_user = User.query.get(current_user_id)
+        
+    if not current_user or not current_user.is_admin:
+        query = query.filter_by(is_hidden=False)
 
     posts = query.limit(50).all()
     return jsonify({'posts': [p.to_dict(current_user_id) for p in posts]})
@@ -448,11 +469,14 @@ def repost_post(post_id):
 @app.route('/api/posts/<int:post_id>/comments', methods=['POST'])
 @token_required
 def add_comment(post_id):
+    post = Post.query.get_or_404(post_id)
+    if not post.allow_comments and not g.current_user.is_admin:
+        return jsonify({'error': 'Comments are closed for this post'}), 403
+
     data = request.get_json()
     content = data.get('content')
     if not content: return jsonify({'error': 'Content empty'}), 400
     
-    post = Post.query.get_or_404(post_id)
     comment = Comment(content=content, author_id=g.current_user.id, post_id=post.id)
     db.session.add(comment)
     db.session.commit()
@@ -499,6 +523,104 @@ def upload():
     if url:
         return jsonify({'url': url})
     return jsonify({'error': 'Upload failed'}), 500
+
+# --- Admin & Debug ---
+
+@app.route('/api/posts/<int:post_id>', methods=['DELETE'])
+@token_required
+def delete_post(post_id):
+    if not g.current_user.is_admin:
+        return jsonify({'error': 'Admin only'}), 403
+    
+    post = Post.query.get_or_404(post_id)
+    # Delete related
+    Comment.query.filter_by(post_id=post.id).delete()
+    Like.query.filter_by(post_id=post.id).delete()
+    Bookmark.query.filter_by(post_id=post.id).delete()
+    
+    db.session.delete(post)
+    db.session.commit()
+    return jsonify({'message': 'Post deleted'})
+
+@app.route('/api/posts/<int:post_id>/hide', methods=['PUT'])
+@token_required
+def toggle_hide_post(post_id):
+    if not g.current_user.is_admin:
+        return jsonify({'error': 'Admin only'}), 403
+    
+    post = Post.query.get_or_404(post_id)
+    post.is_hidden = not post.is_hidden
+    db.session.commit()
+    return jsonify({'message': 'Toggled hide status', 'is_hidden': post.is_hidden})
+
+@app.route('/api/posts/<int:post_id>/comments', methods=['PUT'])
+@token_required
+def toggle_post_comments(post_id):
+    if not g.current_user.is_admin:
+        return jsonify({'error': 'Admin only'}), 403
+    
+    post = Post.query.get_or_404(post_id)
+    post.allow_comments = not post.allow_comments
+    db.session.commit()
+    return jsonify({'message': 'Toggled comments status', 'allow_comments': post.allow_comments})
+
+@app.route('/api/debug/seed', methods=['POST'])
+def seed_db():
+    if not app.config.get('DEBUG') and os.environ.get('ENABLE_RESET_DB') != 'true':
+        return jsonify({'error': 'Not allowed in production'}), 403
+        
+    try:
+        # 1. Create Admin
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            admin = User(username='admin', nickname='Admin👻', is_admin=True, avatar='👮')
+            admin.set_password('admin123')
+            db.session.add(admin)
+            
+        # 2. Create Test Users
+        u1 = User(username='ghost_hunter', nickname='GhostHunter', avatar='🕵️')
+        u1.set_password('123456')
+        db.session.add(u1)
+        
+        db.session.commit()
+        
+        # 3. Create Posts
+        posts_data = [
+            {
+                'title': '深夜的电梯',
+                'content': '昨晚加班到12点，坐电梯下楼。电梯在14楼停了，门开了却没人。我正要关门，突然听到一声“等一下”...',
+                'cover_image': 'https://i.ibb.co/hK7j00q/elevator.jpg',
+                'author': admin
+            },
+            {
+                'title': '镜子里的倒影',
+                'content': '据说半夜两点对着镜子削苹果，能看到未来的另一半。我试了一下，结果看到了...',
+                'cover_image': 'https://i.ibb.co/Qn9500q/mirror.jpg',
+                'author': u1
+            },
+            {
+                'title': '消失的末班车',
+                'content': '375路公交车的传说，大家都听说过吧？那天我也上了一辆没有司机的车...',
+                'cover_image': 'https://i.ibb.co/C0d400q/bus.jpg',
+                'author': admin
+            }
+        ]
+        
+        for p in posts_data:
+            if not Post.query.filter_by(title=p['title']).first():
+                post = Post(
+                    title=p['title'],
+                    content=p['content'],
+                    cover_image=p['cover_image'],
+                    author_id=p['author'].id,
+                    is_paid=True
+                )
+                db.session.add(post)
+                
+        db.session.commit()
+        return jsonify({'message': 'Seeded successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/debug/reset_db', methods=['POST'])
 def reset_db():

@@ -210,7 +210,7 @@
             </div>
             
             <div class="sidebar-card">
-                <button class="btn btn-ghost" onclick="UI.showFeed()" style="width: 100%;">🔙 返回浏览</button>
+                <button class="btn btn-ghost" onclick="window.location.href='/'" style="width: 100%;">🔙 返回浏览</button>
             </div>
         </aside>
         
@@ -625,7 +625,37 @@
                         displayName = currentUser.address.substring(0, 6) + '...' + currentUser.address.substring(38);
                     }
                     document.getElementById('userDisplayName').textContent = displayName + (currentUser.has_nft_badge ? ' 🎖️' : '');
-                    if(currentUser.avatar) document.getElementById('userAvatarBtn').src = currentUser.avatar;
+                    if(currentUser.avatar) {
+                        const avatarEl = document.getElementById('userAvatarBtn');
+                        if (currentUser.avatar.length <= 5) {
+                            // Emoji avatar
+                            avatarEl.style.display = 'none'; // hide img
+                            // insert div if not exists
+                            let emojiDiv = document.getElementById('userAvatarEmoji');
+                            if(!emojiDiv) {
+                                emojiDiv = document.createElement('div');
+                                emojiDiv.id = 'userAvatarEmoji';
+                                emojiDiv.className = 'user-avatar';
+                                emojiDiv.style.display = 'flex';
+                                emojiDiv.style.alignItems = 'center';
+                                emojiDiv.style.justifyContent = 'center';
+                                emojiDiv.style.background = 'var(--bg-secondary)';
+                                emojiDiv.style.fontSize = '1.2rem';
+                                emojiDiv.style.border = '2px solid var(--accent-purple)';
+                                emojiDiv.style.borderRadius = '50%';
+                                emojiDiv.style.width = '36px';
+                                emojiDiv.style.height = '36px';
+                                avatarEl.parentNode.insertBefore(emojiDiv, avatarEl);
+                            }
+                            emojiDiv.textContent = currentUser.avatar;
+                        } else {
+                            // Image avatar
+                            avatarEl.src = currentUser.avatar;
+                            avatarEl.style.display = 'block';
+                            const emojiDiv = document.getElementById('userAvatarEmoji');
+                            if(emojiDiv) emojiDiv.remove();
+                        }
+                    }
                 } else {
                     authBtns.style.display = 'flex';
                     userMenu.style.display = 'none';
