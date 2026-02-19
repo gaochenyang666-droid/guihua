@@ -522,3 +522,4 @@ else:
     # When running with Gunicorn, create tables if they don't exist
     with app.app_context():
         db.create_all()
+# Force Update 2026
