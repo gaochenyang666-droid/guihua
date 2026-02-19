@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>诡境 - 创作者工作室</title>
+    <title>诡话 - 创作者工作室</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.10.0/web3.min.js" integrity="sha512-+vNl8ghvD2fPZ1XJkZk3/Jj+vbWqT0UeFfH8p1XZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <style>
@@ -170,7 +170,7 @@
     </div>
 
     <nav class="navbar">
-        <a href="/" class="logo"><span>👻</span> 诡境 (Web3)</a>
+        <a href="/" class="logo"><span>👻</span> 诡话 (Web3)</a>
         
         <div class="search-container">
             <span class="search-icon">🔍</span>
@@ -603,12 +603,26 @@
                         params: [{
                             to: config.receive_address,
                             from: currentUser.address,
-                            value: window.web3.utils.toHex(config.fee),
-                            chainId: config.chain_id
+                            value: window.web3.utils.toHex(config.fee)
                         }]
                     });
+
+                    // Wait for Receipt
+                    document.querySelector('#txLoading h3').textContent = '正在确认交易...';
+                    let receipt = null;
+                    for(let i=0; i<30; i++) { // Wait max 30 * 2s = 60s
+                        try {
+                            receipt = await window.web3.eth.getTransactionReceipt(txHash);
+                            if(receipt && receipt.status) break;
+                        } catch(e) {}
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+
+                    if(!receipt || !receipt.status) {
+                         throw new Error('交易未确认或失败');
+                    }
                     
-                    // Upload to IPFS (Simulated)
+                    // Upload to IPFS
                     const ipfsData = {
                         title, content, cover_image: coverImage, 
                         author: currentUser.address,
@@ -638,9 +652,12 @@
                         Toast.success('发布成功');
                         document.getElementById('studioPostTitle').value = '';
                         document.getElementById('studioPostContent').innerHTML = '';
+                        document.getElementById('studioPostImage').value = '';
+                        Editor.previewCover('');
                         Auth.fetchMe(); 
                     } else Toast.error((await res.json()).error);
                 } catch(e) { 
+                    console.error(e);
                     document.getElementById('txLoading').classList.remove('active');
                     Toast.error('发布失败: ' + e.message); 
                 } finally {
@@ -851,7 +868,6 @@
                 c.appendChild(d);
             }
             Auth.init();
-            Post.load();
             
             document.getElementById('loginForm').onsubmit = (e) => {
                 e.preventDefault();

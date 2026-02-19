@@ -1295,7 +1295,7 @@ def seed_db():
 上报四重恩，下济三途苦。<br>
 若有见闻者，悉发菩提心。<br>
 尽此一报身，同生极乐国。</p>""",
-                'cover_image': 'https://i.ibb.co/hK7j00q/elevator.jpg',
+                'cover_image': '/static/reborn.jpg',
                 'author': u1
             }
         ]
