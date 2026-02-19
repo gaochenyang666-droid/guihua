@@ -35,8 +35,15 @@ if not app.config['SECRET_KEY']:
     raise ValueError("No SECRET_KEY set for Flask application")
 
 # BSC Testnet Configuration
+BSC_RPC_LIST = [
+    'https://data-seed-prebsc-1-s1.binance.org:8545/',
+    'https://data-seed-prebsc-2-s1.binance.org:8545/',
+    'https://data-seed-prebsc-1-s2.binance.org:8545/',
+    'https://bsc-testnet.publicnode.com'
+]
+
 app.config['BSC'] = {
-    'RPC_URL': os.environ.get('BSC_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/'),
+    'RPC_URL': os.environ.get('BSC_RPC_URL', BSC_RPC_LIST[0]),
     'CHAIN_ID': 97,
     'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS', '0xYourReceiveAddressHere'),
     # 0.0003 BNB ≈ 1 CNY (Assuming 1 BNB ≈ 4000 CNY)
@@ -46,6 +53,25 @@ app.config['BSC'] = {
 db = SQLAlchemy(app)
 w3 = Web3(Web3.HTTPProvider(app.config['BSC']['RPC_URL']))
 w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+
+def get_working_web3():
+    """Try to find a working RPC provider from the list"""
+    # First try the default global w3
+    if w3.is_connected():
+        return w3
+    
+    # If default fails, try others
+    print("Default RPC failed, trying backups...")
+    for rpc in BSC_RPC_LIST:
+        try:
+            provider = Web3(Web3.HTTPProvider(rpc))
+            provider.middleware_onion.inject(geth_poa_middleware, layer=0)
+            if provider.is_connected():
+                print(f"Connected to backup RPC: {rpc}")
+                return provider
+        except:
+            continue
+    return w3 # Return default even if failed, to let caller handle error
 
 # ============== Models ==============
 class User(db.Model):
@@ -278,8 +304,12 @@ def verify_transaction(tx_hash, user_address):
     if not user_address:
         return False, 'User address not bound'
 
+    # Get a working Web3 provider
+    web3_provider = get_working_web3()
+    
     try:
-        if not w3.is_connected():
+        if not web3_provider.is_connected():
+            print("Error: Cannot connect to BSC RPC Node. Please check network.")
             return False, 'RPC connection failed'
 
         # Check format
@@ -290,18 +320,26 @@ def verify_transaction(tx_hash, user_address):
         if Post.query.filter_by(tx_hash=tx_hash).first():
             return False, 'Transaction hash already used'
 
+        # Give node a moment to sync
+        print("Waiting for node sync...")
+        time.sleep(3)
+
         # Get transaction and receipt with retries
         tx = None
         receipt = None
         
-        # Retry up to 10 times (20 seconds total) to handle RPC indexing delay
-        for i in range(10):
+        # Retry up to 30 times (60 seconds total) to handle RPC indexing delay
+        for i in range(30):
             try:
-                tx = w3.eth.get_transaction(tx_hash)
-                receipt = w3.eth.get_transaction_receipt(tx_hash)
+                tx = web3_provider.eth.get_transaction(tx_hash)
+                receipt = web3_provider.eth.get_transaction_receipt(tx_hash)
                 if tx and receipt:
+                    print(f"Tx found after {i*2} seconds.")
                     break
-            except Exception:
+            except Exception as e:
+                print(f"Retrying... {i}/30 Error: {e}")
+                # If persistent failure, maybe try switching provider again? 
+                # For now, just retry
                 pass
             time.sleep(2)
             
