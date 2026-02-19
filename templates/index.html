@@ -373,7 +373,7 @@
             async register() {
                 const username = document.getElementById('regUsername').value;
                 const password = document.getElementById('regPassword').value;
-                const res = await fetch(`${API_BASE}/auth/register`, {
+                const res = await fetch(`${API_BASE}/auth/web2/register`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username, password })
                 });
