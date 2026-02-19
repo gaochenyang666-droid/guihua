@@ -253,13 +253,23 @@
                 </div>
                 
                 <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-secondary);">
-                    <p>💰 发帖费用: <span style="color: var(--accent-purple-light);">0.001 tBNB</span></p>
+                    <p>💰 发帖费用: <span style="color: var(--accent-purple-light);">0.0003 tBNB (约 1 CNY)</span></p>
                     <p>⛓️ 上链网络: BSC Testnet (97)</p>
                     <p>💾 存储: IPFS 永存 + 数据库映射</p>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">⚠️ 注意：费用将直接用于支持网站建设与服务器维护。</p>
                 </div>
                 
                 <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem;" onclick="Post.publishFromStudio()">⚡ 支付并发布</button>
             </div>
+            
+            <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+                <p style="margin-bottom: 0.5rem;">⚠️ <b>法律风险警示</b></p>
+                <p>
+                    本平台仅提供去中心化内容展示技术，不存储任何非法内容。所有 Web3 内容均存储于 IPFS 分布式网络，由发布者自行负责。<br>
+                    请遵守《中华人民共和国网络安全法》及相关法律法规，严禁发布色情、暴力、恐怖主义及违反公序良俗的信息。<br>
+                    任何违规内容将被管理员在前端屏蔽，并配合执法部门调查。区块链上的永久记录将成为不可篡改的法律证据。
+                </p>
+            </footer>
         </main>
     </div>
 
@@ -506,6 +516,40 @@
                 UI.renderPosts(data.posts);
             },
             
+            async uploadToIPFS(data) {
+                console.log("Uploading to IPFS...", data);
+                
+                // Update loading text
+                const loadingText = document.querySelector('#txLoading h3');
+                if(loadingText) loadingText.textContent = '正在存入 IPFS 永存网络...';
+                
+                try {
+                    const res = await fetch(`${API_BASE}/upload/ipfs`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+                    
+                    const result = await res.json();
+                    if(res.ok) {
+                        if(result.mock) {
+                            console.log("Dev Mode: Using Mock CID");
+                            Toast.info("开发环境: 使用模拟 IPFS CID");
+                        }
+                        return result.cid;
+                    } else {
+                        throw new Error(result.error || 'IPFS upload failed');
+                    }
+                } catch(e) {
+                    console.error("IPFS Error:", e);
+                    Toast.error('IPFS 上传失败: ' + e.message);
+                    throw e;
+                }
+            },
+            
             async publishFromStudio() {
                 const btn = document.getElementById('publishBtn');
                 if (btn.disabled) return;
@@ -551,6 +595,7 @@
 
                     // Pay Gas
                     document.getElementById('txLoading').classList.add('active');
+                    document.querySelector('#txLoading h3').textContent = '正在上链支付...';
                     
                     const provider = window.BinanceChain || window.ethereum;
                     const txHash = await provider.request({
@@ -563,7 +608,16 @@
                         }]
                     });
                     
-                    // Save
+                    // Upload to IPFS (Simulated)
+                    const ipfsData = {
+                        title, content, cover_image: coverImage, 
+                        author: currentUser.address,
+                        timestamp: Date.now()
+                    };
+                    const ipfsCid = await this.uploadToIPFS(ipfsData);
+                    
+                    // Save to Backend
+                    document.querySelector('#txLoading h3').textContent = '正在同步数据库...';
                     const res = await fetch(`${API_BASE}/posts`, {
                         method: 'POST',
                         headers: { 
@@ -573,6 +627,7 @@
                         body: JSON.stringify({
                             title, content, tx_hash: txHash,
                             cover_image: coverImage,
+                            ipfs_cid: ipfsCid,
                             images: []
                         })
                     });

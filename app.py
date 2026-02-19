@@ -22,6 +22,10 @@ CORS(app)
 # ImgBB Configuration
 IMGBB_API_KEY = os.environ.get('IMGBB_API_KEY', 'your-imgbb-api-key')
 
+# Pinata (IPFS) Configuration
+PINATA_API_KEY = os.environ.get('PINATA_API_KEY', '')
+PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY', '')
+
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///guijing.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -33,8 +37,9 @@ if not app.config['SECRET_KEY']:
 app.config['BSC'] = {
     'RPC_URL': os.environ.get('BSC_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/'),
     'CHAIN_ID': 97,
-    'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS', '0x0000000000000000000000000000000000000000'),
-    'POST_FEE': Web3.to_wei(0.001, 'ether')
+    'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS', '0xYourReceiveAddressHere'),
+    # 0.0003 BNB ≈ 1 CNY (Assuming 1 BNB ≈ 4000 CNY)
+    'POST_FEE': Web3.to_wei(0.0003, 'ether')
 }
 
 db = SQLAlchemy(app)
@@ -77,6 +82,7 @@ class User(db.Model):
             'username': self.username,
             'nickname': self.nickname or self.username or (self.address[:6] + '...' if self.address else 'Unknown'),
             'avatar': self.avatar,
+            'bio': self.bio,
             'has_nft_badge': self.has_nft_badge,
             'is_admin': self.is_admin,
             'posts_count': self.posts.count()
@@ -97,10 +103,10 @@ class Post(db.Model):
     
     # New: Post Type (web2, web3, mixed)
     # 0: Web2, 1: Web3 (On-chain), 2: Mixed
-    post_type = db.Column(db.Integer, default=0)
+    post_type = db.Column(db.Integer, default=0, index=True)
 
     # Admin controls
-    is_hidden = db.Column(db.Boolean, default=False)
+    is_hidden = db.Column(db.Boolean, default=False, index=True)
     allow_comments = db.Column(db.Boolean, default=True)
 
     # Repost logic
@@ -108,7 +114,7 @@ class Post(db.Model):
     original_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     repost_comment = db.Column(db.Text, nullable=True)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     
     comments = db.relationship('Comment', backref='post', lazy='dynamic')
     likes = db.relationship('Like', backref='post', lazy='dynamic')
@@ -161,17 +167,23 @@ class Comment(db.Model):
     content = db.Column(db.Text)
     author_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
+    parent_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     author = db.relationship('User', backref='comments')
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
     
-    def to_dict(self):
-        return {
+    def to_dict(self, recursive=False):
+        data = {
             'id': self.id,
             'content': self.content,
             'author': self.author.to_dict(),
-            'created_at': self.created_at.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'parent_id': self.parent_id
         }
+        if recursive:
+            data['replies'] = [reply.to_dict(recursive=True) for reply in self.replies.all()]
+        return data
 
 class Like(db.Model):
     __tablename__ = 'likes'
@@ -187,10 +199,37 @@ class Bookmark(db.Model):
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
     __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='unique_user_post_bookmark'),)
 
+class Notification(db.Model):
+    __tablename__ = 'notifications'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id')) # Recipient
+    sender_id = db.Column(db.Integer, db.ForeignKey('users.id')) # Triggered by
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
+    comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
+    type = db.Column(db.String(20)) # 'comment', 'reply', 'like', 'system'
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    recipient = db.relationship('User', foreign_keys=[user_id], backref='notifications')
+    sender = db.relationship('User', foreign_keys=[sender_id])
+    post = db.relationship('Post')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'type': self.type,
+            'sender': self.sender.to_dict() if self.sender else None,
+            'post_id': self.post_id,
+            'post_title': self.post.title if self.post else None,
+            'is_read': self.is_read,
+            'created_at': self.created_at.isoformat()
+        }
+
 # ============== Helpers ==============
+ALLOWED_AVATARS = ['👻', '💀', '👽', '👾', '🤖', '🎃', '🧛', '🧟', '🧞', '🧝', '🧙', '🧚', '🧜', '👼', '👿', '👺', '👹', '🤡', '💩', '🦄']
+
 def get_random_avatar():
-    emojis = ['👻', '💀', '👽', '👾', '🤖', '🎃', '🧛', '🧟', '🧞', '🧝', '🧙', '🧚', '🧜', '👼', '👿', '👺', '👹', '🤡', '💩', '🦄']
-    return random.choice(emojis)
+    return random.choice(ALLOWED_AVATARS)
 
 def upload_to_imgbb(file):
     try:
@@ -208,6 +247,78 @@ def upload_to_imgbb(file):
     except Exception as e:
         print(f"ImgBB Error: {e}")
         return None
+
+def upload_to_pinata(json_data):
+    if not PINATA_API_KEY or not PINATA_SECRET_API_KEY:
+        print("Pinata keys missing")
+        return None
+        
+    url = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
+    headers = {
+        "pinata_api_key": PINATA_API_KEY,
+        "pinata_secret_api_key": PINATA_SECRET_API_KEY,
+        "Content-Type": "application/json"
+    }
+    try:
+        response = requests.post(url, json=json_data, headers=headers)
+        if response.status_code == 200:
+            return response.json()['IpfsHash']
+        print(f"Pinata Error: {response.text}")
+        return None
+    except Exception as e:
+        print(f"Pinata Exception: {e}")
+        return None
+
+def verify_transaction(tx_hash, user_address):
+    """
+    Verify transaction on BSC Testnet
+    Checks: Status, Sender, Receiver, Amount, Uniqueness
+    """
+    try:
+        if not w3.is_connected():
+            return False, 'RPC connection failed'
+
+        # Check format
+        if not re.match(r"^0x[a-fA-F0-9]{64}$", tx_hash):
+            return False, 'Invalid transaction hash format'
+
+        # Check uniqueness (prevent replay)
+        if Post.query.filter_by(tx_hash=tx_hash).first():
+            return False, 'Transaction hash already used'
+
+        # Get transaction and receipt
+        try:
+            tx = w3.eth.get_transaction(tx_hash)
+            receipt = w3.eth.get_transaction_receipt(tx_hash)
+        except Exception:
+            return False, 'Transaction not found on chain'
+
+        if not tx or not receipt:
+             return False, 'Transaction not found'
+
+        # 1. Check Status (1 = Success)
+        if receipt['status'] != 1:
+            return False, 'Transaction failed on chain'
+
+        # 2. Check Sender
+        if tx['from'].lower() != user_address.lower():
+            return False, 'Transaction sender does not match current user'
+
+        # 3. Check Receiver
+        expected_to = app.config['BSC']['RECEIVE_ADDRESS'].lower()
+        if not tx['to'] or tx['to'].lower() != expected_to:
+            return False, f'Incorrect recipient. Expected: {expected_to}'
+
+        # 4. Check Amount
+        expected_value = app.config['BSC']['POST_FEE']
+        if tx['value'] < expected_value:
+            return False, f'Insufficient fee. Paid: {tx["value"]}, Expected: {expected_value}'
+
+        return True, None
+    except Exception as e:
+        print(f"Verify Tx Error: {e}")
+        return False, 'Verification process failed'
+
 
 def token_required(f):
     @wraps(f)
@@ -352,10 +463,39 @@ def login():
     
     return jsonify({'error': 'Invalid credentials'}), 401
 
-@app.route('/api/user/me', methods=['GET'])
+@app.route('/api/user/me', methods=['GET', 'PUT'])
 @token_required
-def get_me():
-    return jsonify(g.current_user.to_dict())
+def user_me():
+    if request.method == 'GET':
+        return jsonify(g.current_user.to_dict())
+    
+    # PUT: Update profile
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+        
+    nickname = data.get('nickname')
+    bio = data.get('bio')
+    avatar = data.get('avatar')
+    refresh_avatar = data.get('refresh_avatar', False)
+    
+    if nickname:
+        if len(nickname) > 50: return jsonify({'error': 'Nickname too long'}), 400
+        g.current_user.nickname = bleach.clean(nickname, strip=True)
+        
+    if bio is not None:
+        if len(bio) > 500: return jsonify({'error': 'Bio too long'}), 400
+        g.current_user.bio = bleach.clean(bio, strip=True)
+        
+    if avatar:
+        if avatar not in ALLOWED_AVATARS:
+            return jsonify({'error': 'Invalid avatar'}), 400
+        g.current_user.avatar = avatar
+    elif refresh_avatar:
+        g.current_user.avatar = get_random_avatar()
+        
+    db.session.commit()
+    return jsonify({'message': 'Profile updated', 'user': g.current_user.to_dict()})
 
 @app.route('/api/user/bind_wallet', methods=['POST'])
 @token_required
@@ -405,6 +545,115 @@ def get_fees():
 
 # --- Posts ---
 
+@app.route('/api/search', methods=['GET'])
+def search_posts():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'posts': []})
+        
+    # Use simple LIKE search (SQLite default)
+    # For production with PostgreSQL, use Full Text Search (tsvector)
+    posts = Post.query.filter(
+        (Post.title.ilike(f'%{q}%')) | 
+        (Post.content.ilike(f'%{q}%'))
+    ).filter_by(is_hidden=False).order_by(Post.created_at.desc()).limit(20).all()
+    
+    return jsonify({'posts': [p.to_dict() for p in posts]})
+
+@app.route('/api/admin/stats', methods=['GET'])
+@token_required
+def admin_stats():
+    if not g.current_user.is_admin:
+        return jsonify({'error': 'Admin only'}), 403
+        
+    # Stats
+    total_users = User.query.count()
+    web3_users = User.query.filter(User.address != None).count()
+    web2_users = total_users - web3_users
+    
+    total_posts = Post.query.count()
+    web3_posts = Post.query.filter(Post.post_type == 1).count() # Or filter by tx_hash
+    web2_posts = total_posts - web3_posts
+    
+    # Calculate revenue (Approximation: web3_posts * POST_FEE)
+    # Note: fee is in Wei (int), convert to Ether for display
+    fee_wei = app.config['BSC']['POST_FEE']
+    total_revenue_wei = web3_posts * fee_wei
+    total_revenue_bnb = w3.from_wei(total_revenue_wei, 'ether')
+    
+    return jsonify({
+        'users': {
+            'total': total_users,
+            'web3': web3_users,
+            'web2': web2_users,
+            'retention_rate': 'N/A' # Requires login history tracking
+        },
+        'posts': {
+            'total': total_posts,
+            'web3': web3_posts,
+            'web2': web2_posts
+        },
+        'revenue': {
+            'total_bnb': float(total_revenue_bnb),
+            'fee_per_post': float(w3.from_wei(fee_wei, 'ether'))
+        }
+    })
+
+@app.route('/api/users/<username>', methods=['GET'])
+def get_user_profile(username):
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        # Try finding by address
+        if username.startswith('0x'):
+            user = User.query.filter_by(address=username).first()
+            
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+        
+    posts = Post.query.filter_by(author_id=user.id, is_hidden=False).order_by(Post.created_at.desc()).all()
+    
+    return jsonify({
+        'user': user.to_dict(),
+        'posts': [p.to_dict() for p in posts]
+    })
+
+@app.route('/api/notifications', methods=['GET'])
+@token_required
+def get_notifications():
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    
+    pagination = Notification.query.filter_by(user_id=g.current_user.id)\
+        .order_by(Notification.created_at.desc())\
+        .paginate(page=page, per_page=per_page, error_out=False)
+        
+    notifs = pagination.items
+    
+    return jsonify({
+        'notifications': [n.to_dict() for n in notifs],
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page
+    })
+
+@app.route('/api/notifications/<int:id>/read', methods=['PUT'])
+@token_required
+def read_notification(id):
+    notif = Notification.query.get_or_404(id)
+    if notif.user_id != g.current_user.id:
+        return jsonify({'error': 'Not your notification'}), 403
+        
+    notif.is_read = True
+    db.session.commit()
+    return jsonify({'message': 'Marked as read'})
+
+@app.route('/api/notifications/read_all', methods=['PUT'])
+@token_required
+def read_all_notifications():
+    Notification.query.filter_by(user_id=g.current_user.id, is_read=False).update({'is_read': True})
+    db.session.commit()
+    return jsonify({'message': 'All marked as read'})
+
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
     token = None
@@ -417,6 +666,9 @@ def get_posts():
         except: pass
 
     sort_by = request.args.get('sort', 'new')
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    
     query = Post.query
 
     if sort_by == 'hot':
@@ -427,7 +679,7 @@ def get_posts():
         if current_user_id:
             query = query.join(Bookmark).filter(Bookmark.user_id == current_user_id)
         else:
-            return jsonify({'posts': []})
+            return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': 1})
     else: # 'new'
         query = query.order_by(Post.created_at.desc())
 
@@ -439,8 +691,15 @@ def get_posts():
     if not current_user or not current_user.is_admin:
         query = query.filter_by(is_hidden=False)
 
-    posts = query.limit(50).all()
-    return jsonify({'posts': [p.to_dict(current_user_id) for p in posts]})
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    posts = pagination.items
+    
+    return jsonify({
+        'posts': [p.to_dict(current_user_id) for p in posts],
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page
+    })
 
 @app.route('/api/posts', methods=['POST'])
 @token_required
@@ -469,6 +728,7 @@ def create_post():
             'content': content,
             'cover_image': cover_url,
             'tx_hash': tx_hash,
+            'ipfs_cid': request.form.get('ipfs_cid'),
             'images': []
         }
     else:
@@ -476,31 +736,16 @@ def create_post():
         data = request.get_json()
     
     tx_hash = data.get('tx_hash')
+    ipfs_cid = data.get('ipfs_cid')
     
-    # 1. Check duplicate tx
-    if Post.query.filter_by(tx_hash=tx_hash).first():
-        return jsonify({'error': 'Transaction hash already used'}), 400
+    # 1. Check duplicate tx (moved to verify_transaction, but good to keep basic check or handled there)
+    # logic handled in verify_transaction now
         
     # 2. Verify tx on chain
-    try:
-        if not w3.is_connected():
-             return jsonify({'error': 'RPC connection failed'}), 503
-
-        tx = w3.eth.get_transaction(tx_hash)
-        receipt = w3.eth.get_transaction_receipt(tx_hash)
-
-        if not receipt or receipt['status'] != 1:
-            return jsonify({'error': 'Transaction failed or pending'}), 400
-            
-        if tx and tx['from'].lower() == g.current_user.address.lower():
-            expected_to = app.config['BSC']['RECEIVE_ADDRESS'].lower()
-            if not tx['to'] or tx['to'].lower() != expected_to:
-                return jsonify({'error': 'Incorrect recipient'}), 400
-        else:
-            return jsonify({'error': 'Invalid transaction'}), 400
-    except Exception as e:
-        print(f"Tx Error: {e}")
-        return jsonify({'error': 'Verification failed'}), 400
+    if tx_hash:
+        is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
     
     # 3. XSS Clean
     clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
@@ -517,6 +762,7 @@ def create_post():
         images=json.dumps(data.get('images', [])),
         author_id=g.current_user.id,
         tx_hash=tx_hash,
+        ipfs_cid=ipfs_cid,
         is_paid=True,
         post_type=p_type
     )
@@ -539,7 +785,16 @@ def get_post_detail(post_id):
                 current_user_id = data['user_id']
             except: pass
             
-        return jsonify(post.to_dict(current_user_id))
+        post_data = post.to_dict(current_user_id)
+        
+        # Manually fetch comments to build tree (or rely on recursive to_dict if we implemented it)
+        # Since I updated Comment.to_dict(recursive=True), let's use that but we need to structure it.
+        # Actually, let's just fetch top-level comments and let them recurse.
+        top_level_comments = Comment.query.filter_by(post_id=post_id, parent_id=None).order_by(Comment.created_at.desc()).all()
+        post_data['comments'] = [c.to_dict(recursive=True) for c in top_level_comments]
+        post_data['comments_count'] = post.comments.count() # Total count
+            
+        return jsonify(post_data)
     except Exception as e:
         print(f"Post Detail Error: {e}")
         return jsonify({'error': 'Failed to load post'}), 500
@@ -580,11 +835,48 @@ def add_comment(post_id):
 
     data = request.get_json()
     content = data.get('content')
+    parent_id = data.get('parent_id')
+    
     if not content: return jsonify({'error': 'Content empty'}), 400
     
-    comment = Comment(content=content, author_id=g.current_user.id, post_id=post.id)
+    # Verify parent exists if provided
+    if parent_id:
+        parent = Comment.query.get(parent_id)
+        if not parent or parent.post_id != post_id:
+            return jsonify({'error': 'Invalid parent comment'}), 400
+    
+    comment = Comment(content=content, author_id=g.current_user.id, post_id=post.id, parent_id=parent_id)
     db.session.add(comment)
     db.session.commit()
+    
+    # Notification Logic
+    try:
+        if parent_id:
+            # Reply to comment
+            parent_comment = Comment.query.get(parent_id)
+            if parent_comment.author_id != g.current_user.id:
+                notif = Notification(
+                    user_id=parent_comment.author_id,
+                    sender_id=g.current_user.id,
+                    post_id=post.id,
+                    comment_id=comment.id,
+                    type='reply'
+                )
+                db.session.add(notif)
+        elif post.author_id != g.current_user.id:
+            # Comment on post
+            notif = Notification(
+                user_id=post.author_id,
+                sender_id=g.current_user.id,
+                post_id=post.id,
+                comment_id=comment.id,
+                type='comment'
+            )
+            db.session.add(notif)
+        db.session.commit()
+    except Exception as e:
+        print(f"Notification Error: {e}")
+
     return jsonify({'message': 'Comment added', 'comment': comment.to_dict()}), 201
 
 @app.route('/api/posts/<int:post_id>/like', methods=['POST'])
@@ -599,6 +891,15 @@ def like_post(post_id):
         else:
             db.session.add(Like(user_id=g.current_user.id, post_id=post.id))
             msg = 'Liked'
+            # Notification
+            if post.author_id != g.current_user.id:
+                notif = Notification(
+                    user_id=post.author_id,
+                    sender_id=g.current_user.id,
+                    post_id=post.id,
+                    type='like'
+                )
+                db.session.add(notif)
         db.session.commit()
         return jsonify({'message': msg})
     except Exception as e:
@@ -638,6 +939,29 @@ def upload():
     if url:
         return jsonify({'url': url})
     return jsonify({'error': 'Upload failed'}), 500
+
+@app.route('/api/upload/ipfs', methods=['POST'])
+@token_required
+def upload_ipfs():
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+        
+    # Add metadata
+    data['pinned_by'] = g.current_user.username or g.current_user.address
+    data['pinned_at'] = datetime.utcnow().isoformat()
+    
+    cid = upload_to_pinata(data)
+    if cid:
+        return jsonify({'cid': cid})
+    
+    # Fallback for dev if no keys
+    if app.config.get('DEBUG') or not PINATA_API_KEY:
+         # Generate mock CID
+         mock_cid = 'Qm' + secrets.token_hex(22)
+         return jsonify({'cid': mock_cid, 'mock': True})
+         
+    return jsonify({'error': 'IPFS upload failed'}), 500
 
 # --- Admin & Debug ---
 

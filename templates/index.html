@@ -193,8 +193,24 @@
         <main>
             <div class="masonry-grid" id="postGrid"></div>
             <div id="loadingArea" style="text-align: center; padding: 2rem; color: var(--text-muted);">正在召唤灵体...</div>
+            <div id="loadMoreArea" style="text-align: center; padding: 1rem; display: none;">
+                <button class="btn btn-ghost" onclick="Post.loadMore()">⬇️ 召唤更多</button>
+            </div>
         </main>
     </div>
+
+    <!-- Footer with Legal Warning -->
+    <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+        <div style="max-width: 800px; margin: 0 auto;">
+            <p style="margin-bottom: 0.5rem;">⚠️ <b>法律风险警示</b></p>
+            <p style="margin-bottom: 1rem;">
+                本平台仅提供去中心化内容展示技术，不存储任何非法内容。所有 Web3 内容均存储于 IPFS 分布式网络，由发布者自行负责。<br>
+                请遵守《中华人民共和国网络安全法》及相关法律法规，严禁发布色情、暴力、恐怖主义及违反公序良俗的信息。<br>
+                任何违规内容将被管理员在前端屏蔽，并配合执法部门调查。区块链上的永久记录将成为不可篡改的法律证据。
+            </p>
+            <p>© 2026 诡境 (GuiHua) | <a href="#" onclick="Modal.open('donateModal')" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
+        </div>
+    </footer>
 
     <!-- 登录/注册 模态框 (仅 Web2) -->
     <div class="modal-overlay" id="loginModal">
@@ -247,6 +263,65 @@
                         <a href="#" onclick="Auth.toggleForm()" style="color: var(--text-secondary);">返回登录</a>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Stats Modal -->
+    <div class="modal-overlay" id="adminStatsModal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>📊 财富看板 (Admin)</h3>
+                <button class="modal-close" onclick="Modal.close('adminStatsModal')">&times;</button>
+            </div>
+            <div id="adminStatsBody" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <!-- Stats loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifications Modal -->
+    <div class="modal-overlay" id="notificationModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>🔔 灵界传音</h3>
+                <button class="modal-close" onclick="Modal.close('notificationModal')">&times;</button>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:1rem; align-items:center;">
+                <span style="font-size:0.8rem; color:var(--text-secondary);">最近收到的消息</span>
+                <button class="btn btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="Notification.readAll()">全部已读</button>
+            </div>
+            <div id="notificationList">
+                <!-- Loaded via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Donate Modal -->
+    <div class="modal-overlay" id="donateModal">
+        <div class="modal" style="text-align: center;">
+            <div class="modal-header">
+                <h3>☕ 赞赏站长</h3>
+                <button class="modal-close" onclick="Modal.close('donateModal')">&times;</button>
+            </div>
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🙏</div>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                如果您喜欢这个平台，欢迎打赏支持服务器和开发费用。<br>
+                您的支持是我们坚持下去的动力！
+            </p>
+            
+            <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC)</p>
+                <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
+                    <code style="color: var(--accent-purple); word-break: break-all;" id="donateAddress">0xYourReceiveAddressHere</code>
+                    <button class="btn btn-ghost" onclick="navigator.clipboard.writeText(document.getElementById('donateAddress').textContent); Toast.success('已复制');" style="padding: 0.2rem 0.5rem;">📋</button>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button class="btn btn-ghost" onclick="Donate.send(0.001)">💰 0.001 BNB</button>
+                <button class="btn btn-ghost" onclick="Donate.send(0.01)">💰 0.01 BNB</button>
+                <button class="btn btn-primary" onclick="Donate.send(0.1)">💎 0.1 BNB</button>
             </div>
         </div>
     </div>
@@ -453,27 +528,123 @@
             }
         };
 
+        const Notification = {
+            async load() {
+                if(!currentUser) return;
+                const res = await fetch(`${API_BASE}/notifications`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const data = await res.json();
+                
+                const list = document.getElementById('notificationList');
+                if(data.notifications && data.notifications.length > 0) {
+                    // Update badge logic if needed
+                    document.getElementById('notifBadge').style.display = data.notifications.some(n => !n.is_read) ? 'block' : 'none';
+                    
+                    list.innerHTML = data.notifications.map(n => `
+                        <div style="padding:0.8rem; border-bottom:1px solid var(--border-color); ${!n.is_read ? 'background:rgba(124,58,237,0.1);' : ''} cursor:pointer;" onclick="Notification.read(${n.id}, ${n.post_id})">
+                            <div style="font-size:0.9rem; margin-bottom:0.2rem;">
+                                <b>${n.sender.nickname}</b> ${n.type === 'like' ? '点赞了你的帖子' : (n.type === 'reply' ? '回复了你的评论' : '评论了你的帖子')}
+                            </div>
+                            <div style="font-size:0.8rem; color:var(--text-muted);">${n.post_title}</div>
+                            <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:0.3rem;">${new Date(n.created_at).toLocaleString()}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    list.innerHTML = '<div style="padding:1rem; text-align:center; color:var(--text-muted);">暂无消息</div>';
+                    document.getElementById('notifBadge').style.display = 'none';
+                }
+            },
+            
+            async read(id, postId) {
+                await fetch(`${API_BASE}/notifications/${id}/read`, {
+                    method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                this.load(); // Refresh list
+                Modal.close('notificationModal');
+                Modal.openDetail(postId);
+            },
+            
+            async readAll() {
+                await fetch(`${API_BASE}/notifications/read_all`, {
+                    method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                this.load();
+            }
+        };
+
         const Post = {
+            currentPage: 1,
+            totalPages: 1,
+            currentSort: 'new',
+            currentQuery: '',
+            isLoading: false,
+
             async load(params={}) {
+                if(this.isLoading) return;
+                this.isLoading = true;
+                
                 try {
-                    const q = new URLSearchParams(params).toString();
+                    // Reset if new search/sort
+                    if(params.sort || params.q !== undefined) {
+                        this.currentPage = 1;
+                        document.getElementById('postGrid').innerHTML = '';
+                        this.currentSort = params.sort || 'new';
+                        this.currentQuery = params.q || '';
+                    }
+
+                    const qParams = new URLSearchParams();
+                    qParams.append('page', this.currentPage);
+                    qParams.append('sort', this.currentSort);
+                    if(this.currentQuery) qParams.append('q', this.currentQuery);
+
                     const headers = {};
                     const token = localStorage.getItem('token');
                     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-                    const res = await fetch(`${API_BASE}/posts?${q}`, { headers });
+                    // If searching, use search endpoint (Wait, search endpoint also needs pagination? app.py search is simple limit 20. Let's stick to simple search for now or update it later. The user asked for pagination on main list primarily.)
+                    // Actually, let's just use /api/posts with q param if we merged search logic? No, app.py has separate /api/search.
+                    // Let's modify logic: if query is present, use search (no pagination yet in search endpoint). If not, use /api/posts (with pagination).
+                    
+                    let endpoint = `${API_BASE}/posts`;
+                    if (this.currentQuery) endpoint = `${API_BASE}/search`;
+                    
+                    const res = await fetch(`${endpoint}?${qParams.toString()}`, { headers });
                     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                     
                     const data = await res.json();
+                    
                     if (data.posts) {
-                        UI.renderPosts(data.posts);
-                    } else {
-                        throw new Error('Invalid data format');
+                        if(this.currentPage === 1) document.getElementById('postGrid').innerHTML = '';
+                        UI.renderPosts(data.posts, this.currentPage > 1);
+                        
+                        // Update Pagination State
+                        if(data.pages) {
+                            this.totalPages = data.pages;
+                            const loadMore = document.getElementById('loadMoreArea');
+                            if(this.currentPage < this.totalPages) {
+                                loadMore.style.display = 'block';
+                            } else {
+                                loadMore.style.display = 'none';
+                            }
+                        }
                     }
                 } catch (e) {
                     console.error("Failed to load posts:", e);
-                    document.getElementById('loadingArea').innerHTML = 
-                        `<div style="color:var(--accent-red)">加载失败: ${e.message}<br><button class="btn btn-ghost" onclick="Post.load()">重试</button></div>`;
+                    if(this.currentPage === 1) {
+                        document.getElementById('loadingArea').innerHTML = 
+                            `<div style="color:var(--accent-red)">加载失败: ${e.message}<br><button class="btn btn-ghost" onclick="Post.load()">重试</button></div>`;
+                    }
+                } finally {
+                    this.isLoading = false;
+                    document.getElementById('loadingArea').style.display = 'none';
+                }
+            },
+            
+            loadMore() {
+                if(this.currentPage < this.totalPages) {
+                    this.currentPage++;
+                    this.load();
                 }
             },
             
@@ -505,6 +676,38 @@
                     userMenu.style.display = 'flex';
                     document.getElementById('userDisplayName').textContent = currentUser.nickname;
                     
+                    // Notification Badge
+                    let notifBtn = document.getElementById('notifBtn');
+                    if(!notifBtn) {
+                        notifBtn = document.createElement('div');
+                        notifBtn.id = 'notifBtn';
+                        notifBtn.style.position = 'relative';
+                        notifBtn.style.cursor = 'pointer';
+                        notifBtn.style.marginRight = '0.5rem';
+                        notifBtn.innerHTML = '<span style="font-size:1.2rem;">🔔</span><div id="notifBadge" style="position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:var(--accent-red); border-radius:50%; display:none;"></div>';
+                        notifBtn.onclick = () => { Modal.open('notificationModal'); Notification.load(); };
+                        const logoutBtn = document.getElementById('logoutBtn');
+                        // Insert before avatar if possible, or before logout
+                        const avatarBtn = document.getElementById('userAvatarBtn');
+                        avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
+                    }
+                    // Load notifs to check badge
+                    Notification.load();
+                    
+                    // Profile Link
+                    let profileLink = document.getElementById('profileLink');
+                    if(!profileLink) {
+                        profileLink = document.createElement('a');
+                        profileLink.id = 'profileLink';
+                        profileLink.className = 'btn btn-ghost';
+                        profileLink.style.padding = '0.3rem 0.6rem';
+                        profileLink.style.fontSize = '0.8rem';
+                        profileLink.textContent = '👤 我的主页';
+                        profileLink.href = `/profile.html?user=${currentUser.username || currentUser.address}`;
+                        const logoutBtn = document.getElementById('logoutBtn');
+                        logoutBtn.parentNode.insertBefore(profileLink, logoutBtn);
+                    }
+
                     // Bind Wallet Button Logic
                     let bindBtn = document.getElementById('bindWalletBtn');
                     if(!bindBtn) {
@@ -526,6 +729,22 @@
                         bindBtn.style.display = 'none';
                     } else {
                         bindBtn.style.display = 'inline-flex';
+                    }
+
+                    if(currentUser.is_admin) {
+                        // Admin Stats Button
+                        let statsBtn = document.getElementById('adminStatsBtn');
+                        if(!statsBtn) {
+                            statsBtn = document.createElement('button');
+                            statsBtn.id = 'adminStatsBtn';
+                            statsBtn.className = 'btn btn-ghost';
+                            statsBtn.style.color = 'var(--accent-gold)';
+                            statsBtn.style.borderColor = 'var(--accent-gold)';
+                            statsBtn.textContent = '📊 看板';
+                            statsBtn.onclick = Admin.openStats;
+                            const logoutBtn = document.getElementById('logoutBtn');
+                            logoutBtn.parentNode.insertBefore(statsBtn, logoutBtn);
+                        }
                     }
 
                     if(currentUser.avatar) {
@@ -561,18 +780,30 @@
                 }
             },
 
-            renderPosts(posts) {
+            renderPosts(posts, append=false) {
                 const grid = document.getElementById('postGrid');
-                grid.innerHTML = posts.map(p => {
+                const html = posts.map(p => {
                     const imgUrl = p.cover_image || (p.images && p.images.length ? p.images[0] : null);
                     const img = imgUrl ? `<img src="${imgUrl}" class="post-image" loading="lazy">` : '';
                     
                     let content = p.content;
-                    // ... (repost logic kept same)
+                    if (p.original_post_id && p.original_post) {
+                     const original = p.original_post;
+                     content = `<div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.5rem;">🔄 转发了 <b>${original.author.nickname}</b></div>` +
+                               `<div style="padding:0.5rem; background:var(--bg-secondary); border-radius:4px; margin-bottom:0.5rem;">` + 
+                               `<div style="font-weight:600;">${original.title}</div>` +
+                               `</div>` + 
+                               (p.repost_comment || '');
+                    }
+
+                    const isWeb3 = p.post_type === 1 || p.tx_hash;
+                    const borderStyle = isWeb3 ? 'border: 1px solid var(--accent-gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);' : '';
+                    const badge = isWeb3 ? '<div style="position:absolute; top:10px; right:10px; background:linear-gradient(45deg, #FFD700, #FFA500); color:#000; padding:4px 8px; border-radius:4px; font-size:0.7rem; font-weight:800; z-index:10; box-shadow:0 2px 5px rgba(0,0,0,0.2);">Web3 永存</div>' : '';
 
                     return `
                     <div class="masonry-item">
-                        <div class="post-card" onclick="Modal.openDetail(${p.id})">
+                        <div class="post-card" onclick="Modal.openDetail(${p.id})" style="${borderStyle}">
+                            ${badge}
                             ${img}
                             <div class="post-content">
                                 <div class="post-title">${p.title}</div>
@@ -582,13 +813,17 @@
                                         <span>${p.author.nickname}</span>
                                     </div>
                                     <div style="display:flex; gap:0.5rem; align-items:center;">
-                                        <span><i class="fas fa-heart"></i> ${p.likes_count}</span>
+                                        <span><i class="fas fa-heart" style="${p.is_liked ? 'color:var(--accent-red)' : ''}"></i> ${p.likes_count}</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>`;
                 }).join('');
+                
+                if(append) grid.insertAdjacentHTML('beforeend', html);
+                else grid.innerHTML = html;
+                
                 document.getElementById('loadingArea').style.display = 'none';
             },
 
@@ -603,6 +838,92 @@
                 document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
                 el.classList.add('active');
                 Post.load({sort});
+            }
+        };
+
+        const Admin = {
+            async openStats() {
+                Modal.open('adminStatsModal');
+                const body = document.getElementById('adminStatsBody');
+                body.innerHTML = '加载中...';
+                
+                try {
+                    const res = await fetch(`${API_BASE}/admin/stats`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json();
+                    
+                    if(data.error) throw new Error(data.error);
+                    
+                    body.innerHTML = `
+                        <div class="sidebar-card" style="grid-column: span 2; text-align: center;">
+                            <div style="font-size: 0.9rem; color: var(--text-secondary);">总营收 (估算)</div>
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-gold);">${data.revenue.total_bnb.toFixed(4)} BNB</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">单篇费用: ${data.revenue.fee_per_post} BNB</div>
+                        </div>
+                        
+                        <div class="sidebar-card">
+                            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">用户统计</div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <span>总用户:</span> <b>${data.users.total}</b>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <span>Web3 (钱包):</span> <span style="color: var(--accent-purple);">${data.users.web3}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Web2 (仅注册):</span> <span>${data.users.web2}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="sidebar-card">
+                            <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">帖子统计</div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <span>总帖子:</span> <b>${data.posts.total}</b>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
+                                <span>Web3 (永存):</span> <span style="color: var(--accent-gold);">${data.posts.web3}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Web2 (普通):</span> <span>${data.posts.web2}</span>
+                            </div>
+                        </div>
+                    `;
+                } catch(e) {
+                    body.innerHTML = `<div style="color: var(--accent-red);">加载失败: ${e.message}</div>`;
+                }
+            }
+        };
+
+        const Donate = {
+            async send(amount) {
+                if (window.ethereum || window.BinanceChain) {
+                    try {
+                        const provider = window.BinanceChain || window.ethereum;
+                        const web3 = new Web3(provider);
+                        const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                        const from = accounts[0];
+                        
+                        // Get config for address
+                        const cRes = await fetch(`${API_BASE}/config/fees`);
+                        const config = await cRes.json();
+                        
+                        await provider.request({
+                            method: 'eth_sendTransaction',
+                            params: [{
+                                to: config.receive_address,
+                                from: from,
+                                value: web3.utils.toHex(web3.utils.toWei(String(amount), 'ether')),
+                                chainId: config.chain_id
+                            }]
+                        });
+                        Toast.success(`感谢您的 ${amount} BNB 打赏！🙏`);
+                        Modal.close('donateModal');
+                    } catch(e) {
+                        Toast.error('打赏取消或失败');
+                    }
+                } else {
+                    Toast.error('请安装钱包进行打赏');
+                }
             }
         };
 
@@ -630,12 +951,24 @@
                     `;
                 }
 
-                const commentsHtml = p.comments.map(c => `
-                    <div class="comment-item">
-                        <div class="comment-header"><span>${c.author.nickname}</span><span>${new Date(c.created_at).toLocaleDateString()}</span></div>
-                        <div>${c.content}</div>
-                    </div>
-                `).join('');
+                // Recursive function to render comments
+                const renderComments = (comments, depth=0) => {
+                    if (!comments || comments.length === 0) return '';
+                    
+                    return comments.map(c => `
+                        <div class="comment-item" style="margin-left: ${depth * 20}px; border-left: ${depth > 0 ? '2px solid var(--border-color)' : 'none'}; padding-left: ${depth > 0 ? '1rem' : '0'};">
+                            <div class="comment-header">
+                                <span>${c.author.nickname}</span>
+                                <span>${new Date(c.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">${c.content}</div>
+                            <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, '${c.author.nickname}')">↩ 回复</button>
+                            ${c.replies ? renderComments(c.replies, depth + 1) : ''}
+                        </div>
+                    `).join('');
+                };
+
+                const commentsHtml = renderComments(p.comments);
 
                 let adminControls = '';
                 if (currentUser && currentUser.is_admin) {
@@ -677,9 +1010,14 @@
                     <div class="comments-section">
                         <h4>评论</h4>
                         <div style="margin-bottom:1rem;">${commentsHtml}</div>
-                        <div style="display:flex; gap:0.5rem;">
-                            <input type="text" id="commentInput" class="form-input" placeholder="${p.allow_comments ? '发表评论...' : '评论区已关闭'}" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>
-                            <button class="btn btn-primary" onclick="Interact.comment(${p.id})" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>发送</button>
+                        <div style="display:flex; gap:0.5rem; flex-direction: column;">
+                            <div id="replyTarget" style="display: none; font-size: 0.8rem; color: var(--accent-purple); padding: 0.2rem 0;">
+                                回复 @<span id="replyTargetName"></span> <button class="btn btn-ghost" style="padding: 0 0.3rem; height: auto;" onclick="Interact.cancelReply()">✕</button>
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <input type="text" id="commentInput" class="form-input" placeholder="${p.allow_comments ? '发表评论...' : '评论区已关闭'}" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>
+                                <button class="btn btn-primary" onclick="Interact.comment(${p.id})" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>发送</button>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -687,15 +1025,39 @@
         };
         
         const Interact = {
+            currentReplyParentId: null,
+            
+            replyTo(postId, commentId, username) {
+                this.currentReplyParentId = commentId;
+                document.getElementById('replyTarget').style.display = 'block';
+                document.getElementById('replyTargetName').textContent = username;
+                document.getElementById('commentInput').focus();
+                document.getElementById('commentInput').placeholder = `回复 @${username}...`;
+            },
+            
+            cancelReply() {
+                this.currentReplyParentId = null;
+                document.getElementById('replyTarget').style.display = 'none';
+                document.getElementById('commentInput').placeholder = '发表评论...';
+            },
+
             async like(id) { await this.do(`${API_BASE}/posts/${id}/like`); Modal.openDetail(id); },
             async bookmark(id) { await this.do(`${API_BASE}/posts/${id}/bookmark`); Modal.openDetail(id); },
             async comment(id) {
                 const c = document.getElementById('commentInput').value;
                 if(!c) return;
+                
+                const body = { content: c };
+                if (this.currentReplyParentId) {
+                    body.parent_id = this.currentReplyParentId;
+                }
+                
                 await fetch(`${API_BASE}/posts/${id}/comments`, {
                     method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}`},
-                    body: JSON.stringify({content: c})
+                    body: JSON.stringify(body)
                 });
+                
+                this.cancelReply(); // Reset
                 Modal.openDetail(id);
             },
             async do(url) {
@@ -753,6 +1115,17 @@
                 e.preventDefault();
                 Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
             };
+            
+            // Search Listener
+            let searchTimeout;
+            document.getElementById('searchInput').addEventListener('input', (e) => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    const q = e.target.value.trim();
+                    if (q) Post.load({q});
+                    else Post.load();
+                }, 500);
+            });
             
             // Logout
             document.getElementById('logoutBtn').onclick = () => Auth.logout();
