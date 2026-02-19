@@ -2,163 +2,13 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#7c3aed">
     <title>诡话 - 创作者工作室</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/web3/1.10.0/web3.min.js" integrity="sha512-+vNl8ghvD2fPZ1XJkZk3/Jj+vbWqT0UeFfH8p1XZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQZq1XqQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <style>
-        /* ============== 基础重置与变量 ============== */
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --bg-primary: #0a0a0f; --bg-secondary: #12121a; --bg-card: #1a1a25; --bg-hover: #222230;
-            --text-primary: #e5e5e5; --text-secondary: #8b8b9e; --text-muted: #5a5a6e;
-            --accent-purple: #7c3aed; --accent-purple-light: #a78bfa; --accent-purple-dark: #5b21b6;
-            --accent-green: #10b981; --accent-red: #ef4444; --accent-orange: #f59e0b; --accent-gold: #ffd700;
-            --border-color: #2d2d3d;
-            --radius-sm: 6px; --radius-md: 12px; --radius-lg: 16px; --radius-full: 9999px;
-            --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; line-height: 1.6;
-        }
-
-        /* ============== 滚动条 ============== */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
-        ::-webkit-scrollbar-thumb { background: var(--accent-purple-dark); border-radius: var(--radius-full); }
-
-        /* ============== 鬼火动画 ============== */
-        @keyframes floatUp {
-            0% { transform: translateY(100vh) scale(0); opacity: 0; }
-            10% { opacity: 0.8; }
-            90% { opacity: 0.8; }
-            100% { transform: translateY(-100vh) scale(1); opacity: 0; }
-        }
-        .ghost-fire-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 0; overflow: hidden; }
-        .ghost-fire {
-            position: absolute; width: 4px; height: 4px; background: var(--accent-green); border-radius: 50%;
-            box-shadow: 0 0 10px var(--accent-green), 0 0 20px var(--accent-green);
-            animation: floatUp linear infinite;
-        }
-
-        /* ============== 导航栏 ============== */
-        .navbar {
-            position: sticky; top: 0; background: rgba(10, 10, 15, 0.95); backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border-color); padding: 0.75rem 1.5rem; z-index: 100;
-            display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-        }
-        .logo { display: flex; align-items: center; gap: 0.5rem; font-size: 1.5rem; font-weight: 700; color: var(--accent-purple); text-decoration: none; }
-        
-        /* 搜索框 */
-        .search-container { flex: 1; max-width: 500px; position: relative; }
-        .search-input {
-            width: 100%; padding: 0.65rem 1rem 0.65rem 2.8rem; background: var(--bg-secondary);
-            border: 1px solid var(--border-color); border-radius: var(--radius-full); color: var(--text-primary);
-        }
-        .search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.6; }
-
-        /* 按钮与菜单 */
-        .nav-actions { display: flex; align-items: center; gap: 0.75rem; }
-        .btn {
-            padding: 0.5rem 1.1rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500;
-            cursor: pointer; transition: all 0.3s; border: none; display: inline-flex; align-items: center; gap: 0.35rem;
-            color: white; text-decoration: none;
-        }
-        .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); }
-        .btn-ghost:hover { border-color: var(--accent-purple); color: var(--text-primary); }
-        .btn-primary { background: var(--accent-purple); }
-        .btn-primary:hover { background: var(--accent-purple-dark); }
-        
-        .user-avatar { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--accent-purple); cursor: pointer; }
-        
-        /* ============== 布局 ============== */
-        .main-container {
-            max-width: 1200px; margin: 0 auto; padding: 1.5rem; display: grid; grid-template-columns: 200px 1fr; gap: 1.5rem; position: relative; z-index: 2;
-        }
-        @media (max-width: 900px) { .main-container { grid-template-columns: 1fr; } .sidebar { display: none; } }
-
-        /* 侧边栏 */
-        .sidebar-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--border-color); }
-        .nav-item { padding: 0.7rem; cursor: pointer; color: var(--text-secondary); display: flex; gap: 0.6rem; border-radius: var(--radius-sm); }
-        .nav-item:hover, .nav-item.active { background: var(--bg-hover); color: var(--text-primary); }
-        .nav-item.active { color: var(--accent-purple-light); }
-
-        /* 瀑布流 */
-        .masonry-grid { column-count: 3; column-gap: 1rem; }
-        @media (max-width: 1000px) { .masonry-grid { column-count: 2; } }
-        @media (max-width: 600px) { .masonry-grid { column-count: 1; } }
-        
-        .masonry-item { break-inside: avoid; margin-bottom: 1rem; }
-        .post-card {
-            background: var(--bg-card); border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border-color);
-            transition: transform 0.3s; cursor: pointer;
-        }
-        .post-card:hover { transform: translateY(-4px); border-color: var(--accent-purple); }
-        .post-image { width: 100%; display: block; }
-        .post-content { padding: 1rem; }
-        .post-title { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
-        .post-meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; }
-
-        /* ============== 模态框 ============== */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85);
-            display: none; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px);
-        }
-        .modal-overlay.active { display: flex; }
-        .modal {
-            background: var(--bg-card); border-radius: var(--radius-lg); width: 90%; max-width: 500px;
-            max-height: 90vh; overflow-y: auto; border: 1px solid var(--border-color); padding: 1.5rem;
-        }
-        .modal-header { display: flex; justify-content: space-between; margin-bottom: 1rem; align-items: center; }
-        .modal-close { background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; }
-        
-        .form-group { margin-bottom: 1rem; }
-        .form-label { display: block; margin-bottom: 0.4rem; font-size: 0.85rem; color: var(--text-secondary); }
-        .form-input {
-            width: 100%; padding: 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm); color: var(--text-primary);
-        }
-        
-        /* 详情页样式 */
-        .post-detail-modal .modal { max-width: 800px; }
-        .post-detail-content { padding: 1rem 0; font-size: 1rem; line-height: 1.8; }
-        .post-detail-images img { max-width: 100%; border-radius: var(--radius-md); margin-bottom: 0.5rem; }
-        
-        /* 评论区 */
-        .comments-section { margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem; }
-        .comment-item { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--bg-secondary); }
-        .comment-header { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem; }
-        
-        /* Toast */
-        .toast-container { position: fixed; top: 80px; right: 20px; z-index: 2000; }
-        .toast { background: var(--bg-card); border: 1px solid var(--border-color); padding: 0.8rem 1.2rem; border-radius: var(--radius-md); margin-bottom: 0.5rem; color: white; }
-        .toast.success { border-color: var(--accent-green); color: var(--accent-green); }
-        .toast.error { border-color: var(--accent-red); color: var(--accent-red); }
-        
-        /* Studio Specific */
-        .sidebar-card { background: rgba(26, 26, 37, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: var(--shadow-card); }
-        .form-input { background: rgba(18, 18, 26, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); transition: all 0.3s; }
-        .form-input:focus { border-color: var(--accent-purple); box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2); }
-        
-        .tool-btn {
-            background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary);
-            padding: 0.4rem 0.8rem; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s;
-        }
-        .tool-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent-purple); }
-        
-        .loading-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(10, 10, 15, 0.9);
-            display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 9999;
-        }
-        .loading-overlay.active { display: flex; }
-        .loading-spinner {
-            width: 50px; height: 50px; border: 3px solid rgba(124, 58, 237, 0.3);
-            border-radius: 50%; border-top-color: var(--accent-purple);
-            animation: spin 1s ease-in-out infinite; margin-bottom: 1rem;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
 </head>
 <body>
     <div class="ghost-fire-container" id="ghostFireContainer"></div>
@@ -169,8 +19,8 @@
         <p style="color:var(--text-secondary); font-size:0.9rem;">请在钱包中确认交易...</p>
     </div>
 
-    <nav class="navbar">
-        <a href="/" class="logo"><span>👻</span> 诡话 (Web3)</a>
+    <nav class="navbar glass">
+        <a href="/" class="logo"><span>👻</span> <span>诡话</span> <span style="font-size: 0.8em; opacity: 0.7; font-weight: 400;">Web3</span></a>
         
         <div class="search-container">
             <span class="search-icon">🔍</span>
@@ -178,9 +28,6 @@
         </div>
 
         <div class="nav-actions">
-            <!-- 创作者入口 -->
-            <!-- <button class="btn btn-ghost" ...> -->
-
             <div id="authButtons">
                 <button class="btn btn-primary" onclick="Modal.open('loginModal')">登录 / 注册</button>
             </div>
@@ -188,7 +35,9 @@
             <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
                 <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" />
-                <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">退出</button>
+                <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
             </div>
         </div>
     </nav>
@@ -196,7 +45,7 @@
     <!-- Main Content -->
     <div class="main-container" id="studioView">
         <aside class="sidebar">
-            <div class="sidebar-card" style="text-align: center;">
+            <div class="sidebar-card glass" style="text-align: center;">
                 <div style="width: 80px; height: 80px; background: #333; border-radius: 50%; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-size: 2rem;">🧙‍♂️</div>
                 <h3 id="studioAddrDisplay" style="margin-bottom: 0.5rem;">0x...</h3>
                 <div id="studioBadgeDisplay" style="color: var(--accent-gold); font-size: 0.9rem; margin-bottom: 1rem; display: none;">🎖️ 资深探员</div>
@@ -209,13 +58,13 @@
                 </div>
             </div>
             
-            <div class="sidebar-card">
+            <div class="sidebar-card glass">
                 <button class="btn btn-ghost" onclick="window.location.href='/'" style="width: 100%;">🔙 返回浏览</button>
             </div>
         </aside>
         
         <main>
-            <div class="sidebar-card" style="padding: 2rem;">
+            <div class="sidebar-card glass" style="padding: 2rem;">
                 <h2 style="margin-bottom: 1.5rem;">发布新怪谈</h2>
                 
                 <div class="form-group">
@@ -225,14 +74,14 @@
                 
                 <div class="form-group">
                     <label class="form-label">正文内容</label>
-                    <div class="toolbar">
+                    <div class="toolbar" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
                         <button class="tool-btn" onclick="Editor.format('bold')"><b>B</b></button>
                         <button class="tool-btn" onclick="Editor.format('italic')"><i>I</i></button>
                         <label class="tool-btn" style="cursor: pointer;">
                             📷 <input type="file" style="display: none;" onchange="Editor.uploadImage(this)">
                         </label>
                     </div>
-                    <div id="studioPostContent" class="form-input form-textarea" contenteditable="true" style="overflow-y: auto;"></div>
+                    <div id="studioPostContent" class="form-input" contenteditable="true" style="overflow-y: auto; min-height: 200px;"></div>
                 </div>
                 
                 <div class="form-group">
@@ -275,7 +124,7 @@
 
     <!-- 登录/注册 模态框 (仅 Web2) -->
     <div class="modal-overlay" id="loginModal">
-        <div class="modal">
+        <div class="modal glass">
             <div class="modal-header">
                 <h3>🚪 入境方式 (Web2)</h3>
                 <button class="modal-close" onclick="Modal.close('loginModal')">&times;</button>
@@ -321,7 +170,7 @@
 
     <!-- 详情模态框 -->
     <div class="modal-overlay post-detail-modal" id="postDetailModal">
-        <div class="modal">
+        <div class="modal glass">
             <div class="modal-header">
                 <h3>📖 档案</h3>
                 <button class="modal-close" onclick="Modal.close('postDetailModal')">&times;</button>
@@ -333,7 +182,7 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
-        const API_BASE = '/api'; // Fixed relative path
+        const API_BASE = '/api'; 
         let currentUser = null;
 
         const Auth = {
@@ -406,7 +255,6 @@
                 UI.updateAuth();
                 Modal.close('loginModal');
                 Toast.success('认证成功');
-                // Refresh studio data if needed
                 if(currentUser.type === 'web3') {
                     const addr = currentUser.address;
                     document.getElementById('studioAddrDisplay').textContent = addr.substring(0,6) + '...' + addr.substring(38);
@@ -432,7 +280,6 @@
                 const formData = new FormData();
                 formData.append('file', file);
                 
-                // Show loading state
                 const btn = input.parentElement;
                 const originalText = btn.innerHTML;
                 btn.innerHTML = '📷 ...';
@@ -447,7 +294,6 @@
                     
                     if (data.url) {
                         this.format('insertImage', data.url);
-                        // Fix: insertImage doesn't take URL in some browsers, use manual insertion
                         document.execCommand('insertImage', false, data.url);
                     } else {
                         Toast.error(data.error || '上传失败');
@@ -466,7 +312,6 @@
                 const formData = new FormData();
                 formData.append('file', file);
                 
-                // Show loading
                 const btn = input.parentElement;
                 const originalText = btn.innerHTML;
                 btn.innerHTML = '上传中...';
@@ -519,7 +364,6 @@
             async uploadToIPFS(data) {
                 console.log("Uploading to IPFS...", data);
                 
-                // Update loading text
                 const loadingText = document.querySelector('#txLoading h3');
                 if(loadingText) loadingText.textContent = '正在存入 IPFS 永存网络...';
                 
@@ -554,7 +398,6 @@
                 const btn = document.getElementById('publishBtn');
                 if (btn.disabled) return;
                 
-                // Init Web3 with Binance support
                 if (window.BinanceChain) {
                     window.web3 = new Web3(window.BinanceChain);
                 } else if (window.ethereum) {
@@ -571,11 +414,9 @@
                 if(!coverImage) return Toast.error('请上传封面图');
 
                 try {
-                    // Lock UI
                     btn.disabled = true;
                     btn.textContent = '准备中...';
                     
-                    // Check Chain
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
                     
@@ -593,7 +434,6 @@
                         }
                     }
 
-                    // Pay Gas
                     document.getElementById('txLoading').classList.add('active');
                     document.querySelector('#txLoading h3').textContent = '正在上链支付...';
                     
@@ -607,10 +447,9 @@
                         }]
                     });
 
-                    // Wait for Receipt
                     document.querySelector('#txLoading h3').textContent = '正在确认交易...';
                     let receipt = null;
-                    for(let i=0; i<30; i++) { // Wait max 30 * 2s = 60s
+                    for(let i=0; i<30; i++) { 
                         try {
                             receipt = await window.web3.eth.getTransactionReceipt(txHash);
                             if(receipt && receipt.status) break;
@@ -622,11 +461,9 @@
                          throw new Error('交易未确认或失败');
                     }
                     
-                    // Force wait for RPC indexing (5s)
                     document.querySelector('#txLoading h3').textContent = '正在同步节点...';
                     await new Promise(r => setTimeout(r, 5000));
                     
-                    // Upload to IPFS
                     const ipfsData = {
                         title, content, cover_image: coverImage, 
                         author: currentUser.address,
@@ -634,7 +471,6 @@
                     };
                     const ipfsCid = await this.uploadToIPFS(ipfsData);
                     
-                    // Save to Backend
                     document.querySelector('#txLoading h3').textContent = '正在同步数据库...';
                     const res = await fetch(`${API_BASE}/posts`, {
                         method: 'POST',
@@ -704,28 +540,19 @@
                     if(currentUser.avatar) {
                         const avatarEl = document.getElementById('userAvatarBtn');
                         if (currentUser.avatar.length <= 5) {
-                            // Emoji avatar
-                            avatarEl.style.display = 'none'; // hide img
-                            // insert div if not exists
+                            avatarEl.style.display = 'none'; 
                             let emojiDiv = document.getElementById('userAvatarEmoji');
                             if(!emojiDiv) {
                                 emojiDiv = document.createElement('div');
                                 emojiDiv.id = 'userAvatarEmoji';
-                                emojiDiv.className = 'user-avatar';
-                                emojiDiv.style.display = 'flex';
-                                emojiDiv.style.alignItems = 'center';
-                                emojiDiv.style.justifyContent = 'center';
-                                emojiDiv.style.background = 'var(--bg-secondary)';
-                                emojiDiv.style.fontSize = '1.2rem';
-                                emojiDiv.style.border = '2px solid var(--accent-purple)';
-                                emojiDiv.style.borderRadius = '50%';
+                                emojiDiv.className = 'user-avatar-emoji';
                                 emojiDiv.style.width = '36px';
                                 emojiDiv.style.height = '36px';
+                                emojiDiv.style.fontSize = '1.2rem';
                                 avatarEl.parentNode.insertBefore(emojiDiv, avatarEl);
                             }
                             emojiDiv.textContent = currentUser.avatar;
                         } else {
-                            // Image avatar
                             avatarEl.src = currentUser.avatar;
                             avatarEl.style.display = 'block';
                             const emojiDiv = document.getElementById('userAvatarEmoji');
@@ -753,7 +580,7 @@
                 }
                     return `
                     <div class="masonry-item">
-                        <div class="post-card" onclick="Modal.openDetail(${p.id})">
+                        <div class="post-card glass" onclick="Modal.openDetail(${p.id})">
                             ${img}
                             <div class="post-content">
                                 <div class="post-title">${p.title}</div>
@@ -878,7 +705,6 @@
                 Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
             };
             
-            // Logout
             const logoutBtn = document.getElementById('logoutBtn');
             if(logoutBtn) logoutBtn.onclick = () => Auth.logout();
         });

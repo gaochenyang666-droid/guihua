@@ -2,159 +2,20 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#7c3aed">
     <title>诡话 - 灵异事件分享平台 (Web2)</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css">
     <!-- 引入 FontAwesome 和 Web3.js -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
-    <style>
-        /* ============== 基础重置与变量 ============== */
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --bg-primary: #0a0a0f; --bg-secondary: #12121a; --bg-card: #1a1a25; --bg-hover: #222230;
-            --text-primary: #e5e5e5; --text-secondary: #8b8b9e; --text-muted: #5a5a6e;
-            --accent-purple: #7c3aed; --accent-purple-light: #a78bfa; --accent-purple-dark: #5b21b6;
-            --accent-green: #10b981; --accent-red: #ef4444; --accent-orange: #f59e0b;
-            --border-color: #2d2d3d;
-            --radius-sm: 6px; --radius-md: 12px; --radius-lg: 16px; --radius-full: 9999px;
-            --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; line-height: 1.6;
-        }
-
-        /* ============== 滚动条 ============== */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
-        ::-webkit-scrollbar-thumb { background: var(--accent-purple-dark); border-radius: var(--radius-full); }
-
-        /* ============== 鬼火动画 ============== */
-        @keyframes floatUp {
-            0% { transform: translateY(100vh) scale(0); opacity: 0; }
-            10% { opacity: 0.8; }
-            90% { opacity: 0.8; }
-            100% { transform: translateY(-100vh) scale(1); opacity: 0; }
-        }
-        .ghost-fire-container { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 0; overflow: hidden; }
-        .ghost-fire {
-            position: absolute; width: 4px; height: 4px; background: var(--accent-green); border-radius: 50%;
-            box-shadow: 0 0 10px var(--accent-green), 0 0 20px var(--accent-green);
-            animation: floatUp linear infinite;
-        }
-
-        /* ============== 导航栏 ============== */
-        .navbar {
-            position: sticky; top: 0; background: rgba(10, 10, 15, 0.95); backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border-color); padding: 0.75rem 1.5rem; z-index: 100;
-            display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-        }
-        .logo { display: flex; align-items: center; gap: 0.5rem; font-size: 1.5rem; font-weight: 700; color: var(--accent-purple); text-decoration: none; }
-        
-        /* 搜索框 */
-        .search-container { flex: 1; max-width: 500px; position: relative; }
-        .search-input {
-            width: 100%; padding: 0.65rem 1rem 0.65rem 2.8rem; background: var(--bg-secondary);
-            border: 1px solid var(--border-color); border-radius: var(--radius-full); color: var(--text-primary);
-        }
-        .search-icon { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.6; }
-
-        /* 按钮与菜单 */
-        .nav-actions { display: flex; align-items: center; gap: 0.75rem; }
-        .btn {
-            padding: 0.5rem 1.1rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500;
-            cursor: pointer; transition: all 0.3s; border: none; display: inline-flex; align-items: center; gap: 0.35rem;
-            color: white; text-decoration: none;
-        }
-        .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); }
-        .btn-ghost:hover { border-color: var(--accent-purple); color: var(--text-primary); }
-        .btn-primary { background: var(--accent-purple); }
-        .btn-primary:hover { background: var(--accent-purple-dark); }
-        
-        .user-avatar { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--accent-purple); cursor: pointer; }
-        
-        /* ============== 布局 ============== */
-        .main-container {
-            max-width: 1200px; margin: 0 auto; padding: 1.5rem; display: grid; grid-template-columns: 200px 1fr; gap: 1.5rem; position: relative; z-index: 2;
-        }
-        @media (max-width: 900px) { 
-            .main-container { grid-template-columns: 1fr; padding: 1rem; } 
-            .sidebar { display: none; } 
-            .navbar { padding: 0.75rem 1rem; }
-            .search-container { display: none; } /* Hide search on mobile for space */
-            .logo { font-size: 1.2rem; }
-            .btn { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
-        }
-
-        /* 侧边栏 */
-        .sidebar-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--border-color); }
-        .nav-item { padding: 0.7rem; cursor: pointer; color: var(--text-secondary); display: flex; gap: 0.6rem; border-radius: var(--radius-sm); }
-        .nav-item:hover, .nav-item.active { background: var(--bg-hover); color: var(--text-primary); }
-        .nav-item.active { color: var(--accent-purple-light); }
-
-        /* 瀑布流 */
-        .masonry-grid { column-count: 2; column-gap: 1.5rem; }
-        @media (max-width: 600px) { .masonry-grid { column-count: 1; } }
-        
-        .masonry-item { break-inside: avoid; margin-bottom: 1.5rem; }
-        .post-card {
-            background: var(--bg-card); border-radius: 16px; overflow: hidden; border: 1px solid var(--border-color);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; position: relative; display: flex; flex-direction: column;
-        }
-        .post-card:hover { transform: translateY(-4px); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); border-color: var(--accent-purple); }
-        
-        .post-image { width: 100%; display: block; object-fit: cover; aspect-ratio: 3/4; background: var(--bg-secondary); }
-        .post-content { padding: 1rem; flex: 1; display: flex; flex-direction: column; }
-        .post-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; line-height: 1.4; color: var(--text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .post-meta { display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-top: auto; }
-        .author-info { display: flex; align-items: center; gap: 0.5rem; }
-        .author-avatar { width: 20px; height: 20px; border-radius: 50%; background: #333; }
-
-        /* ============== 模态框 ============== */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85);
-            display: none; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(4px);
-        }
-        .modal-overlay.active { display: flex; }
-        .modal {
-            background: var(--bg-card); border-radius: var(--radius-lg); width: 90%; max-width: 500px;
-            max-height: 90vh; overflow-y: auto; border: 1px solid var(--border-color); padding: 1.5rem;
-        }
-        .modal-header { display: flex; justify-content: space-between; margin-bottom: 1rem; align-items: center; }
-        .modal-close { background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; }
-        
-        .form-group { margin-bottom: 1rem; }
-        .form-label { display: block; margin-bottom: 0.4rem; font-size: 0.85rem; color: var(--text-secondary); }
-        .form-input {
-            width: 100%; padding: 0.75rem; background: var(--bg-secondary); border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm); color: var(--text-primary);
-        }
-        
-        /* 详情页样式 */
-        .post-detail-modal .modal { max-width: 800px; width: 95%; max-height: 95vh; padding: 1rem; }
-        .post-detail-content { padding: 1rem 0; font-size: 1rem; line-height: 1.8; }
-        .post-detail-content img { max-width: 100%; height: auto; }
-        .post-detail-images img { max-width: 100%; border-radius: var(--radius-md); margin-bottom: 0.5rem; }
-        
-        /* 评论区 */
-        .comments-section { margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem; }
-        .comment-item { margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--bg-secondary); }
-        .comment-header { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem; }
-        
-        /* Toast */
-        .toast-container { position: fixed; top: 80px; right: 20px; z-index: 2000; }
-        .toast { background: var(--bg-card); border: 1px solid var(--border-color); padding: 0.8rem 1.2rem; border-radius: var(--radius-md); margin-bottom: 0.5rem; color: white; }
-        .toast.success { border-color: var(--accent-green); color: var(--accent-green); }
-        .toast.error { border-color: var(--accent-red); color: var(--accent-red); }
-        
-        .auth-form { display: block; } /* Web2 only, no tabs needed */
-    </style>
 </head>
 <body>
     <div class="ghost-fire-container" id="ghostFireContainer"></div>
 
-    <nav class="navbar">
-        <a href="/" class="logo"><span>👻</span> 诡话 (Web2)</a>
+    <nav class="navbar glass">
+        <a href="/" class="logo"><span>👻</span> <span>诡话</span></a>
         
         <div class="search-container">
             <span class="search-icon">🔍</span>
@@ -163,30 +24,34 @@
 
         <div class="nav-actions">
             <!-- 创作者入口 -->
-            <button class="btn btn-ghost" style="color: var(--accent-green); border-color: var(--accent-green);" onclick="Auth.checkAndGoStudio()">🧙‍♂️ 创作者入口 (Web3)</button>
+            <button class="btn btn-ghost" style="color: var(--accent-green); border-color: var(--accent-green);" onclick="Auth.checkAndGoStudio()">
+                <i class="fas fa-magic"></i> <span>创作</span>
+            </button>
 
             <div id="authButtons">
-                <button class="btn btn-primary" onclick="Modal.open('loginModal')">登录 / 注册</button>
+                <button class="btn btn-primary" onclick="Modal.open('loginModal')">登录</button>
             </div>
 
             <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
                 <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" />
-                <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">退出</button>
+                <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
             </div>
         </div>
     </nav>
 
     <div class="main-container">
         <aside class="sidebar">
-            <div class="sidebar-card">
+            <div class="sidebar-card glass">
                 <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')">🔥 热门</div>
                 <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')">✨ 最新</div>
                 <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')">⭐ 收藏</div>
             </div>
-            <div class="sidebar-card" style="font-size: 0.85rem; color: var(--text-secondary);">
-                <p>👻 <b>Web3 内容映射</b>：所有内容均来自链上或 Web3 创作者。</p>
-                <p style="margin-top:0.5rem;">💬 <b>Web2 互动</b>：登录后可评论、点赞、收藏。</p>
+            <div class="sidebar-card glass" style="font-size: 0.85rem; color: var(--text-secondary); display: block;">
+                <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
+                <p>所有内容均来自链上或 Web3 创作者。</p>
             </div>
         </aside>
 
@@ -214,7 +79,7 @@
 
     <!-- 登录/注册 模态框 (仅 Web2) -->
     <div class="modal-overlay" id="loginModal">
-        <div class="modal">
+        <div class="modal glass">
             <div class="modal-header">
                 <h3>🚪 入境方式 (Web2)</h3>
                 <button class="modal-close" onclick="Modal.close('loginModal')">&times;</button>
@@ -269,7 +134,7 @@
 
     <!-- Admin Stats Modal -->
     <div class="modal-overlay" id="adminStatsModal">
-        <div class="modal" style="max-width: 600px;">
+        <div class="modal glass" style="max-width: 600px;">
             <div class="modal-header">
                 <h3>📊 财富看板 (Admin)</h3>
                 <button class="modal-close" onclick="Modal.close('adminStatsModal')">&times;</button>
@@ -282,7 +147,7 @@
 
     <!-- Notifications Modal -->
     <div class="modal-overlay" id="notificationModal">
-        <div class="modal">
+        <div class="modal glass">
             <div class="modal-header">
                 <h3>🔔 灵界传音</h3>
                 <button class="modal-close" onclick="Modal.close('notificationModal')">&times;</button>
@@ -299,7 +164,7 @@
 
     <!-- Donate Modal -->
     <div class="modal-overlay" id="donateModal">
-        <div class="modal" style="text-align: center;">
+        <div class="modal glass" style="text-align: center;">
             <div class="modal-header">
                 <h3>☕ 赞赏站长</h3>
                 <button class="modal-close" onclick="Modal.close('donateModal')">&times;</button>
@@ -328,7 +193,7 @@
 
     <!-- 详情模态框 -->
     <div class="modal-overlay post-detail-modal" id="postDetailModal">
-        <div class="modal">
+        <div class="modal glass">
             <div class="modal-header">
                 <h3>📖 档案</h3>
                 <button class="modal-close" onclick="Modal.close('postDetailModal')">&times;</button>
@@ -386,7 +251,6 @@
                     try {
                         accounts = await window.web3.eth.requestAccounts();
                     } catch (e) {
-                         // Fallback logic for Binance Chain or older providers
                          if (window.BinanceChain) {
                              accounts = await window.BinanceChain.request({ method: 'eth_requestAccounts' });
                          } else if (window.ethereum) {
@@ -399,30 +263,24 @@
                     if (!accounts || accounts.length === 0) return Toast.error('未检测到账户');
                     address = accounts[0];
                     
-                    // 1. Get Nonce
                     const resNonce = await fetch(`${API_BASE}/auth/nonce?address=${address}`);
                     const { nonce } = await resNonce.json();
                     
-                    // 2. Sign Message
                     const message = `Sign this message to login: ${nonce}`;
                     let signature;
                     
                     try {
-                        // Use personal_sign
-                        // Binance Wallet might need specific handling if web3 wrapper fails
                         if (window.BinanceChain) {
                              const res = await window.BinanceChain.request({
                                 method: 'personal_sign',
                                 params: [message, address] 
                              });
-                             // Binance Chain might return object with result or just string
                              signature = (typeof res === 'object' && res.result) ? res.result : res;
                         } else {
                              signature = await window.web3.eth.personal.sign(message, address, '');
                         }
                     } catch (err) {
                         console.error("Sign error:", err);
-                        // Try fallback parameter format for some wallets
                         try {
                              signature = await window.web3.eth.personal.sign(message, address);
                         } catch (e2) {
@@ -430,7 +288,6 @@
                         }
                     }
                     
-                    // 3. Verify
                     const resVerify = await fetch(`${API_BASE}/auth/verify`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -486,7 +343,6 @@
                     const accounts = await (window.ethereum || window.BinanceChain).request({ method: 'eth_requestAccounts' });
                     const address = accounts[0];
                     
-                    // Get nonce (reuse auth nonce endpoint)
                     const resNonce = await fetch(`${API_BASE}/auth/nonce?address=${address}`);
                     const { nonce } = await resNonce.json();
                     
@@ -538,7 +394,6 @@
                 
                 const list = document.getElementById('notificationList');
                 if(data.notifications && data.notifications.length > 0) {
-                    // Update badge logic if needed
                     document.getElementById('notifBadge').style.display = data.notifications.some(n => !n.is_read) ? 'block' : 'none';
                     
                     list.innerHTML = data.notifications.map(n => `
@@ -560,7 +415,7 @@
                 await fetch(`${API_BASE}/notifications/${id}/read`, {
                     method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
-                this.load(); // Refresh list
+                this.load(); 
                 Modal.close('notificationModal');
                 Modal.openDetail(postId);
             },
@@ -585,7 +440,6 @@
                 this.isLoading = true;
                 
                 try {
-                    // Reset if new search/sort
                     if(params.sort || params.q !== undefined) {
                         this.currentPage = 1;
                         document.getElementById('postGrid').innerHTML = '';
@@ -602,10 +456,6 @@
                     const token = localStorage.getItem('token');
                     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-                    // If searching, use search endpoint (Wait, search endpoint also needs pagination? app.py search is simple limit 20. Let's stick to simple search for now or update it later. The user asked for pagination on main list primarily.)
-                    // Actually, let's just use /api/posts with q param if we merged search logic? No, app.py has separate /api/search.
-                    // Let's modify logic: if query is present, use search (no pagination yet in search endpoint). If not, use /api/posts (with pagination).
-                    
                     let endpoint = `${API_BASE}/posts`;
                     if (this.currentQuery) endpoint = `${API_BASE}/search`;
                     
@@ -618,7 +468,6 @@
                         if(this.currentPage === 1) document.getElementById('postGrid').innerHTML = '';
                         UI.renderPosts(data.posts, this.currentPage > 1);
                         
-                        // Update Pagination State
                         if(data.pages) {
                             this.totalPages = data.pages;
                             const loadMore = document.getElementById('loadMoreArea');
@@ -676,7 +525,6 @@
                     userMenu.style.display = 'flex';
                     document.getElementById('userDisplayName').textContent = currentUser.nickname;
                     
-                    // Notification Badge
                     let notifBtn = document.getElementById('notifBtn');
                     if(!notifBtn) {
                         notifBtn = document.createElement('div');
@@ -686,15 +534,11 @@
                         notifBtn.style.marginRight = '0.5rem';
                         notifBtn.innerHTML = '<span style="font-size:1.2rem;">🔔</span><div id="notifBadge" style="position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:var(--accent-red); border-radius:50%; display:none;"></div>';
                         notifBtn.onclick = () => { Modal.open('notificationModal'); Notification.load(); };
-                        const logoutBtn = document.getElementById('logoutBtn');
-                        // Insert before avatar if possible, or before logout
                         const avatarBtn = document.getElementById('userAvatarBtn');
                         avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
                     }
-                    // Load notifs to check badge
                     Notification.load();
                     
-                    // Profile Link
                     let profileLink = document.getElementById('profileLink');
                     if(!profileLink) {
                         profileLink = document.createElement('a');
@@ -708,7 +552,6 @@
                         logoutBtn.parentNode.insertBefore(profileLink, logoutBtn);
                     }
 
-                    // Bind Wallet Button Logic
                     let bindBtn = document.getElementById('bindWalletBtn');
                     if(!bindBtn) {
                         bindBtn = document.createElement('button');
@@ -720,7 +563,6 @@
                         bindBtn.style.borderColor = 'var(--accent-orange)';
                         bindBtn.textContent = '🔗 绑定钱包';
                         bindBtn.onclick = Auth.bindWallet;
-                        // Insert before logout
                         const logoutBtn = document.getElementById('logoutBtn');
                         logoutBtn.parentNode.insertBefore(bindBtn, logoutBtn);
                     }
@@ -732,7 +574,6 @@
                     }
 
                     if(currentUser.is_admin) {
-                        // Admin Stats Button
                         let statsBtn = document.getElementById('adminStatsBtn');
                         if(!statsBtn) {
                             statsBtn = document.createElement('button');
@@ -750,24 +591,16 @@
                     if(currentUser.avatar) {
                         const avatarEl = document.getElementById('userAvatarBtn');
                         if (currentUser.avatar.length <= 5) {
-                            // Emoji avatar
-                            avatarEl.style.display = 'none'; // hide img
-                            // insert div if not exists
+                            avatarEl.style.display = 'none';
                             let emojiDiv = document.getElementById('userAvatarEmoji');
                             if(!emojiDiv) {
                                 emojiDiv = document.createElement('div');
                                 emojiDiv.id = 'userAvatarEmoji';
-                                emojiDiv.className = 'user-avatar';
-                                emojiDiv.style.display = 'flex';
-                                emojiDiv.style.alignItems = 'center';
-                                emojiDiv.style.justifyContent = 'center';
-                                emojiDiv.style.background = 'var(--bg-secondary)';
-                                emojiDiv.style.fontSize = '1.2rem';
+                                emojiDiv.className = 'user-avatar-emoji';
                                 avatarEl.parentNode.insertBefore(emojiDiv, avatarEl);
                             }
                             emojiDiv.textContent = currentUser.avatar;
                         } else {
-                            // Image avatar
                             avatarEl.src = currentUser.avatar;
                             avatarEl.style.display = 'block';
                             const emojiDiv = document.getElementById('userAvatarEmoji');
@@ -797,18 +630,18 @@
                     }
 
                     const isWeb3 = p.post_type === 1 || p.tx_hash;
-                    const borderStyle = isWeb3 ? 'border: 1px solid var(--accent-gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);' : '';
+                    const borderStyle = isWeb3 ? 'border-color: var(--accent-gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);' : '';
                     const badge = isWeb3 ? '<div style="position:absolute; top:10px; right:10px; background:linear-gradient(45deg, #FFD700, #FFA500); color:#000; padding:4px 8px; border-radius:4px; font-size:0.7rem; font-weight:800; z-index:10; box-shadow:0 2px 5px rgba(0,0,0,0.2);">Web3 永存</div>' : '';
 
                     return `
                     <div class="masonry-item">
-                        <div class="post-card" onclick="Modal.openDetail(${p.id})" style="${borderStyle}">
+                        <div class="post-card glass" onclick="Modal.openDetail(${p.id})" style="${borderStyle}">
                             ${badge}
                             ${img}
                             <div class="post-content">
                                 <div class="post-title">${p.title}</div>
                                 <div class="post-meta">
-                                    <div class="author-info">
+                                    <div class="author-info" style="display:flex;align-items:center;gap:0.5rem;">
                                         ${UI.renderAvatar(p.author)}
                                         <span>${p.author.nickname}</span>
                                     </div>
@@ -829,9 +662,9 @@
 
             renderAvatar(user) {
                 if (!user.avatar || user.avatar.length > 5) {
-                    return `<img src="${user.avatar || '/static/default-avatar.png'}" class="author-avatar" onerror="this.src='/static/default-avatar.png'">`;
+                    return `<img src="${user.avatar || '/static/default-avatar.png'}" class="user-avatar" style="width:24px;height:24px;" onerror="this.src='/static/default-avatar.png'">`;
                 }
-                return `<div class="author-avatar" style="display:flex;align-items:center;justify-content:center;font-size:1.2rem;background:var(--bg-secondary);">${user.avatar}</div>`;
+                return `<div class="user-avatar-emoji" style="width:24px;height:24px;font-size:1rem;">${user.avatar}</div>`;
             },
             
             handleNav(el, sort) {
@@ -856,13 +689,13 @@
                     if(data.error) throw new Error(data.error);
                     
                     body.innerHTML = `
-                        <div class="sidebar-card" style="grid-column: span 2; text-align: center;">
+                        <div class="sidebar-card glass" style="grid-column: span 2; text-align: center;">
                             <div style="font-size: 0.9rem; color: var(--text-secondary);">总营收 (估算)</div>
                             <div style="font-size: 2rem; font-weight: bold; color: var(--accent-gold);">${data.revenue.total_bnb.toFixed(4)} BNB</div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">单篇费用: ${data.revenue.fee_per_post} BNB</div>
                         </div>
                         
-                        <div class="sidebar-card">
+                        <div class="sidebar-card glass">
                             <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">用户统计</div>
                             <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
                                 <span>总用户:</span> <b>${data.users.total}</b>
@@ -875,7 +708,7 @@
                             </div>
                         </div>
                         
-                        <div class="sidebar-card">
+                        <div class="sidebar-card glass">
                             <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">帖子统计</div>
                             <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
                                 <span>总帖子:</span> <b>${data.posts.total}</b>
@@ -903,7 +736,6 @@
                         const accounts = await provider.request({ method: 'eth_requestAccounts' });
                         const from = accounts[0];
                         
-                        // Get config for address
                         const cRes = await fetch(`${API_BASE}/config/fees`);
                         const config = await cRes.json();
                         
@@ -951,7 +783,6 @@
                     `;
                 }
 
-                // Recursive function to render comments
                 const renderComments = (comments, depth=0) => {
                     if (!comments || comments.length === 0) return '';
                     
@@ -1116,7 +947,6 @@
                 Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
             };
             
-            // Search Listener
             let searchTimeout;
             document.getElementById('searchInput').addEventListener('input', (e) => {
                 clearTimeout(searchTimeout);
@@ -1127,7 +957,6 @@
                 }, 500);
             });
             
-            // Logout
             document.getElementById('logoutBtn').onclick = () => Auth.logout();
         });
     </script>
