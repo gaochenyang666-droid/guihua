@@ -500,10 +500,25 @@ def upload():
         return jsonify({'url': url})
     return jsonify({'error': 'Upload failed'}), 500
 
+@app.route('/api/debug/reset_db', methods=['POST'])
+def reset_db():
+    if not app.config.get('DEBUG') and os.environ.get('ENABLE_RESET_DB') != 'true':
+        return jsonify({'error': 'Not allowed in production'}), 403
+    
+    try:
+        db.drop_all()
+        db.create_all()
+        return jsonify({'message': 'Database reset successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     # Auto-create tables (SQLite only, or dev env)
     # In production with PostgreSQL, use Flask-Migrate (alembic)
-    if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI']:
-        with app.app_context():
-            db.create_all()
+    with app.app_context():
+        db.create_all()
     app.run(port=5000)
+else:
+    # When running with Gunicorn, create tables if they don't exist
+    with app.app_context():
+        db.create_all()
