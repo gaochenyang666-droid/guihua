@@ -237,24 +237,41 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     .main-container {
         grid-template-columns: 1fr;
         padding: 1rem;
+        padding-bottom: calc(var(--nav-height) + 2rem); /* Space for bottom nav */
         gap: 1.5rem;
     }
     
-    /* Navbar */
-    .navbar { padding: 0 1rem; }
+    /* Navbar - Move to Bottom */
+    .navbar { 
+        padding: 0 1rem; 
+        top: auto; 
+        bottom: 0;
+        border-top: 1px solid var(--border-color);
+        background: rgba(10, 10, 15, 0.95); /* More opaque on mobile */
+        backdrop-filter: blur(20px);
+    }
     .search-container { display: none; } /* Hide search to save space */
+    .nav-actions { width: 100%; justify-content: space-around; }
     .nav-actions span { display: none; } /* Hide user name */
-    .logo span { font-size: 1.6rem; } /* Just icon or smaller text */
+    .logo { display: none; } /* Hide logo in bottom nav, focus on actions */
     
-    /* Sidebar as Mobile Top Nav */
+    /* Sidebar as Top Sticky Bar */
     .sidebar {
         flex-direction: row;
         overflow-x: auto;
         padding-bottom: 0.5rem;
         margin-bottom: 0;
+        position: sticky;
+        top: 0;
+        z-index: 90;
+        background: var(--bg-primary);
+        padding-top: 1rem;
+        margin-left: -1rem;
+        margin-right: -1rem;
+        padding-left: 1rem;
     }
     .sidebar-card {
-        padding: 0.5rem;
+        padding: 0.2rem;
         display: flex;
         gap: 0.5rem;
         background: transparent;
@@ -263,11 +280,12 @@ textarea.form-input { min-height: 100px; resize: vertical; }
         box-shadow: none;
     }
     .nav-item {
-        padding: 0.5rem 1rem;
+        padding: 0.6rem 1.2rem;
         background: var(--bg-card);
         border: 1px solid var(--border-color);
         white-space: nowrap;
         border-radius: var(--radius-full);
+        font-size: 0.9rem;
     }
     .nav-item.active {
         background: var(--accent-purple);
@@ -277,17 +295,20 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     
     /* Grid */
     .masonry-grid { column-count: 1; }
-    .post-card { margin-bottom: 1.5rem; width: 100%; }
+    .post-card { margin-bottom: 1.5rem; width: 100%; border-radius: 16px; }
     
     /* Typography & Touch */
     .post-title { font-size: 1.25rem; }
-    .btn { padding: 0.8rem 1.2rem; } /* Larger touch targets */
+    .btn { padding: 0.8rem 1.2rem; min-height: 48px; min-width: 48px; } /* Larger touch targets */
     
     /* Profile */
     .profile-header { flex-direction: column; text-align: center; padding: 1.5rem; }
     .stats { justify-content: center; }
     .post-item { flex-direction: column; }
     .post-item .post-cover { width: 100%; height: 150px; }
+
+    /* Inputs - Prevent Zoom */
+    input, select, textarea { font-size: 16px !important; }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
