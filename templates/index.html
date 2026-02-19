@@ -67,11 +67,11 @@
     <!-- Footer with Legal Warning -->
     <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
         <div style="max-width: 800px; margin: 0 auto;">
-            <p style="margin-bottom: 0.5rem;">⚠️ <b>法律风险警示</b></p>
-            <p style="margin-bottom: 1rem;">
-                本平台仅提供去中心化内容展示技术，不存储任何非法内容。所有 Web3 内容均存储于 IPFS 分布式网络，由发布者自行负责。<br>
-                请遵守当地法律，严禁发布色情、恐怖主义及违反公序良俗的信息。<br>
-                任何违规内容将被管理员在前端屏蔽，并配合执法部门调查。区块链上的永久记录将成为不可篡改的法律证据。
+            <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
+            <p>
+                This platform is a decentralized content display interface. All content is stored on the distributed IPFS network and the blockchain.<br>
+                Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
+                本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/IPFS。请用户自行承担发布内容的法律责任。
             </p>
             <p>© 2026 诡话 (GuiHua) | <a href="#" onclick="Modal.open('donateModal')" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
         </div>
@@ -547,7 +547,7 @@
                         profileLink.style.padding = '0.3rem 0.6rem';
                         profileLink.style.fontSize = '0.8rem';
                         profileLink.textContent = '👤 我的主页';
-                        profileLink.href = `/profile.html?user=${currentUser.username || currentUser.address}`;
+                        profileLink.href = `/profile?user=${currentUser.username || currentUser.address}`;
                         const logoutBtn = document.getElementById('logoutBtn');
                         logoutBtn.parentNode.insertBefore(profileLink, logoutBtn);
                     }

@@ -322,29 +322,28 @@ def verify_transaction(tx_hash, user_address):
             return False, 'Transaction hash already used'
 
         # Give node a moment to sync
-        print("Waiting for node sync...")
-        time.sleep(3)
-
+        print(f"Verifying tx: {tx_hash} for user {user_address}")
+        
         # Get transaction and receipt with retries
         tx = None
         receipt = None
         
-        # Retry up to 30 times (60 seconds total) to handle RPC indexing delay
-        for i in range(30):
+        # Retry up to 60 times (60 seconds total) to handle RPC indexing delay
+        # Optimized: check every 1s instead of 2s
+        for i in range(60):
             try:
                 tx = web3_provider.eth.get_transaction(tx_hash)
                 receipt = web3_provider.eth.get_transaction_receipt(tx_hash)
                 if tx and receipt:
-                    print(f"Tx found after {i*2} seconds.")
+                    print(f"Tx found after {i} seconds.")
                     break
             except Exception as e:
-                print(f"Retrying... {i}/30 Error: {e}")
-                # If persistent failure, maybe try switching provider again? 
-                # For now, just retry
+                # print(f"Retrying... {i}/60 Error: {e}")
                 pass
-            time.sleep(2)
+            time.sleep(1)
             
         if not tx or not receipt:
+            print(f"Timeout verifying tx: {tx_hash}")
             return False, 'Transaction not found on chain (timeout)'
 
         # 1. Check Status (1 = Success)
@@ -353,22 +352,24 @@ def verify_transaction(tx_hash, user_address):
 
         # 2. Check Sender
         if tx['from'].lower() != user_address.lower():
-            return False, 'Transaction sender does not match current user'
+            return False, f'Sender mismatch. Tx: {tx["from"]}, User: {user_address}'
 
         # 3. Check Receiver
         expected_to = app.config['BSC']['RECEIVE_ADDRESS'].lower()
         if not tx['to'] or tx['to'].lower() != expected_to:
-            return False, f'Incorrect recipient. Expected: {expected_to}'
+            return False, f'Incorrect recipient. Expected: {expected_to}, Got: {tx["to"]}'
 
         # 4. Check Amount
         expected_value = app.config['BSC']['POST_FEE']
+        # Allow small deviation (e.g. 1%) or strictly check
+        # For now, strictly check >= expected
         if tx['value'] < expected_value:
             return False, f'Insufficient fee. Paid: {tx["value"]}, Expected: {expected_value}'
 
         return True, None
     except Exception as e:
         print(f"Verify Tx Error: {e}")
-        return False, 'Verification process failed'
+        return False, f'Verification process failed: {str(e)}'
 
 
 def token_required(f):
@@ -405,6 +406,10 @@ def index():
 @app.route('/studio')
 def studio():
     return render_template('studio.html')
+
+@app.route('/profile')
+def profile():
+    return render_template('profile.html')
 
 # --- Auth ---
 

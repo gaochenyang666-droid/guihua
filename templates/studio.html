@@ -112,11 +112,11 @@
             </div>
             
             <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
-                <p style="margin-bottom: 0.5rem;">⚠️ <b>法律风险警示</b></p>
+                <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
                 <p>
-                    本平台仅提供去中心化内容展示技术，不存储任何非法内容。所有 Web3 内容均存储于 IPFS 分布式网络，由发布者自行负责。<br>
-                    请遵守《中华人民共和国网络安全法》及相关法律法规，严禁发布色情、暴力、恐怖主义及违反公序良俗的信息。<br>
-                    任何违规内容将被管理员在前端屏蔽，并配合执法部门调查。区块链上的永久记录将成为不可篡改的法律证据。
+                    This platform is a decentralized content display interface. All content is stored on the distributed IPFS network and the blockchain.<br>
+                    Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
+                    本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/IPFS。请用户自行承担发布内容的法律责任。
                 </p>
             </footer>
         </main>
@@ -449,20 +449,24 @@
 
                     document.querySelector('#txLoading h3').textContent = '正在确认交易...';
                     let receipt = null;
-                    for(let i=0; i<30; i++) { 
+                    // Optimized: check every 1s for 60s
+                    for(let i=0; i<60; i++) { 
                         try {
                             receipt = await window.web3.eth.getTransactionReceipt(txHash);
                             if(receipt && receipt.status) break;
-                        } catch(e) {}
-                        await new Promise(r => setTimeout(r, 2000));
+                        } catch(e) { console.error("Tx Check Error:", e); }
+                        await new Promise(r => setTimeout(r, 1000));
                     }
 
                     if(!receipt || !receipt.status) {
-                         throw new Error('交易未确认或失败');
+                         // Even if receipt is missing, try sending to backend to verify?
+                         // No, backend also checks receipt. If frontend can't find it, backend likely can't either.
+                         throw new Error('交易未确认或失败 (Transaction not confirmed or failed)');
                     }
                     
                     document.querySelector('#txLoading h3').textContent = '正在同步节点...';
-                    await new Promise(r => setTimeout(r, 5000));
+                    // Give node sync time
+                    await new Promise(r => setTimeout(r, 3000));
                     
                     const ipfsData = {
                         title, content, cover_image: coverImage, 
