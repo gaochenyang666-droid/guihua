@@ -510,7 +510,15 @@
                 const btn = document.getElementById('publishBtn');
                 if (btn.disabled) return;
                 
-                if (!web3) web3 = new Web3(window.ethereum);
+                // Init Web3 with Binance support
+                if (window.BinanceChain) {
+                    window.web3 = new Web3(window.BinanceChain);
+                } else if (window.ethereum) {
+                    window.web3 = new Web3(window.ethereum);
+                } else {
+                    return Toast.error('请安装 Web3 钱包');
+                }
+
                 const title = document.getElementById('studioPostTitle').value;
                 const content = document.getElementById('studioPostContent').innerHTML;
                 const coverImage = document.getElementById('studioPostImage').value;
@@ -527,12 +535,13 @@
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
                     
-                    const chainId = await web3.eth.getChainId();
+                    const chainId = await window.web3.eth.getChainId();
                     if (Number(chainId) !== Number(config.chain_id)) {
                         try {
-                            await ethereum.request({
+                            const provider = window.BinanceChain || window.ethereum;
+                            await provider.request({
                                 method: 'wallet_switchEthereumChain',
-                                params: [{ chainId: web3.utils.toHex(config.chain_id) }],
+                                params: [{ chainId: window.web3.utils.toHex(config.chain_id) }],
                             });
                         } catch (switchError) {
                             btn.disabled = false; btn.textContent = '⚡ 支付并发布';
@@ -543,12 +552,13 @@
                     // Pay Gas
                     document.getElementById('txLoading').classList.add('active');
                     
-                    const txHash = await ethereum.request({
+                    const provider = window.BinanceChain || window.ethereum;
+                    const txHash = await provider.request({
                         method: 'eth_sendTransaction',
                         params: [{
                             to: config.receive_address,
                             from: currentUser.address,
-                            value: web3.utils.toHex(config.fee),
+                            value: window.web3.utils.toHex(config.fee),
                             chainId: config.chain_id
                         }]
                     });

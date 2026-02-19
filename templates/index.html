@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>诡境 - 灵异事件分享平台 (Web2)</title>
+    <!-- 引入 FontAwesome 和 Web3.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
     <style>
         /* ============== 基础重置与变量 ============== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -405,14 +408,26 @@
 
         const Post = {
             async load(params={}) {
-                const q = new URLSearchParams(params).toString();
-                const headers = {};
-                const token = localStorage.getItem('token');
-                if (token) headers['Authorization'] = `Bearer ${token}`;
+                try {
+                    const q = new URLSearchParams(params).toString();
+                    const headers = {};
+                    const token = localStorage.getItem('token');
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
 
-                const res = await fetch(`${API_BASE}/posts?${q}`, { headers });
-                const data = await res.json();
-                UI.renderPosts(data.posts);
+                    const res = await fetch(`${API_BASE}/posts?${q}`, { headers });
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                    
+                    const data = await res.json();
+                    if (data.posts) {
+                        UI.renderPosts(data.posts);
+                    } else {
+                        throw new Error('Invalid data format');
+                    }
+                } catch (e) {
+                    console.error("Failed to load posts:", e);
+                    document.getElementById('loadingArea').innerHTML = 
+                        `<div style="color:var(--accent-red)">加载失败: ${e.message}<br><button class="btn btn-ghost" onclick="Post.load()">重试</button></div>`;
+                }
             },
             
             async repost(id) {
