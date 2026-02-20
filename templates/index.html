@@ -322,13 +322,22 @@
             },
 
             async loginWeb2(username, password) {
-                const res = await fetch(`${API_BASE}/auth/web2/login`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await res.json();
-                if (res.ok) this.success(data);
-                else Toast.error(data.error);
+                const btn = document.querySelector('#loginForm button[type="submit"]');
+                if(btn) { btn.disabled = true; btn.textContent = '登录中...'; }
+                
+                try {
+                    const res = await fetch(`${API_BASE}/auth/web2/login`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ username, password })
+                    });
+                    const data = await res.json();
+                    if (res.ok) this.success(data);
+                    else Toast.error(data.error);
+                } catch(e) {
+                    Toast.error('网络错误');
+                } finally {
+                    if(btn) { btn.disabled = false; btn.textContent = '登录'; }
+                }
             },
 
             async register() {
@@ -980,6 +989,21 @@
                     if (q) Post.load({q});
                     else Post.load();
                 }, 500);
+            });
+            
+            // Mobile: Close keyboard on 'Enter' or 'Search'
+            document.getElementById('searchInput').addEventListener('keyup', (e) => {
+                if(e.key === 'Enter') document.getElementById('searchInput').blur();
+            });
+            document.getElementById('searchInput').addEventListener('search', () => {
+                document.getElementById('searchInput').blur();
+            });
+            
+            // Mobile: Close keyboard on scroll
+            window.addEventListener('scroll', () => {
+                if(document.activeElement === document.getElementById('searchInput')) {
+                    document.getElementById('searchInput').blur();
+                }
             });
             
             document.getElementById('logoutBtn').onclick = () => Auth.logout();

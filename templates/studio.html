@@ -17,6 +17,11 @@
     <div class="loading-overlay" id="txLoading">
         <div class="loading-spinner"></div>
         <h3 style="margin-bottom:0.5rem; color:var(--accent-purple-light);">正在上链</h3>
+        
+        <div class="terminal-log glass" style="width: 80%; max-width: 300px; height: 80px; overflow: hidden; margin-bottom: 1rem; font-family: monospace; font-size: 0.8rem; color: var(--accent-green); text-align: left; padding: 0.5rem; border: 1px solid var(--border-color); background: rgba(0,0,0,0.5);">
+            <div id="loadingLogs"></div>
+        </div>
+
         <p style="color:var(--text-secondary); font-size:0.9rem; text-align: center;">请在钱包中确认交易...<br><span style="font-size:0.8rem; color:var(--accent-red);">后台处理中，请勿关闭页面</span></p>
         <button class="btn btn-ghost btn-sm" style="margin-top:1rem; display:none;" id="forceCloseLoading" onclick="document.getElementById('txLoading').classList.remove('active')">强制关闭</button>
     </div>
@@ -374,6 +379,42 @@
         };
 
         const Post = {
+            logInterval: null,
+            
+            addLog(msg) {
+                const c = document.getElementById('loadingLogs');
+                const line = document.createElement('div');
+                line.textContent = `> ${msg}`;
+                c.appendChild(line);
+                c.scrollTop = c.scrollHeight;
+            },
+            
+            startFakeLogs() {
+                const c = document.getElementById('loadingLogs');
+                c.innerHTML = '';
+                const logs = [
+                    "初始化 Web3 钱包...",
+                    "正在请求用户签名...",
+                    "广播交易至 BSC 节点...",
+                    "等待区块确认 (1/12)...",
+                    "正在封装数据包 (Size: 12KB)...",
+                    "正在生成 IPFS 哈希...",
+                    "正在同步至 Arweave 网关...",
+                    "正在写入智能合约...",
+                    "🛡️ 进行最终安全验证..."
+                ];
+                let i = 0;
+                this.addLog(logs[0]);
+                this.logInterval = setInterval(() => {
+                    i++;
+                    if(i < logs.length) this.addLog(logs[i]);
+                }, 2500);
+            },
+            
+            stopFakeLogs() {
+                if(this.logInterval) clearInterval(this.logInterval);
+            },
+
             async load(params={}) {
                 const q = new URLSearchParams(params).toString();
                 const headers = {};
@@ -464,6 +505,7 @@
 
                     document.getElementById('txLoading').classList.add('active');
                     document.querySelector('#txLoading h3').textContent = '正在上链支付...';
+                    this.startFakeLogs(); // Start Logs
                     
                     // Auto-show close button after 60s
                     const timeoutId = setTimeout(() => {
@@ -534,6 +576,7 @@
                     Toast.error('发布失败: ' + e.message); 
                 } finally {
                     // Clear the safety timeout
+                    this.stopFakeLogs();
                     if(typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
                     document.getElementById('forceCloseLoading').style.display = 'none';
                     
