@@ -17,7 +17,8 @@
     <div class="loading-overlay" id="txLoading">
         <div class="loading-spinner"></div>
         <h3 style="margin-bottom:0.5rem; color:var(--accent-purple-light);">正在上链</h3>
-        <p style="color:var(--text-secondary); font-size:0.9rem;">请在钱包中确认交易...</p>
+        <p style="color:var(--text-secondary); font-size:0.9rem; text-align: center;">请在钱包中确认交易...<br><span style="font-size:0.8rem; color:var(--accent-red);">后台处理中，请勿关闭页面</span></p>
+        <button class="btn btn-ghost btn-sm" style="margin-top:1rem; display:none;" id="forceCloseLoading" onclick="document.getElementById('txLoading').classList.remove('active')">强制关闭</button>
     </div>
 
     <nav class="navbar glass">
@@ -25,7 +26,7 @@
         
         <div class="search-container">
             <span class="search-icon">🔍</span>
-            <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." />
+            <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
         </div>
 
         <div class="nav-actions">
@@ -426,6 +427,10 @@
                 } else if (window.ethereum) {
                     window.web3 = new Web3(window.ethereum);
                 } else {
+                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                    if (isMobile) {
+                        return Toast.error('请在 MetaMask / OKX 等钱包 App 的内置浏览器中打开本站');
+                    }
                     return Toast.error('请安装 Web3 钱包');
                 }
 
@@ -459,6 +464,12 @@
 
                     document.getElementById('txLoading').classList.add('active');
                     document.querySelector('#txLoading h3').textContent = '正在上链支付...';
+                    
+                    // Auto-show close button after 60s
+                    setTimeout(() => {
+                        const closeBtn = document.getElementById('forceCloseLoading');
+                        if(closeBtn) closeBtn.style.display = 'inline-block';
+                    }, 60000);
                     
                     const provider = window.BinanceChain || window.ethereum;
                     const txHash = await provider.request({

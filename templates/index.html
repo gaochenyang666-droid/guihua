@@ -20,7 +20,7 @@
         
         <div class="search-container">
             <span class="search-icon">🔍</span>
-            <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." />
+            <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
         </div>
 
         <div class="nav-actions">
@@ -257,6 +257,11 @@
                 } else if (window.ethereum) {
                     window.web3 = new Web3(window.ethereum);
                 } else {
+                    // Mobile fallback detection
+                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                    if (isMobile) {
+                        return Toast.error('请在 MetaMask / OKX 等钱包 App 的内置浏览器中打开本站');
+                    }
                     return Toast.error('请安装 MetaMask, Binance Wallet 或其他 Web3 钱包');
                 }
                 

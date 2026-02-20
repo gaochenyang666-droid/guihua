@@ -36,6 +36,7 @@ body {
     font-size: var(--font-base);
     overflow-x: hidden;
     -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain; /* Prevent pull-to-refresh on body */
 }
 
 /* ============== Scrollbar ============== */
@@ -264,6 +265,7 @@ textarea.form-input { min-height: 100px; resize: vertical; }
         display: block; 
         max-width: 140px; 
         margin-right: 10px;
+        flex-grow: 1; /* Allow search to expand */
     }
     .search-input {
         padding: 0.4rem 0.8rem 0.4rem 2.2rem;
