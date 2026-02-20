@@ -422,9 +422,9 @@
                 const btn = document.getElementById('publishBtn');
                 if (btn.disabled) return;
                 
-                if (window.BinanceChain) {
+                if (typeof window.BinanceChain !== 'undefined') {
                     window.web3 = new Web3(window.BinanceChain);
-                } else if (window.ethereum) {
+                } else if (typeof window.ethereum !== 'undefined') {
                     window.web3 = new Web3(window.ethereum);
                 } else {
                     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -466,7 +466,7 @@
                     document.querySelector('#txLoading h3').textContent = '正在上链支付...';
                     
                     // Auto-show close button after 60s
-                    setTimeout(() => {
+                    const timeoutId = setTimeout(() => {
                         const closeBtn = document.getElementById('forceCloseLoading');
                         if(closeBtn) closeBtn.style.display = 'inline-block';
                     }, 60000);
@@ -533,6 +533,10 @@
                     document.getElementById('txLoading').classList.remove('active');
                     Toast.error('发布失败: ' + e.message); 
                 } finally {
+                    // Clear the safety timeout
+                    if(typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
+                    document.getElementById('forceCloseLoading').style.display = 'none';
+                    
                     btn.disabled = false;
                     btn.textContent = '⚡ 支付并发布';
                 }

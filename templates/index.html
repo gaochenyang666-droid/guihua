@@ -252,9 +252,9 @@
             },
 
             async loginWeb3() {
-                if (window.BinanceChain) {
+                if (typeof window.BinanceChain !== 'undefined') {
                     window.web3 = new Web3(window.BinanceChain);
-                } else if (window.ethereum) {
+                } else if (typeof window.ethereum !== 'undefined') {
                     window.web3 = new Web3(window.ethereum);
                 } else {
                     // Mobile fallback detection
