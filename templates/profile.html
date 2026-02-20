@@ -173,8 +173,15 @@
             async save() {
                 const nickname = document.getElementById('editNickname').value;
                 const bio = document.getElementById('editBio').value;
-                const avatar = tempAvatar ? document.getElementById('previewAvatar').textContent : null;
+                let avatar = tempAvatar ? document.getElementById('previewAvatar').textContent : null;
                 
+                // If not using emoji avatar, we don't support custom URLs yet to prevent XSS/CORS issues
+                // Ideally, this should support file upload
+                if (!tempAvatar && currentUser.avatar && currentUser.avatar.startsWith('http')) {
+                     // Keep existing avatar if it's a URL
+                     avatar = null; 
+                }
+
                 try {
                     const res = await fetch(`${API_BASE}/user/me`, {
                         method: 'PUT',

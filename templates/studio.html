@@ -577,6 +577,7 @@
                     } else Toast.error((await res.json()).error);
                 } catch(e) { 
                     console.error(e);
+                    // Ensure loading is hidden on error
                     document.getElementById('txLoading').classList.remove('active');
                     Toast.error('发布失败: ' + e.message); 
                 } finally {
@@ -584,6 +585,7 @@
                     // Clear the safety timeout
                     this.stopFakeLogs();
                     if(typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
+                    document.getElementById('txLoading').classList.remove('active');
                     document.getElementById('forceCloseLoading').style.display = 'none';
                     
                     btn.disabled = false;

@@ -233,7 +233,13 @@
                     fetch(`${API_BASE}/user/me`, { headers: {'Authorization': `Bearer ${token}`} })
                     .then(res => {
                         if (res.status === 401) this.logout();
+                    }).catch(() => {
+                        // Network error or server down, maybe keep login state?
+                        // For safety, let's not force logout on network error unless we are sure
                     });
+                } else {
+                    // Check if there is a 'undefined' string in storage which is bad
+                    if(localStorage.getItem('token') === 'undefined') localStorage.removeItem('token');
                 }
                 UI.updateAuth();
             },
@@ -999,7 +1005,7 @@
                     const q = e.target.value.trim();
                     if (q) Post.load({q});
                     else Post.load();
-                }, 500);
+                }, 300);
             });
             
             // Mobile: Close keyboard on 'Enter' or 'Search'
