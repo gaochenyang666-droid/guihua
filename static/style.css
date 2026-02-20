@@ -422,6 +422,8 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     #userMenu, #authButtons { display: none !important; }
     
     .bottom-nav { display: flex !important; }
+    
+    body { padding-bottom: 80px !important; }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {

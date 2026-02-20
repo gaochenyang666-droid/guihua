@@ -459,7 +459,12 @@
                 }
             },
             
+            isPublishing: false,
+
             async publishFromStudio() {
+                if (this.isPublishing) return;
+                this.isPublishing = true;
+                
                 const btn = document.getElementById('publishBtn');
                 if (btn.disabled) return;
                 
@@ -575,6 +580,7 @@
                     document.getElementById('txLoading').classList.remove('active');
                     Toast.error('发布失败: ' + e.message); 
                 } finally {
+                    this.isPublishing = false;
                     // Clear the safety timeout
                     this.stopFakeLogs();
                     if(typeof timeoutId !== 'undefined') clearTimeout(timeoutId);

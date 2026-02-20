@@ -227,7 +227,14 @@
         const Auth = {
             async init() {
                 const token = localStorage.getItem('token');
-                if (token) await this.fetchMe();
+                if (token) {
+                    await this.fetchMe();
+                    // Validate token validity
+                    fetch(`${API_BASE}/user/me`, { headers: {'Authorization': `Bearer ${token}`} })
+                    .then(res => {
+                        if (res.status === 401) this.logout();
+                    });
+                }
                 UI.updateAuth();
             },
 
@@ -968,7 +975,11 @@
 
         window.addEventListener('load', () => {
             const c = document.getElementById('ghostFireContainer');
-            for(let i=0; i<10; i++) {
+            // Optimize for mobile: fewer particles
+            const isMobile = window.innerWidth < 768;
+            const count = isMobile ? 6 : 10;
+            
+            for(let i=0; i<count; i++) {
                 const d = document.createElement('div'); d.className='ghost-fire';
                 d.style.left=Math.random()*100+'%'; d.style.animationDelay=Math.random()*5+'s';
                 c.appendChild(d);
