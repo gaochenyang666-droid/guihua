@@ -1,10 +1,10 @@
 {
-  "name": "诡话 - Web3 灵异社区",
-  "short_name": "诡话",
+  "name": "GuiHua",
+  "short_name": "GuiHua",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0f",
-  "theme_color": "#7c3aed",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
   "icons": [
     {
       "src": "/static/default-avatar.png",
