@@ -16,6 +16,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from web3 import Web3
 from web3.middleware.geth_poa import geth_poa_middleware
+import arweave
+from arweave.arweave_lib import Wallet, Transaction
 
 app = Flask(__name__)
 CORS(app)
@@ -23,7 +25,11 @@ CORS(app)
 # ImgBB Configuration
 IMGBB_API_KEY = os.environ.get('IMGBB_API_KEY', 'your-imgbb-api-key')
 
-# Pinata (IPFS) Configuration
+# Arweave Configuration
+# Wallet is loaded dynamically from env or local file
+ARWEAVE_GATEWAY = 'https://arweave.net'
+
+# Pinata (IPFS) Configuration (Legacy/Backup)
 PINATA_API_KEY = os.environ.get('PINATA_API_KEY', '')
 PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY', '')
 
@@ -299,6 +305,73 @@ def upload_to_pinata(json_data):
     except Exception as e:
         print(f"Pinata Exception: {e}")
         return None
+
+def get_arweave_wallet():
+    """
+    Load Arweave wallet from environment variable or local file.
+    Priority:
+    1. AR_KEY_DATA (Environment Variable)
+    2. ar_key.json (Local File)
+    3. arweave-key.json (Legacy Local File)
+    """
+    # 1. Try Environment Variable
+    key_data_str = os.environ.get('AR_KEY_DATA')
+    if key_data_str:
+        try:
+            jwk_data = json.loads(key_data_str)
+            # Create Wallet instance without reading file
+            wallet = Wallet.__new__(Wallet)
+            wallet.jwk_data = jwk_data
+            wallet._set_jwk_params()
+            wallet.api_url = ARWEAVE_GATEWAY # Ensure API URL is set
+            return wallet
+        except Exception as e:
+            print(f"Error loading wallet from AR_KEY_DATA: {e}")
+
+    # 2. Try Local Files
+    for filename in ['ar_key.json', 'arweave-key.json']:
+        if os.path.exists(filename):
+            try:
+                return Wallet(filename)
+            except Exception as e:
+                print(f"Error loading wallet from {filename}: {e}")
+                
+    return None
+
+def upload_to_arweave_native(data):
+    """
+    Upload JSON data to Arweave Permanent Storage
+    Returns: Transaction ID (TXID)
+    """
+    wallet = get_arweave_wallet()
+    
+    if not wallet:
+        print("Arweave wallet not found (Check AR_KEY_DATA or ar_key.json)")
+        # In dev mode, generate a mock Arweave TXID
+        if app.config.get('DEBUG'):
+            return 'ArMock_' + secrets.token_hex(20)
+        return None
+        
+    try:
+        # Prepare data
+        json_str = json.dumps(data)
+        
+        # Create and sign transaction
+        transaction = Transaction(wallet, data=json_str)
+        transaction.add_tag('Content-Type', 'application/json')
+        transaction.add_tag('App-Name', 'GuiHua-Web3')
+        transaction.add_tag('App-Version', '1.0.0')
+        transaction.add_tag('Unix-Time', str(int(time.time())))
+        
+        transaction.sign()
+        transaction.send()
+        
+        print(f"Arweave Upload Success: {transaction.id}")
+        return transaction.id
+    except Exception as e:
+        print(f"Arweave Upload Error: {e}")
+        return None
+
 
 def verify_transaction(tx_hash, user_address):
     """
@@ -850,39 +923,35 @@ def create_post():
     # 3. XSS Clean
     clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
     
-    # 4. IPFS Upload (Server-side enforcement)
-    # Even if client sent a CID, we re-upload or ensure it's pinned to our Pinata
+    # 4. Web3 Storage (Arweave) Enforcement
+    # We enforce server-side upload to Arweave for permanence and metadata integrity
     ipfs_cid = data.get('ipfs_cid')
     
-    # Construct IPFS Payload
-    ipfs_payload = {
+    # Construct Payload
+    payload = {
         'title': data.get('title'),
         'content': clean_content,
         'cover_image': data.get('cover_image'),
         'author': g.current_user.address or g.current_user.username,
         'timestamp': datetime.utcnow().isoformat(),
         'tx_hash': tx_hash,
-        'platform': 'GuiHua Web3'
+        'platform': 'GuiHua Web3 (Arweave)'
     }
     
-    # Try to upload to Pinata
-    # Only if it's a Web3 post (has tx_hash) or we want to enforce IPFS for all?
-    # User said "Must call IPFS", implied for Web3 content.
+    # Try to upload to Arweave
     if tx_hash:
-        print("Uploading to IPFS (Server-side)...")
-        real_cid = upload_to_pinata(ipfs_payload)
-        if real_cid:
-            ipfs_cid = real_cid
-            print(f"IPFS Upload Success: {ipfs_cid}")
+        print("Uploading to Arweave (Permanent Storage)...")
+        ar_tx_id = upload_to_arweave_native(payload)
+        if ar_tx_id:
+            ipfs_cid = ar_tx_id
+            print(f"Arweave Upload Success: {ipfs_cid}")
         else:
-            print("IPFS Upload Failed (Check API Keys)")
-            # If upload fails and not in debug, we should probably fail the post creation
-            # to honor "Web3 storage" promise. But user might have paid.
-            # Let's allow it but log error, or use the client provided CID if valid.
-            if not ipfs_cid:
-                 # If we have no CID at all, fail?
-                 # For now, allow but log.
-                 pass
+            print("Arweave Upload Failed (Check Wallet Key)")
+            # Fallback to Pinata if configured, for redundancy
+            if PINATA_API_KEY:
+                print("Falling back to IPFS...")
+                ipfs_cid = upload_to_pinata(payload)
+
     
     # Determine Post Type
     # If tx_hash is present and verified (above), it's Web3 (1) or Mixed (2).
@@ -1094,17 +1163,23 @@ def upload_ipfs():
     data['pinned_by'] = g.current_user.username or g.current_user.address
     data['pinned_at'] = datetime.utcnow().isoformat()
     
+    # Try Arweave first
+    ar_id = upload_to_arweave_native(data)
+    if ar_id:
+        return jsonify({'cid': ar_id, 'storage': 'arweave'})
+    
+    # Fallback to Pinata
     cid = upload_to_pinata(data)
     if cid:
-        return jsonify({'cid': cid})
+        return jsonify({'cid': cid, 'storage': 'ipfs'})
     
     # Fallback for dev if no keys
-    if app.config.get('DEBUG') or not PINATA_API_KEY:
-         # Generate mock CID
-         mock_cid = 'Qm' + secrets.token_hex(22)
-         return jsonify({'cid': mock_cid, 'mock': True})
+    if app.config.get('DEBUG'):
+         # Generate mock Arweave ID
+         mock_id = 'ArMock_' + secrets.token_hex(20)
+         return jsonify({'cid': mock_id, 'mock': True})
          
-    return jsonify({'error': 'IPFS upload failed'}), 500
+    return jsonify({'error': 'Storage upload failed'}), 500
 
 # --- Admin & Debug ---
 

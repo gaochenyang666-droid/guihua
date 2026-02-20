@@ -9,3 +9,6 @@ venv/
 env/
 guijing.db
 requirements_dev.txt
+ar_key.json
+arweave-key.json
+*.json
