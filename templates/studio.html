@@ -50,11 +50,18 @@
                 <h3 id="studioAddrDisplay" style="margin-bottom: 0.5rem;">0x...</h3>
                 <div id="studioBadgeDisplay" style="color: var(--accent-gold); font-size: 0.9rem; margin-bottom: 1rem; display: none;">🎖️ 资深探员</div>
                 
-                <div style="display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
                     <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
                         <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent-purple-light);" id="studioPostCount">0</div>
                         <div style="font-size: 0.8rem; color: var(--text-secondary);">已发布</div>
                     </div>
+                    <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
+                        <div style="font-size: 1.2rem; font-weight: bold; color: var(--accent-gold);" id="studioRevenue">0</div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">累计打赏(BNB)</div>
+                    </div>
+                </div>
+                <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-muted);">
+                    * 打赏金额直接进入您的钱包
                 </div>
             </div>
             
@@ -209,11 +216,26 @@
                             return;
                         }
                         const addr = currentUser.address;
-                            document.getElementById('studioAddrDisplay').textContent = addr.substring(0,6) + '...' + addr.substring(38);
-                            document.getElementById('studioPostCount').textContent = currentUser.posts_count;
-                            if(currentUser.has_nft_badge) document.getElementById('studioBadgeDisplay').style.display = 'block';
+                        document.getElementById('studioAddrDisplay').textContent = addr.substring(0,6) + '...' + addr.substring(38);
+                        document.getElementById('studioPostCount').textContent = currentUser.posts_count;
+                        if(currentUser.has_nft_badge) document.getElementById('studioBadgeDisplay').style.display = 'block';
+                        
+                        this.fetchRevenue();
                     }
                     else this.logout();
+                } catch(e) { console.error(e); }
+            },
+
+            async fetchRevenue() {
+                try {
+                    const res = await fetch(`${API_BASE}/user/revenue`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const el = document.getElementById('studioRevenue');
+                        if(el) el.textContent = data.total_bnb.toFixed(4);
+                    }
                 } catch(e) { console.error(e); }
             },
 

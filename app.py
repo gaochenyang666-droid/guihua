@@ -34,7 +34,8 @@ PINATA_API_KEY = os.environ.get('PINATA_API_KEY', '')
 PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY', '')
 
 # Database Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///guijing.db')
+basedir = os.path.abspath(os.path.dirname(__file__))
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'guijing.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default-dev-secret-key-please-change-in-prod')
 if not app.config['SECRET_KEY']:
@@ -94,6 +95,7 @@ class User(db.Model):
     bio = db.Column(db.String(500), default='')
     has_nft_badge = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
+    wallet_address = db.Column(db.String(42), nullable=True) # For tipping
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     posts = db.relationship('Post', backref='author', lazy='dynamic')
@@ -113,6 +115,7 @@ class User(db.Model):
             'id': self.id,
             'type': 'web3' if self.address else 'web2',
             'address': self.address,
+            'wallet_address': self.wallet_address or self.address, # Fallback to login address
             'username': self.username,
             'nickname': self.nickname or self.username or (self.address[:6] + '...' if self.address else 'Unknown'),
             'avatar': self.avatar,
@@ -135,7 +138,11 @@ class Post(db.Model):
     ipfs_cid = db.Column(db.String(100), nullable=True)
     is_paid = db.Column(db.Boolean, default=False)
     
-    # New: Post Type (web2, web3, mixed)
+    # New: Region and On-Chain Status
+    region = db.Column(db.String(20), default='其他')
+    is_on_chain = db.Column(db.Boolean, default=False)
+    
+    # Post Type (web2, web3, mixed)
     # 0: Web2, 1: Web3 (On-chain), 2: Mixed
     post_type = db.Column(db.Integer, default=0, index=True)
 
@@ -152,6 +159,7 @@ class Post(db.Model):
     
     comments = db.relationship('Comment', backref='post', lazy='dynamic')
     likes = db.relationship('Like', backref='post', lazy='dynamic')
+    votes = db.relationship('Vote', backref='post', lazy='dynamic') # Votes relationship
     original_post = db.relationship('Post', remote_side=[id], backref='reposts')
     
     def to_dict(self, current_user_id=None):
@@ -181,6 +189,7 @@ class Post(db.Model):
             'view_count': self.view_count,
             'likes_count': self.likes.count(),
             'comments_count': self.comments.count(),
+            'votes': [v.to_dict() for v in self.votes], # Return votes
             'is_liked': is_liked,
             'is_bookmarked': is_bookmarked,
             'tx_hash': self.tx_hash,
@@ -192,7 +201,23 @@ class Post(db.Model):
             'original_post': original_post_data,
             'repost_comment': self.repost_comment,
             'is_hidden': self.is_hidden,
-            'allow_comments': self.allow_comments
+            'allow_comments': self.allow_comments,
+            'region': self.region,
+            'is_on_chain': self.is_on_chain
+        }
+
+class Vote(db.Model):
+    __tablename__ = 'votes'
+    id = db.Column(db.Integer, primary_key=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
+    option_text = db.Column(db.String(100))
+    vote_count = db.Column(db.Integer, default=0)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'option_text': self.option_text,
+            'vote_count': self.vote_count
         }
 
 class Comment(db.Model):
@@ -258,6 +283,28 @@ class Notification(db.Model):
             'is_read': self.is_read,
             'created_at': self.created_at.isoformat()
         }
+
+class UsedTransaction(db.Model):
+    __tablename__ = 'used_transactions'
+    id = db.Column(db.Integer, primary_key=True)
+    tx_hash = db.Column(db.String(66), unique=True, nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Tip(db.Model):
+    __tablename__ = 'tips'
+    id = db.Column(db.Integer, primary_key=True)
+    tx_hash = db.Column(db.String(66), unique=True, nullable=False, index=True)
+    from_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    to_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
+    amount = db.Column(db.String(50)) # Store as string (Wei)
+    token_symbol = db.Column(db.String(10), default='BNB')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    sender = db.relationship('User', foreign_keys=[from_user_id])
+    recipient = db.relationship('User', foreign_keys=[to_user_id])
+    post = db.relationship('Post')
 
 # ============== Helpers ==============
 ALLOWED_AVATARS = ['👻', '💀', '👽', '👾', '🤖', '🎃', '🧛', '🧟', '🧞', '🧝', '🧙', '🧚', '🧜', '👼', '👿', '👺', '👹', '🤡', '💩', '🦄']
@@ -373,13 +420,19 @@ def upload_to_arweave_native(data):
         return None
 
 
-def verify_transaction(tx_hash, user_address):
+def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amount=None):
     """
     Verify transaction on BSC Testnet
     Checks: Status, Sender, Receiver, Amount, Uniqueness
     """
     if not user_address:
         return False, 'User address not bound'
+
+    # Defaults
+    if not expected_recipient:
+        expected_recipient = app.config['BSC']['RECEIVE_ADDRESS']
+    if min_amount is None:
+        min_amount = app.config['BSC']['POST_FEE']
 
     # Get a working Web3 provider
     web3_provider = get_working_web3()
@@ -396,6 +449,10 @@ def verify_transaction(tx_hash, user_address):
         # Check uniqueness (prevent replay)
         if Post.query.filter_by(tx_hash=tx_hash).first():
             return False, 'Transaction hash already used'
+        
+        # Check against UsedTransaction table (Prevent replay attacks)
+        if UsedTransaction.query.filter_by(tx_hash=tx_hash).first():
+            return False, 'Transaction hash already used (history)'
 
         # Give node a moment to sync
         print(f"Verifying tx: {tx_hash} for user {user_address}")
@@ -431,18 +488,16 @@ def verify_transaction(tx_hash, user_address):
             return False, f'Sender mismatch. Tx: {tx["from"]}, User: {user_address}'
 
         # 3. Check Receiver
-        expected_to = app.config['BSC']['RECEIVE_ADDRESS'].lower()
-        if not tx['to'] or tx['to'].lower() != expected_to:
-            return False, f'Incorrect recipient. Expected: {expected_to}, Got: {tx["to"]}'
+        if not tx['to'] or tx['to'].lower() != expected_recipient.lower():
+            return False, f'Incorrect recipient. Expected: {expected_recipient}, Got: {tx["to"]}'
 
         # 4. Check Amount
-        expected_value = app.config['BSC']['POST_FEE']
         # Allow small deviation (e.g. 1%) or strictly check
         # For now, strictly check >= expected
-        if tx['value'] < expected_value:
-            return False, f'Insufficient fee. Paid: {tx["value"]}, Expected: {expected_value}'
+        if tx['value'] < min_amount:
+            return False, f'Insufficient fee. Paid: {tx["value"]}, Expected: {min_amount}'
 
-        return True, None
+        return True, tx['value'] # Return amount on success
     except Exception as e:
         print(f"Verify Tx Error: {e}")
         return False, f'Verification process failed: {str(e)}'
@@ -813,6 +868,7 @@ def get_posts():
     sort_by = request.args.get('sort', 'new')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
+    region = request.args.get('region') # Filter by region
     
     # Optimize query with eager loading
     from sqlalchemy.orm import joinedload, subqueryload
@@ -833,6 +889,10 @@ def get_posts():
             return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': 1})
     else: # 'new'
         query = query.order_by(Post.created_at.desc())
+
+    # Filter by Region
+    if region:
+        query = query.filter_by(region=region)
 
     # Filter hidden posts unless admin
     current_user = None
@@ -877,8 +937,9 @@ def get_posts():
 @app.route('/api/posts', methods=['POST'])
 @token_required
 def create_post():
-    # Only Web3 users (with address) can post
-    if not g.current_user.address:
+    # 1. Permission Check
+    # Admin can post without wallet; Regular users must have wallet
+    if not g.current_user.is_admin and not g.current_user.address:
         return jsonify({'error': '请先绑定钱包地址 (Please bind wallet first)'}), 400
     
     # Check if multipart/form-data (for image upload)
@@ -887,6 +948,10 @@ def create_post():
         content = request.form.get('content')
         image_file = request.files.get('image')
         tx_hash = request.form.get('tx_hash')
+        region = request.form.get('region', '其他')
+        # vote_options from form might need parsing if sent as JSON string
+        vote_options_str = request.form.get('vote_options')
+        vote_options = json.loads(vote_options_str) if vote_options_str else []
         
         if not image_file:
             return jsonify({'error': 'Cover image is required'}), 400
@@ -902,61 +967,69 @@ def create_post():
             'cover_image': cover_url,
             'tx_hash': tx_hash,
             'ipfs_cid': request.form.get('ipfs_cid'),
-            'images': []
+            'images': [],
+            'region': region,
+            'vote_options': vote_options
         }
     else:
-        # JSON fallback (if client sends JSON with URL)
+        # JSON fallback
         data = request.get_json()
     
     tx_hash = data.get('tx_hash')
     ipfs_cid = data.get('ipfs_cid')
+    region = data.get('region', '其他')
+    vote_options = data.get('vote_options', [])
     
-    # 1. Check duplicate tx (moved to verify_transaction, but good to keep basic check or handled there)
-    # logic handled in verify_transaction now
-        
-    # 2. Verify tx on chain
-    if tx_hash:
+    # 2. Region Validation
+    valid_regions = ['中国', '台湾', '香港', '澳门', '新加坡', '马来西亚', '日本', '韩国', '其他']
+    if region not in valid_regions:
+        return jsonify({'error': f'Invalid region. Allowed: {", ".join(valid_regions)}'}), 400
+
+    # 3. Logic Branching (Admin vs User)
+    is_paid = False
+    is_on_chain = False
+    
+    if g.current_user.is_admin:
+        # Admin: No Gas, No Verify, No Arweave
+        pass
+    else:
+        # Regular User: Verify Tx & Upload to Arweave
+        if not tx_hash:
+            return jsonify({'error': 'Transaction hash required'}), 400
+            
         is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address)
         if not is_valid:
             return jsonify({'error': error_msg}), 400
-
-    # 3. XSS Clean
-    clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
-    
-    # 4. Web3 Storage (Arweave) Enforcement
-    # We enforce server-side upload to Arweave for permanence and metadata integrity
-    ipfs_cid = data.get('ipfs_cid')
-    
-    # Construct Payload
-    payload = {
-        'title': data.get('title'),
-        'content': clean_content,
-        'cover_image': data.get('cover_image'),
-        'author': g.current_user.address or g.current_user.username,
-        'timestamp': datetime.utcnow().isoformat(),
-        'tx_hash': tx_hash,
-        'platform': 'GuiHua Web3 (Arweave)'
-    }
-    
-    # Try to upload to Arweave
-    if tx_hash:
+            
+        is_paid = True
+        is_on_chain = True
+        
+        # Arweave Upload Logic
+        clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
+        payload = {
+            'title': data.get('title'),
+            'content': clean_content,
+            'cover_image': data.get('cover_image'),
+            'author': g.current_user.address,
+            'timestamp': datetime.utcnow().isoformat(),
+            'tx_hash': tx_hash,
+            'region': region,
+            'platform': 'GuiHua Web3 (Arweave)'
+        }
+        
         print("Uploading to Arweave (Permanent Storage)...")
         ar_tx_id = upload_to_arweave_native(payload)
         if ar_tx_id:
             ipfs_cid = ar_tx_id
             print(f"Arweave Upload Success: {ipfs_cid}")
         else:
-            print("Arweave Upload Failed (Check Wallet Key)")
-            # Fallback to Pinata if configured, for redundancy
+            print("Arweave Upload Failed")
+            # Fallback (optional, keeping existing logic)
             if PINATA_API_KEY:
-                print("Falling back to IPFS...")
                 ipfs_cid = upload_to_pinata(payload)
 
-    
-    # Determine Post Type
-    # If tx_hash is present and verified (above), it's Web3 (1) or Mixed (2).
-    # Since we enforce verified tx_hash for web3 users, let's call it Web3 type if created via this endpoint with tx_hash
-    p_type = 1 if tx_hash else 0 # Default to Web2 if no hash, but this endpoint requires hash
+    # 4. Create Post
+    clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
     
     post = Post(
         title=data.get('title'),
@@ -966,16 +1039,31 @@ def create_post():
         author_id=g.current_user.id,
         tx_hash=tx_hash,
         ipfs_cid=ipfs_cid,
-        is_paid=True,
-        post_type=p_type
+        is_paid=is_paid,
+        is_on_chain=is_on_chain,
+        region=region,
+        post_type=1 if is_on_chain else 0
     )
     
     try:
         db.session.add(post)
+        db.session.flush() # Get ID for votes
+        
+        # 5. Handle Votes
+        if vote_options and isinstance(vote_options, list):
+            for opt in vote_options:
+                if opt and isinstance(opt, str) and len(opt.strip()) > 0:
+                    vote = Vote(post_id=post.id, option_text=opt.strip())
+                    db.session.add(vote)
+        
+        # 6. Record Transaction (Prevent Replay)
+        if tx_hash and not g.current_user.is_admin:
+            used_tx = UsedTransaction(tx_hash=tx_hash, user_id=g.current_user.id)
+            db.session.add(used_tx)
+            
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        # Check for unique constraint violation (tx_hash)
         if 'unique' in str(e).lower() and 'tx_hash' in str(e).lower():
             return jsonify({'error': 'Transaction hash already used'}), 400
         print(f"Create Post DB Error: {e}")
@@ -1035,6 +1123,28 @@ def repost_post(post_id):
     db.session.add(new_post)
     db.session.commit()
     return jsonify(new_post.to_dict()), 201
+
+@app.route('/api/posts/<int:post_id>/vote', methods=['POST'])
+@token_required
+def vote_post(post_id):
+    post = Post.query.get_or_404(post_id)
+    data = request.get_json()
+    option_id = data.get('option_id')
+    
+    if not option_id:
+        return jsonify({'error': 'Option ID required'}), 400
+        
+    vote_option = Vote.query.get(option_id)
+    if not vote_option or vote_option.post_id != post_id:
+        return jsonify({'error': 'Invalid vote option'}), 400
+        
+    vote_option.vote_count += 1
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Voted successfully',
+        'votes': [v.to_dict() for v in post.votes]
+    })
 
 # --- Interactions ---
 
@@ -1182,6 +1292,101 @@ def upload_ipfs():
     return jsonify({'error': 'Storage upload failed'}), 500
 
 # --- Admin & Debug ---
+
+@app.route('/api/tips/verify', methods=['POST'])
+@token_required
+def verify_tip():
+    data = request.get_json()
+    tx_hash = data.get('tx_hash')
+    post_id = data.get('post_id')
+    
+    if not tx_hash or not post_id:
+        return jsonify({'error': 'Missing parameters'}), 400
+        
+    post = Post.query.get_or_404(post_id)
+    if not post.author.address:
+        return jsonify({'error': 'Author has no wallet bound'}), 400
+        
+    # Verify Tip
+    # Min amount? Maybe 0.0001 BNB
+    min_tip = Web3.to_wei(0.0001, 'ether')
+    
+    is_valid, result = verify_transaction(
+        tx_hash, 
+        g.current_user.address, 
+        expected_recipient=post.author.address,
+        min_amount=min_tip
+    )
+    
+    if not is_valid:
+        return jsonify({'error': result}), 400
+        
+    # Record Tip
+    amount = str(result) # Result is amount in Wei
+    
+    tip = Tip(
+        tx_hash=tx_hash,
+        from_user_id=g.current_user.id,
+        to_user_id=post.author.id,
+        post_id=post.id,
+        amount=amount
+    )
+    
+    # Also record in UsedTransaction
+    used_tx = UsedTransaction(tx_hash=tx_hash, user_id=g.current_user.id)
+    
+    try:
+        db.session.add(tip)
+        db.session.add(used_tx)
+        db.session.commit()
+        
+        # Notify Author
+        if post.author.id != g.current_user.id:
+            notif = Notification(
+                user_id=post.author.id,
+                sender_id=g.current_user.id,
+                post_id=post.id,
+                type='tip'
+            )
+            db.session.add(notif)
+            db.session.commit()
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+        
+    return jsonify({'message': 'Tip verified', 'tip': {
+        'amount': amount,
+        'tx_hash': tx_hash
+    }})
+
+@app.route('/api/user/revenue', methods=['GET'])
+@token_required
+def get_revenue():
+    # Get tips received
+    tips = Tip.query.filter_by(to_user_id=g.current_user.id).order_by(Tip.created_at.desc()).all()
+    
+    total_wei = 0
+    tips_data = []
+    
+    for tip in tips:
+        total_wei += int(tip.amount)
+        tips_data.append({
+            'from': tip.sender.nickname if tip.sender else 'Unknown',
+            'post_title': tip.post.title if tip.post else 'Unknown',
+            'amount_wei': tip.amount,
+            'tx_hash': tip.tx_hash,
+            'created_at': tip.created_at.isoformat()
+        })
+        
+    total_bnb = w3.from_wei(total_wei, 'ether')
+    
+    return jsonify({
+        'total_wei': str(total_wei),
+        'total_bnb': float(total_bnb),
+        'tips': tips_data,
+        'wallet_address': g.current_user.address
+    })
 
 @app.route('/api/posts/<int:post_id>', methods=['DELETE'])
 @token_required
