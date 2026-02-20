@@ -69,16 +69,31 @@
     <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
         <div style="max-width: 800px; margin: 0 auto;">
             <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
-            <p>
-                This platform is a decentralized content display interface. All content is stored on the distributed IPFS network and the blockchain.<br>
-                Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
-                本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/IPFS。请用户自行承担发布内容的法律责任。
-            </p>
+                <p>
+                    This platform is a decentralized content display interface. All content is stored on the distributed network and the blockchain.<br>
+                    Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
+                    本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
+                </p>
             <p>© 2026 诡话 (GuiHua) | <a href="#" onclick="Modal.open('donateModal')" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
         </div>
     </footer>
 
-    <!-- 登录/注册 模态框 (仅 Web2) -->
+    <!-- Mobile Bottom Nav -->
+    <div class="bottom-nav" style="display: none;">
+        <a href="/" class="bottom-nav-item active">
+            <i class="fas fa-home"></i>
+            <span>首页</span>
+        </a>
+        <a href="#" onclick="Auth.checkAndGoStudio(); return false;" class="bottom-nav-item">
+            <i class="fas fa-plus-circle" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
+        </a>
+        <a href="#" onclick="if(currentUser) window.location.href='/profile?user='+currentUser.username; else Modal.open('loginModal'); return false;" class="bottom-nav-item">
+            <i class="fas fa-user"></i>
+            <span>我的</span>
+        </a>
+    </div>
+
+    <!-- Login/Register Modal -->
     <div class="modal-overlay" id="loginModal" onclick="Modal.close('loginModal')">
         <div class="modal glass" onclick="event.stopPropagation()">
             <div class="modal-header">
@@ -632,7 +647,7 @@
 
                     const isWeb3 = p.post_type === 1 || p.tx_hash;
                     const borderStyle = isWeb3 ? 'border-color: var(--accent-gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);' : '';
-                    const badge = isWeb3 ? '<div style="position:absolute; top:10px; right:10px; background:linear-gradient(45deg, #FFD700, #FFA500); color:#000; padding:4px 8px; border-radius:4px; font-size:0.7rem; font-weight:800; z-index:10; box-shadow:0 2px 5px rgba(0,0,0,0.2);">Web3 永存</div>' : '';
+                    const badge = isWeb3 ? '<div style="position:absolute; top:10px; right:10px; background:linear-gradient(45deg, #FFD700, #FFA500); color:#000; padding:4px 8px; border-radius:4px; font-size:0.7rem; font-weight:800; z-index:10; box-shadow:0 2px 5px rgba(0,0,0,0.2);">Web3</div>' : '';
 
                     return `
                     <div class="masonry-item">
@@ -830,8 +845,8 @@
                         ⛓ TX: <a href="https://testnet.bscscan.com/tx/${p.tx_hash}" target="_blank" style="color:var(--accent-purple);">${p.tx_hash ? p.tx_hash.substring(0,10)+'...'+p.tx_hash.substring(56) : 'N/A'}</a>
                         ${p.ipfs_cid ? (
                             (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ? 
-                            `<span style="margin-left:10px;">💾 Arweave: <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" style="color:var(--accent-gold);">永存档案</a></span>` :
-                            `<span style="margin-left:10px;">💾 IPFS: <a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" style="color:var(--accent-green);">永存档案</a></span>`
+                            `<span style="margin-left:10px;">💾 <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" style="color:var(--accent-gold);">永存档案</a></span>` :
+                            `<span style="margin-left:10px;">💾 <a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" style="color:var(--accent-green);">永存档案</a></span>`
                         ) : ''}
                     </div>
                     

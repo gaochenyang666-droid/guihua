@@ -112,7 +112,7 @@
                 <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-secondary);">
                     <p>💰 发帖费用: <span style="color: var(--accent-purple-light);">0.0003 BNB</span></p>
                     <p>⛓️ 上链网络: BSC Testnet (Chain ID: 97)</p>
-                    <p>💾 存储: IPFS 永存 + 数据库映射</p>
+                    <p>💾 存储: 永存网络 + 数据库映射</p>
                     <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">⚠️ 注意：费用将直接用于支持网站建设与服务器维护。</p>
                 </div>
                 
@@ -122,9 +122,9 @@
             <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
                 <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
                 <p>
-                    This platform is a decentralized content display interface. All content is stored on the distributed IPFS network and the blockchain.<br>
+                    This platform is a decentralized content display interface. All content is stored on the distributed network and the blockchain.<br>
                     Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
-                    本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/IPFS。请用户自行承担发布内容的法律责任。
+                    本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
                 </p>
             </footer>
         </main>
@@ -388,7 +388,7 @@
                 console.log("Uploading to IPFS...", data);
                 
                 const loadingText = document.querySelector('#txLoading h3');
-                if(loadingText) loadingText.textContent = '正在存入 IPFS 永存网络...';
+                if(loadingText) loadingText.textContent = '正在存入永存网络...';
                 
                 try {
                     const res = await fetch(`${API_BASE}/upload/ipfs`, {
@@ -404,15 +404,15 @@
                     if(res.ok) {
                         if(result.mock) {
                             console.log("Dev Mode: Using Mock CID");
-                            Toast.info("开发环境: 使用模拟 IPFS CID");
+                            Toast.info("开发环境: 使用模拟 CID");
                         }
                         return result.cid;
                     } else {
-                        throw new Error(result.error || 'IPFS upload failed');
+                        throw new Error(result.error || 'Upload failed');
                     }
                 } catch(e) {
-                    console.error("IPFS Error:", e);
-                    Toast.error('IPFS 上传失败: ' + e.message);
+                    console.error("Upload Error:", e);
+                    Toast.error('上传失败: ' + e.message);
                     throw e;
                 }
             },
@@ -492,7 +492,7 @@
                     await new Promise(r => setTimeout(r, 3000));
                     
                     // Server-side upload to Arweave (skip client side to avoid double upload and ensure tx_hash metadata)
-                    document.querySelector('#txLoading h3').textContent = '正在存入 Arweave 永存网络...';
+                    document.querySelector('#txLoading h3').textContent = '正在存入永存网络...';
                     
                     const res = await fetch(`${API_BASE}/posts`, {
                         method: 'POST',
@@ -662,8 +662,8 @@
                         ⛓ TX: <a href="https://testnet.bscscan.com/tx/${p.tx_hash}" target="_blank" style="color:var(--accent-purple);">${p.tx_hash ? p.tx_hash.substring(0,10)+'...'+p.tx_hash.substring(56) : 'N/A'}</a>
                         ${p.ipfs_cid ? (
                             (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ? 
-                            `<span style="margin-left:10px;">💾 Arweave: <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" style="color:var(--accent-gold);">永存档案</a></span>` :
-                            `<span style="margin-left:10px;">💾 IPFS: <a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" style="color:var(--accent-green);">永存档案</a></span>`
+                            `<span style="margin-left:10px;">💾 <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" style="color:var(--accent-gold);">永存档案</a></span>` :
+                            `<span style="margin-left:10px;">💾 <a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" style="color:var(--accent-green);">永存档案</a></span>`
                         ) : ''}
                     </div>
                     
