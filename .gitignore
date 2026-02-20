@@ -8,6 +8,8 @@ __pycache__/
 venv/
 env/
 guijing.db
+*.db
+instance/
 requirements_dev.txt
 ar_key.json
 arweave-key.json

@@ -910,14 +910,14 @@
                 else Toast.error('删除失败');
             },
             async adminToggleHide(id) {
-                const res = await fetch(`${API_BASE}/posts/${id}/hide`, {
-                    method: 'PUT', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                const res = await fetch(`${API_BASE}/admin/posts/${id}/hide`, {
+                    method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
                 });
                 if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); Post.load(); }
             },
             async adminToggleComments(id) {
                 const res = await fetch(`${API_BASE}/posts/${id}/comments`, {
-                    method: 'PUT', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                    method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
                 });
                 if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); }
             }

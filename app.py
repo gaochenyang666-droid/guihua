@@ -9,6 +9,7 @@ import random
 import time
 from datetime import datetime, timedelta
 from functools import wraps
+from dotenv import load_dotenv
 from flask import Flask, request, jsonify, g, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -19,43 +20,45 @@ from web3.middleware.geth_poa import geth_poa_middleware
 import arweave
 from arweave.arweave_lib import Wallet, Transaction
 
+# Load environment variables
+load_dotenv()
+
 app = Flask(__name__)
 CORS(app)
 
 # ImgBB Configuration
-IMGBB_API_KEY = os.environ.get('IMGBB_API_KEY', 'your-imgbb-api-key')
+IMGBB_API_KEY = os.environ.get('IMGBB_API_KEY')
+if not IMGBB_API_KEY:
+    print("Warning: IMGBB_API_KEY not set")
 
 # Arweave Configuration
-# Wallet is loaded dynamically from env or local file
 ARWEAVE_GATEWAY = 'https://arweave.net'
 
 # Pinata (IPFS) Configuration (Legacy/Backup)
-PINATA_API_KEY = os.environ.get('PINATA_API_KEY', '')
-PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY', '')
+PINATA_API_KEY = os.environ.get('PINATA_API_KEY')
+PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY')
 
 # Database Configuration
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'guijing.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default-dev-secret-key-please-change-in-prod')
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 if not app.config['SECRET_KEY']:
     raise ValueError("No SECRET_KEY set for Flask application")
 
 # BSC Testnet Configuration
 BSC_RPC_LIST = [
-    'https://data-seed-prebsc-1-s1.binance.org:8545/',
+    os.environ.get('BSC_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/'),
     'https://data-seed-prebsc-2-s1.binance.org:8545/',
     'https://data-seed-prebsc-1-s2.binance.org:8545/',
     'https://bsc-testnet.publicnode.com'
 ]
 
 app.config['BSC'] = {
-    'RPC_URL': os.environ.get('BSC_RPC_URL', BSC_RPC_LIST[0]),
+    'RPC_URL': BSC_RPC_LIST[0],
     'CHAIN_ID': 97,
-    'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS', '0xYourReceiveAddressHere'),
-    # 0.0003 BNB (Binance Coin) on BSC Testnet
-    # Note: 'ether' unit in Web3.py equals 10^18 Wei, which is 1 BNB
-    'POST_FEE': Web3.to_wei(0.0003, 'ether')
+    'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS'),
+    'POST_FEE': Web3.to_wei(float(os.environ.get('POST_FEE', '0.0003')), 'ether')
 }
 
 db = SQLAlchemy(app)
@@ -95,6 +98,7 @@ class User(db.Model):
     bio = db.Column(db.String(500), default='')
     has_nft_badge = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
+    is_banned = db.Column(db.Boolean, default=False) # Added for user banning
     wallet_address = db.Column(db.String(42), nullable=True) # For tipping
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -122,6 +126,7 @@ class User(db.Model):
             'bio': self.bio,
             'has_nft_badge': self.has_nft_badge,
             'is_admin': self.is_admin,
+            'is_banned': self.is_banned,
             'posts_count': self.posts.count()
         }
 
@@ -291,6 +296,13 @@ class UsedTransaction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class UserVote(db.Model):
+    __tablename__ = 'user_votes'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    vote_id = db.Column(db.Integer, db.ForeignKey('votes.id'))
+    __table_args__ = (db.UniqueConstraint('user_id', 'vote_id', name='unique_user_vote'),)
+
 class Tip(db.Model):
     __tablename__ = 'tips'
     id = db.Column(db.Integer, primary_key=True)
@@ -357,29 +369,46 @@ def get_arweave_wallet():
     """
     Load Arweave wallet from environment variable or local file.
     Priority:
-    1. AR_KEY_DATA (Environment Variable)
-    2. ar_key.json (Local File)
-    3. arweave-key.json (Legacy Local File)
+    1. AR_KEY_DATA (Environment Variable - JSON String)
+    2. AR_KEY_FILE (Environment Variable - File Path)
+    3. ar_key.json (Local File)
     """
-    # 1. Try Environment Variable
+    # 1. Try Environment Variable (JSON Data)
     key_data_str = os.environ.get('AR_KEY_DATA')
     if key_data_str:
         try:
-            jwk_data = json.loads(key_data_str)
-            # Create Wallet instance without reading file
-            wallet = Wallet.__new__(Wallet)
-            wallet.jwk_data = jwk_data
-            wallet._set_jwk_params()
-            wallet.api_url = ARWEAVE_GATEWAY # Ensure API URL is set
+            # Create a temporary file to load the wallet (arweave-python-client typically expects a file path)
+            # Or try passing dict if supported. Standard usage is file path.
+            # To be safe and compatible with most versions: write to temp file
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmp:
+                tmp.write(key_data_str)
+                tmp_path = tmp.name
+            
+            wallet = Wallet(tmp_path)
+            os.unlink(tmp_path) # Clean up
+            wallet.api_url = ARWEAVE_GATEWAY
             return wallet
         except Exception as e:
             print(f"Error loading wallet from AR_KEY_DATA: {e}")
 
-    # 2. Try Local Files
+    # 2. Try Environment Variable (File Path)
+    key_file_env = os.environ.get('AR_KEY_FILE')
+    if key_file_env and os.path.exists(key_file_env):
+        try:
+            wallet = Wallet(key_file_env)
+            wallet.api_url = ARWEAVE_GATEWAY
+            return wallet
+        except Exception as e:
+            print(f"Error loading wallet from AR_KEY_FILE: {e}")
+
+    # 3. Try Default Local Files
     for filename in ['ar_key.json', 'arweave-key.json']:
         if os.path.exists(filename):
             try:
-                return Wallet(filename)
+                wallet = Wallet(filename)
+                wallet.api_url = ARWEAVE_GATEWAY
+                return wallet
             except Exception as e:
                 print(f"Error loading wallet from {filename}: {e}")
                 
@@ -461,9 +490,9 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
         tx = None
         receipt = None
         
-        # Retry up to 60 times (60 seconds total) to handle RPC indexing delay
-        # Optimized: check every 1s instead of 2s
-        for i in range(60):
+        # Retry up to 5 times (5 seconds total) to handle RPC indexing delay
+        # Optimized: check every 1s
+        for i in range(5):
             try:
                 tx = web3_provider.eth.get_transaction(tx_hash)
                 receipt = web3_provider.eth.get_transaction_receipt(tx_hash)
@@ -520,11 +549,23 @@ def token_required(f):
             user = User.query.get(data['user_id'])
             if not user:
                 return jsonify({'error': 'User not found'}), 401
+            
+            if user.is_banned:
+                return jsonify({'error': 'Account has been banned'}), 403
+                
             g.current_user = user
         except jwt.ExpiredSignatureError:
             return jsonify({'error': 'Token expired'}), 401
         except Exception:
             return jsonify({'error': 'Token is invalid'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not g.current_user.is_admin:
+            return jsonify({'error': 'Admin privilege required'}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -697,6 +738,23 @@ def user_me():
     db.session.commit()
     return jsonify({'message': 'Profile updated', 'user': g.current_user.to_dict()})
 
+@app.route('/api/user/password', methods=['PUT'])
+@token_required
+def change_password():
+    data = request.get_json()
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+    
+    if not old_password or not new_password:
+        return jsonify({'error': 'Missing password fields'}), 400
+        
+    if not g.current_user.check_password(old_password):
+        return jsonify({'error': 'Incorrect old password'}), 401
+        
+    g.current_user.set_password(new_password)
+    db.session.commit()
+    return jsonify({'message': 'Password updated'})
+
 @app.route('/api/user/bind_wallet', methods=['POST'])
 @token_required
 def bind_wallet():
@@ -742,6 +800,18 @@ def get_fees():
         'chain_id': app.config['BSC']['CHAIN_ID'],
         'receive_address': app.config['BSC']['RECEIVE_ADDRESS']
     })
+
+@app.route('/api/gas/price', methods=['GET'])
+def get_gas_price():
+    try:
+        w3 = get_working_web3()
+        gas_price = w3.eth.gas_price
+        return jsonify({
+            'gas_price_wei': gas_price,
+            'gas_price_gwei': float(Web3.from_wei(gas_price, 'gwei'))
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # --- Posts ---
 
@@ -938,9 +1008,8 @@ def get_posts():
 @token_required
 def create_post():
     # 1. Permission Check
-    # Admin can post without wallet; Regular users must have wallet
     if not g.current_user.is_admin and not g.current_user.address:
-        return jsonify({'error': '请先绑定钱包地址 (Please bind wallet first)'}), 400
+        return jsonify({'error': 'Wallet binding required'}), 400
     
     # Check if multipart/form-data (for image upload)
     if 'image' in request.files:
@@ -985,12 +1054,12 @@ def create_post():
     if region not in valid_regions:
         return jsonify({'error': f'Invalid region. Allowed: {", ".join(valid_regions)}'}), 400
 
-    # 3. Logic Branching (Admin vs User)
+    # 3. Logic Branching
     is_paid = False
     is_on_chain = False
     
     if g.current_user.is_admin:
-        # Admin: No Gas, No Verify, No Arweave
+        # Admin: Skip verify, Skip Arweave
         pass
     else:
         # Regular User: Verify Tx & Upload to Arweave
@@ -1004,7 +1073,7 @@ def create_post():
         is_paid = True
         is_on_chain = True
         
-        # Arweave Upload Logic
+        # Arweave Upload (Server pays)
         clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
         payload = {
             'title': data.get('title'),
@@ -1017,22 +1086,20 @@ def create_post():
             'platform': 'GuiHua Web3 (Arweave)'
         }
         
-        print("Uploading to Arweave (Permanent Storage)...")
         ar_tx_id = upload_to_arweave_native(payload)
         if ar_tx_id:
             ipfs_cid = ar_tx_id
-            print(f"Arweave Upload Success: {ipfs_cid}")
         else:
-            print("Arweave Upload Failed")
-            # Fallback (optional, keeping existing logic)
+            # Fallback to Pinata if Arweave fails
             if PINATA_API_KEY:
                 ipfs_cid = upload_to_pinata(payload)
 
     # 4. Create Post
     clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
+    clean_title = bleach.clean(data.get('title', ''), strip=True)
     
     post = Post(
-        title=data.get('title'),
+        title=clean_title,
         content=clean_content,
         cover_image=data.get('cover_image'),
         images=json.dumps(data.get('images', [])),
@@ -1053,7 +1120,8 @@ def create_post():
         if vote_options and isinstance(vote_options, list):
             for opt in vote_options:
                 if opt and isinstance(opt, str) and len(opt.strip()) > 0:
-                    vote = Vote(post_id=post.id, option_text=opt.strip())
+                    clean_opt = bleach.clean(opt.strip(), strip=True)
+                    vote = Vote(post_id=post.id, option_text=clean_opt)
                     db.session.add(vote)
         
         # 6. Record Transaction (Prevent Replay)
@@ -1111,7 +1179,7 @@ def repost_post(post_id):
     clean_comment = bleach.clean(content, tags=[], strip=True)
 
     new_post = Post(
-        title=f"转发: {original_post.title}",
+        title=bleach.clean(f"转发: {original_post.title}", strip=True),
         content="",
         repost_comment=clean_comment,
         author_id=g.current_user.id,
@@ -1137,9 +1205,21 @@ def vote_post(post_id):
     vote_option = Vote.query.get(option_id)
     if not vote_option or vote_option.post_id != post_id:
         return jsonify({'error': 'Invalid vote option'}), 400
-        
-    vote_option.vote_count += 1
-    db.session.commit()
+    
+    # Check if already voted
+    existing_vote = UserVote.query.filter_by(user_id=g.current_user.id, vote_id=option_id).first()
+    if existing_vote:
+        return jsonify({'error': 'You have already voted for this option'}), 400
+    
+    # Record vote
+    try:
+        user_vote = UserVote(user_id=g.current_user.id, vote_id=option_id)
+        db.session.add(user_vote)
+        vote_option.vote_count += 1
+        db.session.commit()
+    except Exception as e: # IntegrityError catch
+        db.session.rollback()
+        return jsonify({'error': 'Already voted'}), 400
     
     return jsonify({
         'message': 'Voted successfully',
@@ -1161,13 +1241,15 @@ def add_comment(post_id):
     
     if not content: return jsonify({'error': 'Content empty'}), 400
     
+    clean_content = bleach.clean(content, tags=[], strip=True)
+    
     # Verify parent exists if provided
     if parent_id:
         parent = Comment.query.get(parent_id)
         if not parent or parent.post_id != post_id:
             return jsonify({'error': 'Invalid parent comment'}), 400
     
-    comment = Comment(content=content, author_id=g.current_user.id, post_id=post.id, parent_id=parent_id)
+    comment = Comment(content=clean_content, author_id=g.current_user.id, post_id=post.id, parent_id=parent_id)
     db.session.add(comment)
     db.session.commit()
     
@@ -1304,7 +1386,10 @@ def verify_tip():
         return jsonify({'error': 'Missing parameters'}), 400
         
     post = Post.query.get_or_404(post_id)
-    if not post.author.address:
+    
+    # Get recipient address
+    recipient_address = post.author.wallet_address or post.author.address
+    if not recipient_address:
         return jsonify({'error': 'Author has no wallet bound'}), 400
         
     # Verify Tip
@@ -1314,7 +1399,7 @@ def verify_tip():
     is_valid, result = verify_transaction(
         tx_hash, 
         g.current_user.address, 
-        expected_recipient=post.author.address,
+        expected_recipient=recipient_address,
         min_amount=min_tip
     )
     
@@ -1323,6 +1408,10 @@ def verify_tip():
         
     # Record Tip
     amount = str(result) # Result is amount in Wei
+    
+    # Check if tip already recorded
+    if Tip.query.filter_by(tx_hash=tx_hash).first():
+         return jsonify({'error': 'Tip already recorded'}), 400
     
     tip = Tip(
         tx_hash=tx_hash,
@@ -1338,7 +1427,6 @@ def verify_tip():
     try:
         db.session.add(tip)
         db.session.add(used_tx)
-        db.session.commit()
         
         # Notify Author
         if post.author.id != g.current_user.id:
@@ -1349,7 +1437,8 @@ def verify_tip():
                 type='tip'
             )
             db.session.add(notif)
-            db.session.commit()
+            
+        db.session.commit()
         
     except Exception as e:
         db.session.rollback()
@@ -1357,7 +1446,8 @@ def verify_tip():
         
     return jsonify({'message': 'Tip verified', 'tip': {
         'amount': amount,
-        'tx_hash': tx_hash
+        'tx_hash': tx_hash,
+        'amount_bnb': str(w3.from_wei(int(amount), 'ether'))
     }})
 
 @app.route('/api/user/revenue', methods=['GET'])
@@ -1391,40 +1481,83 @@ def get_revenue():
 @app.route('/api/posts/<int:post_id>', methods=['DELETE'])
 @token_required
 def delete_post(post_id):
-    if not g.current_user.is_admin:
-        return jsonify({'error': 'Admin only'}), 403
-    
     post = Post.query.get_or_404(post_id)
+    
+    # Allow admin or author to delete
+    if not g.current_user.is_admin and post.author_id != g.current_user.id:
+        return jsonify({'error': 'Permission denied'}), 403
+    
     # Delete related
     Comment.query.filter_by(post_id=post.id).delete()
     Like.query.filter_by(post_id=post.id).delete()
     Bookmark.query.filter_by(post_id=post.id).delete()
+    Vote.query.filter_by(post_id=post.id).delete()
     
     db.session.delete(post)
     db.session.commit()
     return jsonify({'message': 'Post deleted'})
 
-@app.route('/api/posts/<int:post_id>/hide', methods=['PUT'])
+@app.route('/api/posts/<int:post_id>', methods=['PUT'])
 @token_required
-def toggle_hide_post(post_id):
-    if not g.current_user.is_admin:
-        return jsonify({'error': 'Admin only'}), 403
+def update_post(post_id):
+    post = Post.query.get_or_404(post_id)
     
+    # Only author can edit
+    if post.author_id != g.current_user.id:
+        return jsonify({'error': 'Permission denied'}), 403
+        
+    # Cannot edit if on-chain (immutable)
+    if post.is_on_chain:
+        return jsonify({'error': 'Cannot edit on-chain content'}), 400
+        
+    data = request.get_json()
+    title = data.get('title')
+    content = data.get('content')
+    
+    if title:
+        post.title = bleach.clean(title, strip=True)
+    if content:
+        post.content = bleach.clean(content, tags=['b','i','u','img','p','br','div','span'], strip=True)
+        
+    db.session.commit()
+    return jsonify({'message': 'Post updated', 'post': post.to_dict()})
+
+@app.route('/api/admin/posts/<int:post_id>/hide', methods=['POST'])
+@token_required
+@admin_required
+def toggle_hide_post(post_id):
     post = Post.query.get_or_404(post_id)
     post.is_hidden = not post.is_hidden
     db.session.commit()
     return jsonify({'message': 'Toggled hide status', 'is_hidden': post.is_hidden})
 
-@app.route('/api/posts/<int:post_id>/comments', methods=['PUT'])
+@app.route('/api/posts/<int:post_id>/comments', methods=['POST'])
 @token_required
+@admin_required
 def toggle_post_comments(post_id):
-    if not g.current_user.is_admin:
-        return jsonify({'error': 'Admin only'}), 403
-    
     post = Post.query.get_or_404(post_id)
     post.allow_comments = not post.allow_comments
     db.session.commit()
     return jsonify({'message': 'Toggled comments status', 'allow_comments': post.allow_comments})
+
+@app.route('/api/admin/users/<int:user_id>/ban', methods=['POST'])
+@token_required
+@admin_required
+def ban_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.is_admin:
+        return jsonify({'error': 'Cannot ban admin'}), 400
+        
+    user.is_banned = not user.is_banned
+    db.session.commit()
+    return jsonify({'message': 'User ban status toggled', 'is_banned': user.is_banned})
+
+@app.route('/api/admin/users', methods=['GET'])
+@token_required
+@admin_required
+def list_users():
+    users = User.query.order_by(User.created_at.desc()).all()
+    return jsonify([u.to_dict() for u in users])
 
 @app.route('/api/debug/seed', methods=['POST'])
 def seed_db():
@@ -1435,12 +1568,12 @@ def seed_db():
         # 1. Create Admin
         admin = User.query.filter_by(username='admin').first()
         if not admin:
-            admin = User(username='admin', nickname='Admin👻', is_admin=True, avatar='👮')
+            admin = User(username='admin', nickname='Admin', is_admin=True, avatar='/static/default-avatar.png')
             admin.set_password('admin123')
             db.session.add(admin)
             
         # 2. Create Test Users
-        u1 = User(username='ghost_hunter', nickname='GhostHunter', avatar='🕵️')
+        u1 = User(username='ghost_hunter', nickname='GhostHunter', avatar='/static/default-avatar.png')
         u1.set_password('123456')
         db.session.add(u1)
         
@@ -1747,13 +1880,13 @@ def init_db_data():
         if not admin:
             # Bind a test address to admin for Web3 testing
             admin = User(
-                username='admin', 
-                nickname='Admin👻', 
+                username='AdminGao',
+                nickname='Admin', 
                 is_admin=True, 
-                avatar='👮',
+                avatar='/static/default-avatar.png',
                 address='0x1234567890123456789012345678901234567890' # Dummy address
             )
-            admin.set_password('admin123')
+            admin.set_password('Gao200430')
             db.session.add(admin)
             db.session.commit()
             print("Admin created.")
@@ -2042,9 +2175,10 @@ if __name__ == '__main__':
     # Auto-create tables (SQLite only, or dev env)
     # In production with PostgreSQL, use Flask-Migrate (alembic)
     with app.app_context():
+        # db.drop_all() # Uncomment to reset DB schema
         db.create_all()
         init_db_data()
-    app.run(port=5000)
+    app.run(debug=True, port=5001)
 else:
     # When running with Gunicorn, create tables if they don't exist
     with app.app_context():
