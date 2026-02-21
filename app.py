@@ -320,8 +320,8 @@ class Post(db.Model):
             'is_bookmarked': is_bookmarked,
             'tx_hash': self.tx_hash,
             'ipfs_cid': self.ipfs_cid,
-            'nft_token_id': self.nft_token_id,
-            'nft_tx_hash': self.nft_tx_hash,
+            'nft_token_id': getattr(self, 'nft_token_id', None),
+            'nft_tx_hash': getattr(self, 'nft_tx_hash', None),
             'post_type': self.post_type,
             'created_at': self.created_at.isoformat(),
             'is_repost': self.is_repost,
@@ -1317,12 +1317,17 @@ def get_posts():
                 Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)
             ).all()}
 
+        # 列表接口不请求 Arweave，内容来自 DB 的 Post.content
         posts_data = []
         for p in posts:
-            p_dict = p.to_dict()
-            p_dict['is_liked'] = p.id in user_likes
-            p_dict['is_bookmarked'] = p.id in user_bookmarks
-            posts_data.append(p_dict)
+            try:
+                p_dict = p.to_dict()
+                p_dict['is_liked'] = p.id in user_likes
+                p_dict['is_bookmarked'] = p.id in user_bookmarks
+                posts_data.append(p_dict)
+            except Exception as e:
+                print(f"[get_posts] skip post id={getattr(p, 'id', None)}: {e}")
+                traceback.print_exc()
 
         return jsonify({
             'posts': posts_data,
