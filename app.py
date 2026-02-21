@@ -2249,6 +2249,43 @@ def init_db_data():
 # 生产环境已移除：/api/debug/reset_db、/api/debug/seed（防止误开导致清库/刷数据）
 # 数据库变更请使用 Flask-Migrate (alembic)，勿用 drop_all
 
+def _ensure_posts_nft_columns():
+    """启动时确保 posts 表存在 nft_token_id、nft_tx_hash 列（Render 等可能未跑过迁移）。"""
+    from sqlalchemy import text
+    if db.engine.dialect.name != 'postgresql':
+        return
+    for col, sql in (
+        ('nft_token_id', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS nft_token_id BIGINT'),
+        ('nft_tx_hash', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS nft_tx_hash VARCHAR(66)'),
+    ):
+        try:
+            db.session.execute(text(sql))
+            db.session.commit()
+            print(f'[Startup] posts.{col} ensured.')
+        except Exception as e:
+            db.session.rollback()
+            if 'already exists' in str(e).lower():
+                pass
+            else:
+                print(f'[Startup] posts.{col} skip: {e}')
+
+def _ensure_posts_tx_nullable():
+    """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL，便于管理员直接发帖（Render 等可能曾用旧 schema）。"""
+    from sqlalchemy import text
+    if db.engine.dialect.name != 'postgresql':
+        return
+    for col in ('tx_hash', 'ipfs_cid'):
+        try:
+            db.session.execute(text(f'ALTER TABLE posts ALTER COLUMN {col} DROP NOT NULL'))
+            db.session.commit()
+            print(f'[Startup] posts.{col} set nullable.')
+        except Exception as e:
+            db.session.rollback()
+            if 'already' in str(e).lower() or 'does not exist' in str(e).lower():
+                pass
+            else:
+                print(f'[Startup] posts.{col} nullable skip: {e}')
+
 def _check_receive_address():
     """启动时检查：未配置 RECEIVE_ADDRESS 时打印明确错误提示"""
     addr = app.config.get('BSC', {}).get('RECEIVE_ADDRESS')
@@ -2265,6 +2302,8 @@ if __name__ == '__main__':
     # 表结构变更请使用 Flask-Migrate (alembic)，勿在生产环境使用 drop_all
     with app.app_context():
         db.create_all()
+        _ensure_posts_nft_columns()
+        _ensure_posts_tx_nullable()
         init_db_data()
         _check_receive_address()
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', port=int(os.environ.get('PORT', 5001)))
@@ -2272,6 +2311,8 @@ else:
     # When running with Gunicorn, create tables if they don't exist
     with app.app_context():
         db.create_all()
+        _ensure_posts_nft_columns()
+        _ensure_posts_tx_nullable()
         init_db_data()
         _check_receive_address()
 # Force Update 2026
