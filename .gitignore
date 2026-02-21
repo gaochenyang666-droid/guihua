@@ -13,4 +13,4 @@ instance/
 requirements_dev.txt
 ar_key.json
 arweave-key.json
-*.json
+# *.json # Do not ignore all json files, we need manifest.json

@@ -14,182 +14,191 @@
 <body>
     <div class="ghost-fire-container" id="ghostFireContainer"></div>
     
-    <div class="loading-overlay" id="txLoading">
-        <div class="loading-spinner"></div>
-        <h3 style="margin-bottom:0.5rem; color:var(--accent-purple-light);">正在上链</h3>
+    <!-- Payment Progress Drawer (Bottom Sheet) -->
+    <div class="bottom-sheet" id="paymentDrawer">
+        <div class="sheet-handle"></div>
         
-        <div class="terminal-log glass" style="width: 80%; max-width: 300px; height: 80px; overflow: hidden; margin-bottom: 1rem; font-family: monospace; font-size: 0.8rem; color: var(--accent-green); text-align: left; padding: 0.5rem; border: 1px solid var(--border-color); background: rgba(0,0,0,0.5);">
-            <div id="loadingLogs"></div>
+        <!-- State 1: Preview -->
+        <div id="drawerPreviewMode">
+            <div class="sheet-header">
+                <h3 style="margin-bottom:0.5rem; color:var(--text-primary);">💰 支付预览</h3>
+                <p style="font-size:0.8rem; color:var(--text-muted);">请确认上链信息</p>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem;">
+                    <span style="color:var(--text-secondary);">存储网络</span>
+                    <span style="display:flex; align-items:center; gap:0.4rem;">
+                        <i class="fas fa-cube" style="color:var(--text-muted);"></i> Arweave
+                    </span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem;">
+                    <span style="color:var(--text-secondary);">结算网络</span>
+                    <span style="display:flex; align-items:center; gap:0.4rem;">
+                        <i class="fab fa-ethereum" style="color:var(--accent-gold);"></i> BSC Testnet
+                    </span>
+                </div>
+                <div style="width:100%; height:1px; background:var(--border-color); margin:0.8rem 0;"></div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="color:var(--text-secondary);">预估总费用</span>
+                    <div style="text-align:right;">
+                        <div style="font-size:1.2rem; font-weight:bold; color:var(--accent-gold);" id="previewAmount">Loading...</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">Gas + Storage</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="drawerActionArea">
+                <button class="btn btn-primary" style="width:100%; padding:1rem; font-size:1rem;" onclick="Studio.confirmPayment()">
+                    🚀 确认并支付
+                </button>
+            </div>
+            <button class="btn btn-ghost" style="width:100%; margin-top:0.8rem; border:none;" onclick="Studio.closeDrawer()">取消</button>
         </div>
 
-        <p style="color:var(--text-secondary); font-size:0.9rem; text-align: center;">请在钱包中确认交易...<br><span style="font-size:0.8rem; color:var(--accent-red);">后台处理中，请勿关闭页面</span></p>
-        <button class="btn btn-ghost btn-sm" style="margin-top:1rem; display:none;" id="forceCloseLoading" onclick="document.getElementById('txLoading').classList.remove('active')">强制关闭</button>
+        <!-- State 2: Progress -->
+        <div id="drawerProgressMode" style="display:none;">
+            <div class="sheet-header">
+                <h3 style="margin-bottom:0.5rem; color:var(--accent-purple-light);">⛓️ 上链进程</h3>
+                <p style="font-size:0.8rem; color:var(--text-muted);">正在将怪谈永久刻入区块链</p>
+            </div>
+            
+            <div class="terminal-log glass" style="width: 100%; height: 150px; overflow-y: auto; margin-bottom: 1rem; font-family: monospace; font-size: 0.8rem; color: var(--accent-green); text-align: left; padding: 0.8rem; border: 1px solid var(--border-color); background: rgba(0,0,0,0.5);">
+                <div id="loadingLogs"></div>
+            </div>
+
+            <div id="txHashDisplay" style="display:none; margin-bottom:1rem; background:rgba(255,255,255,0.05); padding:0.8rem; border-radius:8px;">
+                <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.3rem;">Arweave TX Hash:</div>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <code id="realTxHash" style="color:var(--accent-gold); font-size:0.8rem; word-break:break-all;">Loading...</code>
+                    <button class="btn btn-ghost btn-sm" onclick="Studio.copyHash()">📋</button>
+                </div>
+            </div>
+
+            <p style="color:var(--text-secondary); font-size:0.85rem; text-align: center; margin-bottom:1rem;">
+                请在钱包中确认交易...<br>
+                <span style="font-size:0.8rem; color:var(--accent-red);">后台处理中，请勿关闭页面</span>
+            </p>
+            
+            <button class="btn btn-ghost btn-sm" style="width:100%; display:none;" id="forceCloseLoading" onclick="Studio.closeDrawer()">强制关闭</button>
+        </div>
     </div>
 
     <nav class="navbar glass">
         <a href="/" class="logo"><span>👻</span> <span>诡话</span> <span style="font-size: 0.8em; opacity: 0.7; font-weight: 400;">Web3</span></a>
         
-        <div class="search-container">
-            <span class="search-icon">🔍</span>
-            <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
-        </div>
-
         <div class="nav-actions">
-            <div id="authButtons">
-                <button class="btn btn-primary" onclick="Modal.open('loginModal')">登录 / 注册</button>
-            </div>
-
             <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
-                <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" />
-                <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">
-                    <i class="fas fa-sign-out-alt"></i>
-                </button>
+                <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" onerror="this.src='/static/default-avatar.png'" />
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
     <div class="main-container" id="studioView">
-        <aside class="sidebar">
-            <div class="sidebar-card glass" style="text-align: center;">
-                <div style="width: 80px; height: 80px; background: #333; border-radius: 50%; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-size: 2rem;">🧙‍♂️</div>
-                <h3 id="studioAddrDisplay" style="margin-bottom: 0.5rem;">0x...</h3>
-                <div id="studioBadgeDisplay" style="color: var(--accent-gold); font-size: 0.9rem; margin-bottom: 1rem; display: none;">🎖️ 资深探员</div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
-                    <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
-                        <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent-purple-light);" id="studioPostCount">0</div>
-                        <div style="font-size: 0.8rem; color: var(--text-secondary);">已发布</div>
+        <main style="max-width: 800px; margin: 0 auto;">
+            <div class="sidebar-card glass" style="padding: 2rem; position: relative; min-height: 500px;">
+                <!-- Step Progress -->
+                <div class="step-progress">
+                    <div class="step-item active" id="stepIndicator1">1. 撰写</div>
+                    <div class="step-item" id="stepIndicator2">2. 封面</div>
+                    <div class="step-item" id="stepIndicator3">3. 永存</div>
+                </div>
+
+                <!-- Step 1: Content -->
+                <div class="step-content active" id="step1">
+                    <h2 style="margin-bottom: 1.5rem;">发布新怪谈</h2>
+                    <div class="form-group">
+                        <label class="form-label">标题</label>
+                        <input type="text" class="form-input" id="studioPostTitle" placeholder="请输入引人入胜的标题...">
                     </div>
-                    <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px;">
-                        <div style="font-size: 1.2rem; font-weight: bold; color: var(--accent-gold);" id="studioRevenue">0</div>
-                        <div style="font-size: 0.8rem; color: var(--text-secondary);">累计打赏(BNB)</div>
+                    <div class="form-group">
+                        <label class="form-label">正文内容</label>
+                        <div class="toolbar" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
+                            <button class="tool-btn" onclick="Editor.format('bold')"><b>B</b></button>
+                            <button class="tool-btn" onclick="Editor.format('italic')"><i>I</i></button>
+                            <label class="tool-btn" style="cursor: pointer;">
+                                📷 <input type="file" style="display: none;" onchange="Editor.uploadImage(this)">
+                            </label>
+                        </div>
+                        <div id="studioPostContent" class="form-input" contenteditable="true" style="overflow-y: auto; min-height: 200px; max-height: 400px;"></div>
                     </div>
+                    <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="Studio.nextStep(2)">下一步: 上传封面</button>
                 </div>
-                <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-muted);">
-                    * 打赏金额直接进入您的钱包
-                </div>
-            </div>
-            
-            <div class="sidebar-card glass">
-                <button class="btn btn-ghost" onclick="window.location.href='/'" style="width: 100%;">🔙 返回浏览</button>
-            </div>
-        </aside>
-        
-        <main>
-            <div class="sidebar-card glass" style="padding: 2rem;">
-                <h2 style="margin-bottom: 1.5rem;">发布新怪谈</h2>
-                
-                <div class="form-group">
-                    <label class="form-label">标题</label>
-                    <input type="text" class="form-input" id="studioPostTitle" placeholder="请输入引人入胜的标题...">
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">正文内容</label>
-                    <div class="toolbar" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
-                        <button class="tool-btn" onclick="Editor.format('bold')"><b>B</b></button>
-                        <button class="tool-btn" onclick="Editor.format('italic')"><i>I</i></button>
-                        <label class="tool-btn" style="cursor: pointer;">
-                            📷 <input type="file" style="display: none;" onchange="Editor.uploadImage(this)">
-                        </label>
-                    </div>
-                    <div id="studioPostContent" class="form-input" contenteditable="true" style="overflow-y: auto; min-height: 200px;"></div>
-                </div>
-                
-                <div class="form-group">
-                    <label class="form-label">封面图 (必填)</label>
-                    <div style="display:flex; gap:1rem; align-items:flex-start;">
-                        <div style="flex:1;">
-                            <input type="text" class="form-input" id="studioPostImage" placeholder="输入图片 URL 或点击上传..." oninput="Editor.previewCover(this.value)">
-                            <div style="margin-top:0.5rem;">
-                                <label class="btn btn-ghost" style="font-size:0.8rem; padding:0.4rem 0.8rem;">
-                                    📤 上传图片 <input type="file" style="display:none;" onchange="Editor.uploadCover(this)">
-                                </label>
+
+                <!-- Step 2: Cover -->
+                <div class="step-content" id="step2">
+                    <h2 style="margin-bottom: 1.5rem;">设置封面</h2>
+                    <div class="form-group">
+                        <label class="form-label">封面图 (必填)</label>
+                        <div style="display:flex; flex-direction: column; gap:1rem;">
+                            <div id="coverPreview" style="width:100%; aspect-ratio: 16/9; background:var(--bg-secondary); border-radius:8px; border:1px dashed var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                                <span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>
                             </div>
-                        </div>
-                        <div id="coverPreview" style="width:120px; height:80px; background:var(--bg-secondary); border-radius:8px; border:1px dashed var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                            <span style="font-size:0.8rem; color:var(--text-secondary);">预览</span>
+                            <input type="text" class="form-input" id="studioPostImage" placeholder="输入图片 URL 或点击上传..." oninput="Editor.previewCover(this.value)">
+                            <label class="btn btn-ghost" style="width: 100%; justify-content: center;">
+                                📤 上传图片 <input type="file" style="display:none;" onchange="Editor.uploadCover(this)">
+                            </label>
                         </div>
                     </div>
+                    <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                        <button class="btn btn-ghost" style="flex: 1;" onclick="Studio.prevStep(1)">上一步</button>
+                        <button class="btn btn-primary" style="flex: 1;" onclick="Studio.nextStep(3)">下一步: 确认发布</button>
+                    </div>
                 </div>
-                
-                <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem; color: var(--text-secondary);">
-                    <p>💰 发帖费用: <span style="color: var(--accent-purple-light);">0.0003 BNB</span></p>
-                    <p>⛓️ 上链网络: BSC Testnet (Chain ID: 97)</p>
-                    <p>💾 存储: 永存网络 + 数据库映射</p>
-                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">⚠️ 注意：费用将直接用于支持网站建设与服务器维护。</p>
+
+                <!-- Step 3: Payment Preview -->
+                <div class="step-content" id="step3">
+                    <h2 style="margin-bottom: 1.5rem; text-align: center;">Web3 永存确认</h2>
+                    
+                    <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 16px; margin-bottom: 2rem; border: 1px solid var(--border-color);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                            <span style="color: var(--text-secondary);">上链网络</span>
+                            <span>BSC Testnet (ID: 97)</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                            <span style="color: var(--text-secondary);">存储协议</span>
+                            <span>Arweave + IPFS</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: var(--text-secondary);">预估费用</span>
+                            <span style="font-size: 1.5rem; font-weight: bold; color: var(--accent-gold);">0.0003 BNB</span>
+                        </div>
+                    </div>
+
+                    <div id="walletActionArea">
+                        <!-- Button injected by JS based on environment -->
+                        <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.publish()">
+                            ⚡ 确认支付并发布
+                        </button>
+                    </div>
+                    
+                    <button class="btn btn-ghost" style="width: 100%; margin-top: 1rem;" onclick="Studio.prevStep(2)">返回修改</button>
                 </div>
-                
-                <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem;" onclick="Post.publishFromStudio()">⚡ 支付并发布</button>
+
             </div>
             
             <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
-                <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
                 <p>
-                    This platform is a decentralized content display interface. All content is stored on the distributed network and the blockchain.<br>
-                    Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
                     本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
                 </p>
             </footer>
         </main>
     </div>
 
-    <!-- 登录/注册 模态框 (仅 Web2) -->
+    <!-- Login Modal (Web2) -->
     <div class="modal-overlay" id="loginModal">
         <div class="modal glass">
             <div class="modal-header">
-                <h3>🚪 入境方式 (Web2)</h3>
+                <h3>🚪 入境方式</h3>
                 <button class="modal-close" onclick="Modal.close('loginModal')">&times;</button>
             </div>
-            
-            <div id="authForms">
-                <!-- Login Form -->
-                <div id="loginFormContainer">
-                    <form id="loginForm">
-                        <div class="form-group">
-                            <label class="form-label">用户名</label>
-                            <input type="text" class="form-input" id="loginUsername" required />
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">密码</label>
-                            <input type="password" class="form-input" id="loginPassword" required />
-                        </div>
-                        <button type="submit" class="btn btn-primary" style="width: 100%;">登录</button>
-                        <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                            <a href="#" onclick="Auth.toggleForm()" style="color: var(--accent-purple);">没有账号？点击注册</a>
-                        </div>
-                    </form>
-                </div>
-
-                <!-- Register Form -->
-                <div id="registerFormContainer" style="display: none;">
-                    <div class="form-group">
-                        <label class="form-label">用户名</label>
-                        <input type="text" class="form-input" id="regUsername" required />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">密码</label>
-                        <input type="password" class="form-input" id="regPassword" required />
-                    </div>
-                    <button class="btn btn-primary" style="width: 100%;" onclick="Auth.register()">立即签约</button>
-                    <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                        <a href="#" onclick="Auth.toggleForm()" style="color: var(--text-secondary);">返回登录</a>
-                    </div>
-                </div>
+            <!-- ... Login forms ... -->
+            <div style="text-align: center; padding: 2rem;">
+                <p>请先登录以访问工作室</p>
+                <button class="btn btn-primary" onclick="window.location.href='/'">返回首页</button>
             </div>
-        </div>
-    </div>
-
-    <!-- 详情模态框 -->
-    <div class="modal-overlay post-detail-modal" id="postDetailModal">
-        <div class="modal glass">
-            <div class="modal-header">
-                <h3>📖 档案</h3>
-                <button class="modal-close" onclick="Modal.close('postDetailModal')">&times;</button>
-            </div>
-            <div id="postDetailBody"></div>
         </div>
     </div>
     
@@ -199,15 +208,42 @@
         const API_BASE = '/api'; 
         let currentUser = null;
 
+        const Draft = {
+            save() {
+                const title = document.getElementById('studioPostTitle').value;
+                const content = document.getElementById('studioPostContent').innerHTML;
+                if(title || content) {
+                    localStorage.setItem('studio_draft', JSON.stringify({title, content, time: Date.now()}));
+                }
+            },
+            load() {
+                try {
+                    const d = JSON.parse(localStorage.getItem('studio_draft'));
+                    if(d && (Date.now() - d.time < 24*60*60*1000)) {
+                        if(d.title) document.getElementById('studioPostTitle').value = d.title;
+                        if(d.content) document.getElementById('studioPostContent').innerHTML = d.content;
+                        if(d.title || d.content) Toast.info('已自动恢复上次的草稿 📝');
+                    }
+                } catch(e) {}
+            },
+            clear() { localStorage.removeItem('studio_draft'); }
+        };
+
         const Auth = {
             async init() {
                 const token = localStorage.getItem('token');
-                if (token) await this.fetchMe();
-                else {
+                if (token) {
+                    await this.fetchMe();
+                } else {
                     Toast.info('请先登录');
-                    Modal.open('loginModal');
+                    window.location.href = '/';
                 }
                 UI.updateAuth();
+                Draft.load(); // Load draft after auth check
+                
+                // Auto-save listeners
+                document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
+                document.getElementById('studioPostContent').addEventListener('input', () => Draft.save());
             },
 
             async fetchMe() {
@@ -222,165 +258,62 @@
                             window.location.href = '/';
                             return;
                         }
-                        const addr = currentUser.address;
-                        document.getElementById('studioAddrDisplay').textContent = addr.substring(0,6) + '...' + addr.substring(38);
-                        document.getElementById('studioPostCount').textContent = currentUser.posts_count;
-                        if(currentUser.has_nft_badge) document.getElementById('studioBadgeDisplay').style.display = 'block';
-                        
-                        this.fetchRevenue();
-                    }
-                    else this.logout();
-                } catch(e) { console.error(e); }
-            },
-
-            async fetchRevenue() {
-                try {
-                    const res = await fetch(`${API_BASE}/user/revenue`, {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        const el = document.getElementById('studioRevenue');
-                        if(el) el.textContent = data.total_bnb.toFixed(4);
+                    } else {
+                        localStorage.removeItem('token');
+                        window.location.href = '/';
                     }
                 } catch(e) { console.error(e); }
-            },
-
-            toggleForm() {
-                const login = document.getElementById('loginFormContainer');
-                const reg = document.getElementById('registerFormContainer');
-                if (login.style.display === 'none') {
-                    login.style.display = 'block'; reg.style.display = 'none';
-                } else {
-                    login.style.display = 'none'; reg.style.display = 'block';
-                }
-            },
-
-            async loginWeb2(username, password) {
-                const res = await fetch(`${API_BASE}/auth/web2/login`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await res.json();
-                if (res.ok) this.success(data);
-                else Toast.error(data.error);
-            },
-
-            async register() {
-                const username = document.getElementById('regUsername').value;
-                const password = document.getElementById('regPassword').value;
-                const res = await fetch(`${API_BASE}/auth/web2/register`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await res.json();
-                if (res.ok) this.success(data);
-                else Toast.error(data.error);
-            },
-
-            success(data) {
-                localStorage.setItem('token', data.token);
-                currentUser = data.user;
-                UI.updateAuth();
-                Modal.close('loginModal');
-                Toast.success('认证成功');
-                if(currentUser.type === 'web3') {
-                    const addr = currentUser.address;
-                    document.getElementById('studioAddrDisplay').textContent = addr.substring(0,6) + '...' + addr.substring(38);
-                    document.getElementById('studioPostCount').textContent = currentUser.posts_count;
-                    if(currentUser.has_nft_badge) document.getElementById('studioBadgeDisplay').style.display = 'block';
-                }
-            },
-
-            logout() {
-                localStorage.removeItem('token');
-                currentUser = null;
-                UI.updateAuth();
-                Toast.info('已退出');
             }
         };
 
-        const Editor = {
-            format(cmd) { document.execCommand(cmd, false, null); },
-            async uploadImage(input) {
-                const file = input.files[0];
-                if (!file) return;
-                
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                const btn = input.parentElement;
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '📷 ...';
-                
-                try {
-                    const res = await fetch(`${API_BASE}/upload`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                        body: formData
-                    });
-                    const data = await res.json();
-                    
-                    if (data.url) {
-                        this.format('insertImage', data.url);
-                        document.execCommand('insertImage', false, data.url);
-                    } else {
-                        Toast.error(data.error || '上传失败');
-                    }
-                } catch(e) {
-                    console.error(e);
-                    Toast.error('上传出错');
-                } finally {
-                    btn.innerHTML = originalText;
-                }
-            },
-            async uploadCover(input) {
-                const file = input.files[0];
-                if (!file) return;
-                
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                const btn = input.parentElement;
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '上传中...';
-                
-                try {
-                    const res = await fetch(`${API_BASE}/upload`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                        body: formData
-                    });
-                    const data = await res.json();
-                    
-                    if (data.url) {
-                        document.getElementById('studioPostImage').value = data.url;
-                        this.previewCover(data.url);
-                    } else {
-                        Toast.error(data.error || '上传失败');
-                    }
-                } catch(e) {
-                    console.error(e);
-                    Toast.error('上传出错');
-                } finally {
-                    btn.innerHTML = originalText;
-                }
-            },
-            previewCover(url) {
-                const p = document.getElementById('coverPreview');
-                if(url) {
-                    p.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;">`;
-                    p.style.border = '1px solid var(--accent-purple)';
-                } else {
-                    p.innerHTML = '<span style="font-size:0.8rem; color:var(--text-secondary);">预览</span>';
-                    p.style.border = '1px dashed var(--border-color)';
-                }
-            }
-        };
-
-        const Post = {
+        const Studio = {
+            currentStep: 1,
+            isPublishing: false,
             logInterval: null,
-            
+            timeoutId: null,
+
+            nextStep(step) {
+                // Validation
+                if (this.currentStep === 1) {
+                    const title = document.getElementById('studioPostTitle').value;
+                    const content = document.getElementById('studioPostContent').innerText;
+                    if(!title.trim() || content.trim().length < 10) return Toast.error('请完善标题和正文 (至少10字)');
+                }
+                if (this.currentStep === 2 && step === 3) {
+                    const cover = document.getElementById('studioPostImage').value;
+                    if(!cover) return Toast.error('请设置封面图');
+                    this.checkWalletEnv();
+                }
+
+                document.getElementById(`step${this.currentStep}`).classList.remove('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.remove('active');
+                
+                this.currentStep = step;
+                
+                document.getElementById(`step${this.currentStep}`).classList.add('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.add('active');
+            },
+
+            prevStep(step) {
+                document.getElementById(`step${this.currentStep}`).classList.remove('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.remove('active');
+                
+                this.currentStep = step;
+                
+                document.getElementById(`step${this.currentStep}`).classList.add('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.add('active');
+            },
+
+            checkWalletEnv() {
+                const area = document.getElementById('walletActionArea');
+                // Just show the button, logic moved to drawer
+                area.innerHTML = `
+                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.initPayment()">
+                        ⚡ 确认支付并发布
+                    </button>
+                `;
+            },
+
             addLog(msg) {
                 const c = document.getElementById('loadingLogs');
                 const line = document.createElement('div');
@@ -389,7 +322,7 @@
                 c.scrollTop = c.scrollHeight;
             },
             
-            startFakeLogs() {
+            startLogs() {
                 const c = document.getElementById('loadingLogs');
                 c.innerHTML = '';
                 const logs = [
@@ -411,115 +344,159 @@
                 }, 2500);
             },
             
-            stopFakeLogs() {
+            stopLogs() {
                 if(this.logInterval) clearInterval(this.logInterval);
             },
 
-            async load(params={}) {
-                const q = new URLSearchParams(params).toString();
-                const headers = {};
-                const token = localStorage.getItem('token');
-                if (token) headers['Authorization'] = `Bearer ${token}`;
-
-                const res = await fetch(`${API_BASE}/posts?${q}`, { headers });
-                const data = await res.json();
-                UI.renderPosts(data.posts);
+            copyHash() {
+                const hash = document.getElementById('realTxHash').textContent;
+                navigator.clipboard.writeText(hash);
+                Toast.success('已复制');
             },
-            
-            async uploadToIPFS(data) {
-                console.log("Uploading to IPFS...", data);
+
+            openDrawer() {
+                document.getElementById('paymentDrawer').classList.add('active');
+                document.querySelector('.main-container').style.filter = 'blur(5px)';
+            },
+
+            closeDrawer() {
+                document.getElementById('paymentDrawer').classList.remove('active');
+                document.querySelector('.main-container').style.filter = 'none';
+                this.stopLogs();
+                if(this.timeoutId) clearTimeout(this.timeoutId);
+                this.isPublishing = false;
+                document.getElementById('publishBtn').disabled = false;
+            },
+
+            async initPayment() {
+                if (this.isPublishing) return;
                 
-                const loadingText = document.querySelector('#txLoading h3');
-                if(loadingText) loadingText.textContent = '正在存入永存网络...';
+                // 1. Reset UI to Preview Mode
+                document.getElementById('drawerPreviewMode').style.display = 'block';
+                document.getElementById('drawerProgressMode').style.display = 'none';
+                document.getElementById('previewAmount').textContent = 'Loading...';
                 
+                this.openDrawer();
+
                 try {
-                    const res = await fetch(`${API_BASE}/upload/ipfs`, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        },
-                        body: JSON.stringify(data)
-                    });
+                    // 2. Fetch Fees
+                    const cRes = await fetch(`${API_BASE}/config/fees`);
+                    const config = await cRes.json();
+                    const feeInBNB = window.web3 ? window.web3.utils.fromWei(config.fee, 'ether') : '0.0003';
+                    document.getElementById('previewAmount').textContent = `${feeInBNB} BNB`;
                     
-                    const result = await res.json();
-                    if(res.ok) {
-                        if(result.mock) {
-                            console.log("Dev Mode: Using Mock CID");
-                            Toast.info("开发环境: 使用模拟 CID");
-                        }
-                        return result.cid;
+                    // 3. Check Environment for Deep Link
+                    const area = document.getElementById('drawerActionArea');
+                    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    
+                    if (isMobile && typeof window.ethereum === 'undefined' && typeof window.BinanceChain === 'undefined') {
+                         const dappUrl = window.location.host + window.location.pathname;
+                         const deepLink = `https://metamask.app.link/dapp/${dappUrl}`;
+                         area.innerHTML = `
+                            <div style="text-align: center; margin-bottom: 1rem; font-size: 0.9rem; color: var(--accent-orange);">
+                                ⚠️ 检测到移动端且未安装钱包插件
+                            </div>
+                            <a href="${deepLink}" class="btn btn-primary" style="width: 100%; text-align: center; display: block; text-decoration: none; padding: 1.2rem; font-size: 1.1rem; background: #f6851b; color: white;">
+                                🦊 跳转 MetaMask App 支付
+                            </a>
+                        `;
                     } else {
-                        throw new Error(result.error || 'Upload failed');
+                        area.innerHTML = `
+                            <button class="btn btn-primary" style="width:100%; padding:1rem; font-size:1rem;" onclick="Studio.confirmPayment()">
+                                🚀 确认并支付
+                            </button>
+                        `;
                     }
                 } catch(e) {
-                    console.error("Upload Error:", e);
-                    Toast.error('上传失败: ' + e.message);
-                    throw e;
+                    Toast.error('无法获取费率: ' + e.message);
+                    this.closeDrawer();
                 }
             },
-            
-            isPublishing: false,
 
-            async publishFromStudio() {
-                if (this.isPublishing) return;
-                this.isPublishing = true;
+            async confirmPayment() {
+                // Switch to Progress Mode
+                document.getElementById('drawerPreviewMode').style.display = 'none';
+                document.getElementById('drawerProgressMode').style.display = 'block';
                 
-                const btn = document.getElementById('publishBtn');
-                if (btn.disabled) return;
+                this.startLogs();
+                await this.publish();
+            },
+
+            async pollTxStatus(txHash) {
+                this.addLog("🔄 网络波动，正在后台轮询上链状态...");
+                let attempts = 0;
+                const maxAttempts = 30; // 90 seconds
                 
-                if (typeof window.BinanceChain !== 'undefined') {
-                    window.web3 = new Web3(window.BinanceChain);
-                } else if (typeof window.ethereum !== 'undefined') {
-                    window.web3 = new Web3(window.ethereum);
-                } else {
-                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                    if (isMobile) {
-                        return Toast.error('请在 MetaMask / OKX 等钱包 App 的内置浏览器中打开本站');
+                const poll = async () => {
+                    if (attempts >= maxAttempts) {
+                        this.addLog("❌ 服务器响应超时，请稍后在个人中心查看");
+                        document.getElementById('forceCloseLoading').style.display = 'block';
+                        return;
                     }
-                    return Toast.error('请安装 Web3 钱包');
-                }
+                    attempts++;
+                    
+                    try {
+                        const res = await fetch(`${API_BASE}/posts/check_tx?tx_hash=${txHash}`);
+                        const data = await res.json();
+                        
+                        if (data.status === 'success') {
+                            this.addLog("✅ 服务器确认成功!");
+                            Draft.clear();
+                            Toast.success('发布成功');
+                            setTimeout(() => window.location.href = '/', 2000);
+                        } else {
+                            setTimeout(poll, 3000);
+                        }
+                    } catch (e) {
+                        console.error("Poll error", e);
+                        setTimeout(poll, 3000);
+                    }
+                };
+                poll();
+            },
 
+            async publish() {
+                if (this.isPublishing) return;
+                
                 const title = document.getElementById('studioPostTitle').value;
                 const content = document.getElementById('studioPostContent').innerHTML;
                 const coverImage = document.getElementById('studioPostImage').value;
+                const btn = document.getElementById('publishBtn');
+
+                this.isPublishing = true;
+                btn.disabled = true;
                 
-                if(!title || !content) return Toast.error('标题和内容不能为空');
-                if(!coverImage) return Toast.error('请上传封面图');
+                // Safety Timeout
+                this.timeoutId = setTimeout(() => {
+                    document.getElementById('forceCloseLoading').style.display = 'block';
+                }, 60000);
+
+                let txHash = null;
 
                 try {
-                    btn.disabled = true;
-                    btn.textContent = '准备中...';
-                    
+                    // 1. Fee Config
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
                     
-                    const chainId = await window.web3.eth.getChainId();
-                    if (Number(chainId) !== Number(config.chain_id)) {
-                        try {
-                            const provider = window.BinanceChain || window.ethereum;
-                            await provider.request({
-                                method: 'wallet_switchEthereumChain',
-                                params: [{ chainId: window.web3.utils.toHex(config.chain_id) }],
-                            });
-                        } catch (switchError) {
-                            btn.disabled = false; btn.textContent = '⚡ 支付并发布';
-                            return Toast.error(`请切换到 BSC Testnet (Chain ID: ${config.chain_id})`);
+                    // 2. Chain Check
+                    if (window.web3) {
+                        const chainId = await window.web3.eth.getChainId();
+                        if (Number(chainId) !== Number(config.chain_id)) {
+                            try {
+                                await window.ethereum.request({
+                                    method: 'wallet_switchEthereumChain',
+                                    params: [{ chainId: window.web3.utils.toHex(config.chain_id) }],
+                                });
+                            } catch (switchError) {
+                                throw new Error(`请切换到 BSC Testnet (Chain ID: ${config.chain_id})`);
+                            }
                         }
                     }
 
-                    document.getElementById('txLoading').classList.add('active');
-                    document.querySelector('#txLoading h3').textContent = '正在上链支付...';
-                    this.startFakeLogs(); // Start Logs
-                    
-                    // Auto-show close button after 60s
-                    const timeoutId = setTimeout(() => {
-                        const closeBtn = document.getElementById('forceCloseLoading');
-                        if(closeBtn) closeBtn.style.display = 'inline-block';
-                    }, 60000);
-                    
+                    // 3. Payment
+                    this.addLog("等待钱包确认...");
                     const provider = window.BinanceChain || window.ethereum;
-                    const txHash = await provider.request({
+                    txHash = await provider.request({
                         method: 'eth_sendTransaction',
                         params: [{
                             to: config.receive_address,
@@ -527,31 +504,27 @@
                             value: window.web3.utils.toHex(config.fee)
                         }]
                     });
+                    
+                    this.addLog("交易已广播: " + txHash.substring(0, 10) + "...");
+                    document.getElementById('txHashDisplay').style.display = 'block';
+                    document.getElementById('realTxHash').textContent = txHash;
 
-                    document.querySelector('#txLoading h3').textContent = '正在确认交易...';
+                    // 4. Confirm Receipt
+                    this.addLog("等待链上确认...");
                     let receipt = null;
-                    // Optimized: check every 1s for 60s
                     for(let i=0; i<60; i++) { 
                         try {
                             receipt = await window.web3.eth.getTransactionReceipt(txHash);
                             if(receipt && receipt.status) break;
-                        } catch(e) { console.error("Tx Check Error:", e); }
+                        } catch(e) {}
                         await new Promise(r => setTimeout(r, 1000));
                     }
 
-                    if(!receipt || !receipt.status) {
-                         // Even if receipt is missing, try sending to backend to verify?
-                         // No, backend also checks receipt. If frontend can't find it, backend likely can't either.
-                         throw new Error('交易未确认或失败 (Transaction not confirmed or failed)');
-                    }
+                    if(!receipt || !receipt.status) throw new Error('交易未确认');
                     
-                    document.querySelector('#txLoading h3').textContent = '正在同步节点...';
-                    // Give node sync time
-                    await new Promise(r => setTimeout(r, 3000));
+                    this.addLog("交易确认成功! 正在存入 Arweave...");
                     
-                    // Server-side upload to Arweave (skip client side to avoid double upload and ensure tx_hash metadata)
-                    document.querySelector('#txLoading h3').textContent = '正在存入永存网络...';
-                    
+                    // 5. Backend Upload
                     const res = await fetch(`${API_BASE}/posts`, {
                         method: 'POST',
                         headers: { 
@@ -560,212 +533,90 @@
                         },
                         body: JSON.stringify({
                             title, content, tx_hash: txHash,
-                            cover_image: coverImage,
-                            images: []
+                            cover_image: coverImage, images: []
                         })
                     });
                     
-                    document.getElementById('txLoading').classList.remove('active');
-                    
                     if (res.ok) {
+                        this.addLog("✅ 发布成功!");
+                        Draft.clear();
                         Toast.success('发布成功');
-                        document.getElementById('studioPostTitle').value = '';
-                        document.getElementById('studioPostContent').innerHTML = '';
-                        document.getElementById('studioPostImage').value = '';
-                        Editor.previewCover('');
-                        Auth.fetchMe(); 
-                    } else Toast.error((await res.json()).error);
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 2000);
+                    } else {
+                        const errData = await res.json();
+                        throw new Error(errData.error || 'Server Error');
+                    }
                 } catch(e) { 
                     console.error(e);
-                    // Ensure loading is hidden on error
-                    document.getElementById('txLoading').classList.remove('active');
-                    Toast.error('发布失败: ' + e.message); 
+                    
+                    // Auth Error
+                    if (e.message && (e.message.includes('Token') || e.message.includes('expired'))) {
+                        this.addLog("❌ 身份验证过期，草稿已自动保存");
+                        Draft.save();
+                        Toast.error('登录过期，请重新登录');
+                        setTimeout(() => window.location.href = '/', 2000);
+                        return;
+                    }
+
+                    // Network Error -> Poll
+                    if (txHash && (e.message.includes('fetch') || e.message.includes('Network'))) {
+                        this.pollTxStatus(txHash);
+                        return;
+                    }
+
+                    this.addLog("❌ 错误: " + e.message);
+                    Toast.error('发布失败: ' + e.message);
+                    document.getElementById('forceCloseLoading').style.display = 'block';
                 } finally {
-                    this.isPublishing = false;
-                    // Clear the safety timeout
-                    this.stopFakeLogs();
-                    if(typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
-                    document.getElementById('txLoading').classList.remove('active');
-                    document.getElementById('forceCloseLoading').style.display = 'none';
-                    
-                    btn.disabled = false;
-                    btn.textContent = '⚡ 支付并发布';
+                    // Manual close required on failure
                 }
-            },
-
-            async repost(id) {
-                if (!currentUser) return Modal.open('loginModal');
-                const content = prompt("转发附言:");
-                if (content === null) return;
-
-                const res = await fetch(`${API_BASE}/posts/${id}/repost`, {
-                    method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    },
-                    body: JSON.stringify({ content })
-                });
-                if(res.ok) { Toast.success('转发成功'); this.load(); }
-                else Toast.error((await res.json()).error);
             }
         };
 
-        const UI = {
-            updateAuth() {
-                const authBtns = document.getElementById('authButtons');
-                const userMenu = document.getElementById('userMenu');
-                
-                if (currentUser) {
-                    authBtns.style.display = 'none';
-                    userMenu.style.display = 'flex';
-                    let displayName = currentUser.nickname;
-                    if (currentUser.type === 'web3' && currentUser.address) {
-                        displayName = currentUser.address.substring(0, 6) + '...' + currentUser.address.substring(38);
+        const Editor = {
+            format(cmd) { document.execCommand(cmd, false, null); },
+            async uploadImage(input) {
+                // ... Existing logic ...
+                const file = input.files[0];
+                if (!file) return;
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch(`${API_BASE}/upload`, {
+                        method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData
+                    });
+                    const data = await res.json();
+                    if (data.url) document.execCommand('insertImage', false, data.url);
+                } catch(e) { Toast.error('上传出错'); }
+            },
+            async uploadCover(input) {
+                // ... Existing logic ...
+                const file = input.files[0];
+                if (!file) return;
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch(`${API_BASE}/upload`, {
+                        method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData
+                    });
+                    const data = await res.json();
+                    if (data.url) {
+                        document.getElementById('studioPostImage').value = data.url;
+                        this.previewCover(data.url);
                     }
-                    document.getElementById('userDisplayName').textContent = displayName + (currentUser.has_nft_badge ? ' 🎖️' : '');
-                    if(currentUser.avatar) {
-                        const avatarEl = document.getElementById('userAvatarBtn');
-                        if (currentUser.avatar.length <= 5) {
-                            avatarEl.style.display = 'none'; 
-                            let emojiDiv = document.getElementById('userAvatarEmoji');
-                            if(!emojiDiv) {
-                                emojiDiv = document.createElement('div');
-                                emojiDiv.id = 'userAvatarEmoji';
-                                emojiDiv.className = 'user-avatar-emoji';
-                                emojiDiv.style.width = '36px';
-                                emojiDiv.style.height = '36px';
-                                emojiDiv.style.fontSize = '1.2rem';
-                                avatarEl.parentNode.insertBefore(emojiDiv, avatarEl);
-                            }
-                            emojiDiv.textContent = currentUser.avatar;
-                        } else {
-                            avatarEl.src = currentUser.avatar;
-                            avatarEl.style.display = 'block';
-                            const emojiDiv = document.getElementById('userAvatarEmoji');
-                            if(emojiDiv) emojiDiv.remove();
-                        }
-                    }
+                } catch(e) { Toast.error('上传出错'); }
+            },
+            previewCover(url) {
+                const p = document.getElementById('coverPreview');
+                if(url) {
+                    p.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`;
+                    p.style.border = '1px solid var(--accent-purple)';
                 } else {
-                    authBtns.style.display = 'flex';
-                    userMenu.style.display = 'none';
+                    p.innerHTML = '<span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>';
+                    p.style.border = '1px dashed var(--border-color)';
                 }
-            },
-
-            renderPosts(posts) {
-                const grid = document.getElementById('postGrid');
-                grid.innerHTML = posts.map(p => {
-                    const img = p.images && p.images.length ? `<img src="${p.images[0]}" class="post-image">` : '';
-                    let content = p.content;
-                    if (p.original_post_id && p.original_post) {
-                     const original = p.original_post;
-                     content = `<div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.5rem;">🔄 转发了 <b>${original.author.nickname}</b></div>` +
-                               `<div style="padding:0.5rem; background:var(--bg-secondary); border-radius:4px; margin-bottom:0.5rem;">` + 
-                               `<div style="font-weight:600;">${original.title}</div>` +
-                               `</div>` + 
-                               (p.repost_comment || '');
-                }
-                    return `
-                    <div class="masonry-item">
-                        <div class="post-card glass" onclick="Modal.openDetail(${p.id})">
-                            ${img}
-                            <div class="post-content">
-                                <div class="post-title">${p.title}</div>
-                                <div class="post-meta">
-                                    <span>${p.author.nickname}</span>
-                                    <span>💬 ${p.comments_count}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>`;
-                }).join('');
-                document.getElementById('loadingArea').style.display = 'none';
-            }
-        };
-
-        const Modal = {
-            open(id) { document.getElementById(id).classList.add('active'); },
-            close(id) { document.getElementById(id).classList.remove('active'); },
-            
-            async openDetail(id) {
-                this.open('postDetailModal');
-                const body = document.getElementById('postDetailBody');
-                body.innerHTML = '加载中...';
-                
-                const res = await fetch(`${API_BASE}/posts/${id}`);
-                const p = await res.json();
-                
-                let contentHtml = p.content;
-                let repostHtml = '';
-                if (p.original_post_id && p.original_post) {
-                    contentHtml = p.repost_comment || '';
-                    repostHtml = `
-                        <div style="margin:1rem 0; padding:1rem; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-secondary);">
-                            <div style="font-weight:600; margin-bottom:0.5rem;">${p.original_post.title}</div>
-                            <div style="font-size:0.9rem; color:var(--text-secondary);">${p.original_post.content}</div>
-                        </div>
-                    `;
-                }
-
-                const commentsHtml = p.comments.map(c => `
-                    <div class="comment-item">
-                        <div class="comment-header"><span>${c.author.nickname}</span><span>${new Date(c.created_at).toLocaleDateString()}</span></div>
-                        <div>${c.content}</div>
-                    </div>
-                `).join('');
-
-                body.innerHTML = `
-                    <h2 style="margin-bottom:0.5rem;">${p.title}</h2>
-                    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
-                        发布者: ${p.author.nickname} | 浏览: ${p.view_count}
-                    </div>
-                    <div class="post-detail-content">
-                        ${contentHtml}
-                        ${repostHtml}
-                    </div>
-                    
-                    <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:1rem;">
-                        ⛓ TX: <a href="https://testnet.bscscan.com/tx/${p.tx_hash}" target="_blank" style="color:var(--accent-purple);">${p.tx_hash ? p.tx_hash.substring(0,10)+'...'+p.tx_hash.substring(56) : 'N/A'}</a>
-                        ${p.ipfs_cid ? (
-                            (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ? 
-                            `<span style="margin-left:10px;">💾 <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" style="color:var(--accent-gold);">永存档案</a></span>` :
-                            `<span style="margin-left:10px;">💾 <a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" style="color:var(--accent-green);">永存档案</a></span>`
-                        ) : ''}
-                    </div>
-                    
-                    <div style="display:flex; gap:1rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem;">
-                        <button class="btn btn-ghost" onclick="Interact.like(${p.id})">😰 恐惧 (${p.likes_count})</button>
-                        <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
-                        <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
-                    </div>
-
-                    <div class="comments-section">
-                        <h4>评论</h4>
-                        <div style="margin-bottom:1rem;">${commentsHtml}</div>
-                        <div style="display:flex; gap:0.5rem;">
-                            <input type="text" id="commentInput" class="form-input" placeholder="发表评论...">
-                            <button class="btn btn-primary" onclick="Interact.comment(${p.id})">发送</button>
-                        </div>
-                    </div>
-                `;
-            }
-        };
-        
-        const Interact = {
-            async like(id) { await this.do(`${API_BASE}/posts/${id}/like`); Modal.openDetail(id); },
-            async bookmark(id) { await this.do(`${API_BASE}/posts/${id}/bookmark`); Modal.openDetail(id); },
-            async comment(id) {
-                const c = document.getElementById('commentInput').value;
-                if(!c) return;
-                await fetch(`${API_BASE}/posts/${id}/comments`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}`},
-                    body: JSON.stringify({content: c})
-                });
-                Modal.openDetail(id);
-            },
-            async do(url) {
-                if(!currentUser) return Modal.open('loginModal');
-                await fetch(url, { method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`} });
             }
         };
 
@@ -781,23 +632,31 @@
             error(m) { this.show(m, 'error'); },
             info(m) { this.show(m, 'info'); }
         };
+        
+        const UI = {
+            updateAuth() {
+                const userMenu = document.getElementById('userMenu');
+                if (currentUser) {
+                    userMenu.style.display = 'flex';
+                    let displayName = currentUser.nickname || currentUser.address.substring(0, 6);
+                    document.getElementById('userDisplayName').textContent = displayName;
+                    if(currentUser.avatar) document.getElementById('userAvatarBtn').src = currentUser.avatar;
+                }
+            }
+        };
+
+        const Modal = {
+            close(id) { document.getElementById(id).classList.remove('active'); }
+        };
 
         window.addEventListener('load', () => {
             const c = document.getElementById('ghostFireContainer');
-            for(let i=0; i<10; i++) {
+            for(let i=0; i<6; i++) {
                 const d = document.createElement('div'); d.className='ghost-fire';
                 d.style.left=Math.random()*100+'%'; d.style.animationDelay=Math.random()*5+'s';
                 c.appendChild(d);
             }
             Auth.init();
-            
-            document.getElementById('loginForm').onsubmit = (e) => {
-                e.preventDefault();
-                Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
-            };
-            
-            const logoutBtn = document.getElementById('logoutBtn');
-            if(logoutBtn) logoutBtn.onclick = () => Auth.logout();
         });
     </script>
 </body>

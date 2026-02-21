@@ -830,6 +830,19 @@ def search_posts():
     
     return jsonify({'posts': [p.to_dict() for p in posts]})
 
+@app.route('/api/posts/check_tx', methods=['GET'])
+def check_tx_status():
+    tx_hash = request.args.get('tx_hash')
+    if not tx_hash:
+        return jsonify({'error': 'Missing tx_hash'}), 400
+        
+    # Check if it exists in Post (Published successfully)
+    post = Post.query.filter_by(tx_hash=tx_hash).first()
+    if post:
+        return jsonify({'status': 'success', 'post_id': post.id, 'post_title': post.title})
+        
+    return jsonify({'status': 'pending'})
+
 @app.route('/api/admin/stats', methods=['GET'])
 @token_required
 def admin_stats():

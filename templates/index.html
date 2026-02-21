@@ -35,7 +35,7 @@
 
             <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
-                <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" />
+                <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" onerror="this.src='/static/default-avatar.png'" />
                 <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
@@ -85,7 +85,7 @@
             <span>首页</span>
         </a>
         <a href="#" onclick="Auth.checkAndGoStudio(); return false;" class="bottom-nav-item">
-            <i class="fas fa-plus-circle" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
+            <i class="fas fa-plus-circle nav-highlight-btn" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
         </a>
         <a href="#" onclick="if(currentUser) window.location.href='/profile?user='+currentUser.username; else Modal.open('loginModal'); return false;" class="bottom-nav-item">
             <i class="fas fa-user"></i>
@@ -660,7 +660,7 @@
                 const grid = document.getElementById('postGrid');
                 const html = posts.map(p => {
                     const imgUrl = p.cover_image || (p.images && p.images.length ? p.images[0] : null);
-                    const img = imgUrl ? `<img src="${imgUrl}" class="post-image" loading="lazy">` : '';
+                    const img = imgUrl ? `<img src="${imgUrl}" class="post-image" loading="lazy" onerror="this.style.display='none'">` : '';
                     
                     let content = p.content;
                     if (p.original_post_id && p.original_post) {
