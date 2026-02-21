@@ -42,7 +42,23 @@ PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY')
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'guijing.db'))
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {'timeout': 30}
+}
+
+# Persistent SECRET_KEY
+secret_file = os.path.join(basedir, '.secret_key')
+if os.path.exists(secret_file):
+    with open(secret_file, 'r') as f:
+        app.config['SECRET_KEY'] = f.read().strip()
+else:
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
+    try:
+        with open(secret_file, 'w') as f:
+            f.write(app.config['SECRET_KEY'])
+    except:
+        pass # In read-only envs, fallback to memory key (will reset on restart)
+
 if not app.config['SECRET_KEY']:
     raise ValueError("No SECRET_KEY set for Flask application")
 
@@ -94,7 +110,7 @@ class User(db.Model):
     username = db.Column(db.String(50), unique=True, nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=True)
     nickname = db.Column(db.String(50))
-    avatar = db.Column(db.String(500), default='/static/default-avatar.png')
+    avatar = db.Column(db.String(500), default='👻')
     bio = db.Column(db.String(500), default='')
     has_nft_badge = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
@@ -335,7 +351,9 @@ def upload_to_imgbb(file):
         }
         response = requests.post("https://api.imgbb.com/1/upload", data=payload)
         if response.status_code == 200:
-            return response.json()['data']['url'] # Get image URL
+            json_resp = response.json()
+            if 'data' in json_resp and 'url' in json_resp['data']:
+                return json_resp['data']['url']
         return None
     except Exception as e:
         print(f"ImgBB Error: {e}")
@@ -730,7 +748,7 @@ def user_me():
         
     if avatar:
         if avatar not in ALLOWED_AVATARS:
-            return jsonify({'error': 'Invalid avatar'}), 400
+            return jsonify({'error': 'Invalid avatar. Only emojis are allowed.'}), 400
         g.current_user.avatar = avatar
     elif refresh_avatar:
         g.current_user.avatar = get_random_avatar()
@@ -1581,12 +1599,12 @@ def seed_db():
         # 1. Create Admin
         admin = User.query.filter_by(username='admin').first()
         if not admin:
-            admin = User(username='admin', nickname='Admin', is_admin=True, avatar='/static/default-avatar.png')
+            admin = User(username='admin', nickname='Admin', is_admin=True, avatar='👺')
             admin.set_password('admin123')
             db.session.add(admin)
             
         # 2. Create Test Users
-        u1 = User(username='ghost_hunter', nickname='GhostHunter', avatar='/static/default-avatar.png')
+        u1 = User(username='ghost_hunter', nickname='GhostHunter', avatar='🧙')
         u1.set_password('123456')
         db.session.add(u1)
         
@@ -1896,7 +1914,7 @@ def init_db_data():
                 username='AdminGao',
                 nickname='Admin', 
                 is_admin=True, 
-                avatar='/static/default-avatar.png',
+                avatar='👺',
                 address='0x1234567890123456789012345678901234567890' # Dummy address
             )
             admin.set_password('Gao200430')

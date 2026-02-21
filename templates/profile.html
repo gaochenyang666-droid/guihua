@@ -13,7 +13,10 @@
 </head>
 <body>
     <nav class="navbar glass">
-        <a href="/" class="logo">🔙 返回首页</a>
+        <a href="/" class="logo">
+            <img src="/logo.svg" alt="GuiHua Logo">
+            <span>诡话</span>
+        </a>
         <div id="myActions"></div>
     </nav>
 
@@ -84,10 +87,8 @@
         }
         
         function renderProfile(user, posts) {
-            let avatarHtml = `<img src="${user.avatar}" class="avatar-lg" onerror="this.src='/static/default-avatar.png'">`;
-            if(!user.avatar || user.avatar.length < 5) {
-                avatarHtml = `<div class="avatar-lg">${user.avatar || '👻'}</div>`;
-            }
+            // Always render emoji avatar
+            let avatarHtml = `<div class="avatar-lg">${user.avatar || '👻'}</div>`;
             
             const isMe = currentUser && currentUser.id === user.id;
             
@@ -150,11 +151,7 @@
                 document.getElementById('editBio').value = currentUser.bio || '';
                 
                 const avatarEl = document.getElementById('previewAvatar');
-                if(currentUser.avatar && currentUser.avatar.length < 5) {
-                    avatarEl.innerHTML = currentUser.avatar;
-                } else {
-                    avatarEl.innerHTML = '👻'; 
-                }
+                avatarEl.innerHTML = currentUser.avatar || '👻';
                 
                 document.getElementById('editProfileModal').classList.add('active');
             },
@@ -173,14 +170,8 @@
             async save() {
                 const nickname = document.getElementById('editNickname').value;
                 const bio = document.getElementById('editBio').value;
-                let avatar = tempAvatar ? document.getElementById('previewAvatar').textContent : null;
-                
-                // If not using emoji avatar, we don't support custom URLs yet to prevent XSS/CORS issues
-                // Ideally, this should support file upload
-                if (!tempAvatar && currentUser.avatar && currentUser.avatar.startsWith('http')) {
-                     // Keep existing avatar if it's a URL
-                     avatar = null; 
-                }
+                // Only use the emoji from the preview
+                let avatar = document.getElementById('previewAvatar').textContent;
 
                 try {
                     const res = await fetch(`${API_BASE}/user/me`, {

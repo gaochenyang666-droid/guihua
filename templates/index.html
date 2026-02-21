@@ -16,7 +16,10 @@
     <div class="ghost-fire-container" id="ghostFireContainer"></div>
 
     <nav class="navbar glass">
-        <a href="/" class="logo"><span>👻</span> <span>诡话</span></a>
+        <a href="/" class="logo">
+            <img src="/logo.svg" alt="GuiHua Logo">
+            <span>诡话</span>
+        </a>
         
         <div class="search-container">
             <span class="search-icon">🔍</span>
@@ -35,7 +38,7 @@
 
             <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
-                <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" onerror="this.src='/static/default-avatar.png'" />
+                <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
                 <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
@@ -273,6 +276,11 @@
                     // Mobile fallback detection
                     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                     if (isMobile) {
+                         if(confirm('检测到移动端未安装钱包插件。是否跳转到 MetaMask App 继续？')) {
+                             const dappUrl = window.location.host;
+                             window.location.href = `https://metamask.app.link/dapp/${dappUrl}`;
+                             return;
+                         }
                         return Toast.error('请在 MetaMask / OKX 等钱包 App 的内置浏览器中打开本站');
                     }
                     return Toast.error('请安装 MetaMask, Binance Wallet 或其他 Web3 钱包');
@@ -477,10 +485,12 @@
             currentSort: 'new',
             currentQuery: '',
             isLoading: false,
+            isFetching: false,
 
             async load(params={}) {
-                if(this.isLoading) return;
+                if(this.isLoading || this.isFetching) return;
                 this.isLoading = true;
+                this.isFetching = true;
                 
                 try {
                     if(params.sort || params.q !== undefined) {
@@ -503,13 +513,24 @@
                     if (this.currentQuery) endpoint = `${API_BASE}/search`;
                     
                     const res = await fetch(`${endpoint}?${qParams.toString()}`, { headers });
-                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                    
-                    const data = await res.json();
-                    
-                    if (data.posts) {
-                        if(this.currentPage === 1) document.getElementById('postGrid').innerHTML = '';
-                        UI.renderPosts(data.posts, this.currentPage > 1);
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                
+                const data = await res.json();
+                
+                if (data.posts) {
+                    if(this.currentPage === 1) {
+                        document.getElementById('postGrid').innerHTML = '';
+                        if (data.posts.length === 0) {
+                            document.getElementById('postGrid').innerHTML = `
+                                <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
+                                    <div style="font-size: 3rem; margin-bottom: 1rem;">👻</div>
+                                    <p>这里一片荒芜，什么也没有...</p>
+                                    ${this.currentQuery ? '<button class="btn btn-ghost" onclick="Post.load()" style="margin-top:1rem;">返回全部</button>' : ''}
+                                </div>
+                            `;
+                        }
+                    }
+                    UI.renderPosts(data.posts, this.currentPage > 1);
                         
                         if(data.pages) {
                             this.totalPages = data.pages;
@@ -529,6 +550,7 @@
                     }
                 } finally {
                     this.isLoading = false;
+                    this.isFetching = false;
                     document.getElementById('loadingArea').style.display = 'none';
                 }
             },
@@ -577,7 +599,7 @@
                         notifBtn.style.marginRight = '0.5rem';
                         notifBtn.innerHTML = '<span style="font-size:1.2rem;">🔔</span><div id="notifBadge" style="position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:var(--accent-red); border-radius:50%; display:none;"></div>';
                         notifBtn.onclick = () => { Modal.open('notificationModal'); Notification.load(); };
-                        const avatarBtn = document.getElementById('userAvatarBtn');
+                        const avatarBtn = document.getElementById('userAvatarEmoji');
                         avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
                     }
                     Notification.load();
@@ -632,23 +654,8 @@
                     }
 
                     if(currentUser.avatar) {
-                        const avatarEl = document.getElementById('userAvatarBtn');
-                        if (currentUser.avatar.length <= 5) {
-                            avatarEl.style.display = 'none';
-                            let emojiDiv = document.getElementById('userAvatarEmoji');
-                            if(!emojiDiv) {
-                                emojiDiv = document.createElement('div');
-                                emojiDiv.id = 'userAvatarEmoji';
-                                emojiDiv.className = 'user-avatar-emoji';
-                                avatarEl.parentNode.insertBefore(emojiDiv, avatarEl);
-                            }
-                            emojiDiv.textContent = currentUser.avatar;
-                        } else {
-                            avatarEl.src = currentUser.avatar;
-                            avatarEl.style.display = 'block';
-                            const emojiDiv = document.getElementById('userAvatarEmoji');
-                            if(emojiDiv) emojiDiv.remove();
-                        }
+                        const avatarEl = document.getElementById('userAvatarEmoji');
+                        avatarEl.textContent = currentUser.avatar;
                     }
                 } else {
                     authBtns.style.display = 'flex';
@@ -704,10 +711,7 @@
             },
 
             renderAvatar(user) {
-                if (!user.avatar || user.avatar.length > 5) {
-                    return `<img src="${user.avatar || '/static/default-avatar.png'}" class="user-avatar" style="width:24px;height:24px;" onerror="this.src='/static/default-avatar.png'">`;
-                }
-                return `<div class="user-avatar-emoji" style="width:24px;height:24px;font-size:1rem;">${user.avatar}</div>`;
+                return `<div class="user-avatar-emoji" style="width:24px;height:24px;font-size:1rem;">${user.avatar || '👻'}</div>`;
             },
             
             handleNav(el, sort) {

@@ -85,26 +85,43 @@
     </div>
 
     <nav class="navbar glass">
-        <a href="/" class="logo"><span>👻</span> <span>诡话</span> <span style="font-size: 0.8em; opacity: 0.7; font-weight: 400;">Web3</span></a>
+        <a href="/" class="logo">
+            <img src="/logo.svg" alt="GuiHua Logo">
+            <span>诡话</span> 
+            <span style="font-size: 0.8em; opacity: 0.7; font-weight: 400;">Web3</span>
+        </a>
         
         <div class="nav-actions">
             <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
-                <img class="user-avatar" id="userAvatarBtn" src="/static/default-avatar.png" onerror="this.src='/static/default-avatar.png'" />
+                <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
-    <div class="main-container" id="studioView">
-        <main style="max-width: 800px; margin: 0 auto;">
-            <div class="sidebar-card glass" style="padding: 2rem; position: relative; min-height: 500px;">
-                <!-- Step Progress -->
+    <div class="studio-container" id="studioView">
+        <aside class="studio-sidebar">
+            <div class="sidebar-card glass" style="padding: 1rem;">
                 <div class="step-progress">
-                    <div class="step-item active" id="stepIndicator1">1. 撰写</div>
-                    <div class="step-item" id="stepIndicator2">2. 封面</div>
-                    <div class="step-item" id="stepIndicator3">3. 永存</div>
+                    <div class="step-item active" id="stepIndicator1">
+                        <div style="font-weight:bold;">1. 撰写</div>
+                        <div style="font-size:0.8rem; opacity:0.7;">创作你的故事</div>
+                    </div>
+                    <div class="step-item" id="stepIndicator2">
+                        <div style="font-weight:bold;">2. 封面</div>
+                        <div style="font-size:0.8rem; opacity:0.7;">设置吸引人的封面</div>
+                    </div>
+                    <div class="step-item" id="stepIndicator3">
+                        <div style="font-weight:bold;">3. 永存</div>
+                        <div style="font-size:0.8rem; opacity:0.7;">上链并发布</div>
+                    </div>
                 </div>
+            </div>
+        </aside>
+
+        <main style="max-width: 100%;">
+            <div class="glass" style="padding: 2rem; border-radius: var(--radius-lg); min-height: 600px;">
 
                 <!-- Step 1: Content -->
                 <div class="step-content active" id="step1">
@@ -114,7 +131,10 @@
                         <input type="text" class="form-input" id="studioPostTitle" placeholder="请输入引人入胜的标题...">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">正文内容</label>
+                        <label class="form-label" style="display:flex; justify-content:space-between;">
+                            <span>正文内容</span>
+                            <span style="font-size:0.8rem; color:var(--text-muted);" id="draftStatus"></span>
+                        </label>
                         <div class="toolbar" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
                             <button class="tool-btn" onclick="Editor.format('bold')"><b>B</b></button>
                             <button class="tool-btn" onclick="Editor.format('italic')"><i>I</i></button>
@@ -179,7 +199,7 @@
 
             </div>
             
-            <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+            <footer style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
                 <p>
                     本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
                 </p>
@@ -214,6 +234,12 @@
                 const content = document.getElementById('studioPostContent').innerHTML;
                 if(title || content) {
                     localStorage.setItem('studio_draft', JSON.stringify({title, content, time: Date.now()}));
+                    const status = document.getElementById('draftStatus');
+                    if(status) {
+                        status.textContent = '已自动保存 ' + new Date().toLocaleTimeString();
+                        status.style.opacity = 1;
+                        setTimeout(() => status.style.opacity = 0.7, 2000);
+                    }
                 }
             },
             load() {
@@ -640,7 +666,7 @@
                     userMenu.style.display = 'flex';
                     let displayName = currentUser.nickname || currentUser.address.substring(0, 6);
                     document.getElementById('userDisplayName').textContent = displayName;
-                    if(currentUser.avatar) document.getElementById('userAvatarBtn').src = currentUser.avatar;
+                    document.getElementById('userAvatarEmoji').textContent = currentUser.avatar || '👻';
                 }
             }
         };
