@@ -74,7 +74,7 @@ app.config['BSC'] = {
     'RPC_URL': BSC_RPC_LIST[0],
     'CHAIN_ID': 97,
     'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS'),
-    'POST_FEE': Web3.to_wei(float(os.environ.get('POST_FEE', '0.0003')), 'ether')
+    'POST_FEE': Web3.to_wei(os.environ.get('POST_FEE', '0.0003'), 'ether')
 }
 
 db = SQLAlchemy(app)

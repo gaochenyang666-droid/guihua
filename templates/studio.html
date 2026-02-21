@@ -464,7 +464,7 @@
                         return '0.0003';
                     };
                     
-                    const feeInBNB = fromWei(config.fee);
+                    const feeInBNB = fromWei(config.fee.toString());
                     document.getElementById('previewAmount').textContent = `${feeInBNB} BNB`;
                     
                     const area = document.getElementById('drawerActionArea');
@@ -573,7 +573,7 @@
                             try {
                                 await window.ethereum.request({
                                     method: 'wallet_switchEthereumChain',
-                                    params: [{ chainId: web3.utils.toHex(config.chain_id) }],
+                                    params: [{ chainId: web3.utils.toHex(String(config.chain_id)) }],
                                 });
                             } catch (switchError) {
                                 throw new Error(`请切换到 BSC Testnet (Chain ID: ${config.chain_id})`);
@@ -590,7 +590,7 @@
                             params: [{
                                 to: config.receive_address,
                                 from: currentUser.address,
-                                value: web3.utils.toHex(config.fee)
+                                value: web3.utils.toHex(config.fee.toString())
                             }]
                         });
                         this.pendingTxHash = txHash; // Save for retry
