@@ -2031,15 +2031,29 @@ def init_db_data():
 # 生产环境已移除：/api/debug/reset_db、/api/debug/seed（防止误开导致清库/刷数据）
 # 数据库变更请使用 Flask-Migrate (alembic)，勿用 drop_all
 
+def _check_receive_address():
+    """启动时检查：未配置 RECEIVE_ADDRESS 时打印明确错误提示"""
+    addr = app.config.get('BSC', {}).get('RECEIVE_ADDRESS')
+    if not addr or not str(addr).strip():
+        print('=' * 60)
+        print('ERROR: RECEIVE_ADDRESS is not set or empty.')
+        print('  Set RECEIVE_ADDRESS in .env (or environment) to enable:')
+        print('  - Post fee collection')
+        print('  - Tips and payout')
+        print('  Example: RECEIVE_ADDRESS=0xYourBSCWalletAddress')
+        print('=' * 60)
+
 if __name__ == '__main__':
     # 表结构变更请使用 Flask-Migrate (alembic)，勿在生产环境使用 drop_all
     with app.app_context():
         db.create_all()
         init_db_data()
+        _check_receive_address()
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', port=int(os.environ.get('PORT', 5001)))
 else:
     # When running with Gunicorn, create tables if they don't exist
     with app.app_context():
         db.create_all()
         init_db_data()
+        _check_receive_address()
 # Force Update 2026

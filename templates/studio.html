@@ -191,7 +191,7 @@
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <span style="color: var(--text-secondary);">预估费用</span>
-                            <span style="font-size: 1.5rem; font-weight: bold; color: var(--accent-gold);">0.001 BNB</span>
+                            <span id="studioFeeDisplay" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-gold);">—</span>
                         </div>
                     </div>
 
@@ -242,6 +242,7 @@
         const API_BASE = '/api'; 
         let currentUser = null;
 
+        /** 渲染带紫光特效的年份 ID，与后端年度 ID 格式一致 */
         function formatUserId(userId) {
             const idStr = String(userId);
             if (idStr.length < 10) {
@@ -252,7 +253,8 @@
             const yearColors = { '2025': { color: '#FF00FF', emoji: '🕯️' }, '2026': { color: '#00FFCC', emoji: '👻' } };
             const typeConfigs = { '1': { color: '#A855F7', emoji: '🔮' }, '9': { color: '#FFD700', emoji: '👁️' } };
             const res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
-            return `<span class="user-id-badge" style="color:${res.color}">${res.emoji} ${idStr}</span>`;
+            const glow = res.color === '#A855F7' ? '; text-shadow: 0 0 8px #A855F7, 0 0 12px #A855F7' : '';
+            return `<span class="user-id-badge" style="color:${res.color}${glow}">${res.emoji} ${idStr}</span>`;
         }
 
         const Editor = {
@@ -330,6 +332,15 @@
             clear() { localStorage.removeItem('studio_draft'); localStorage.removeItem(PENDING_POST_KEY); }
         };
 
+        function handle401(res) {
+            if (res && res.status === 401) {
+                localStorage.removeItem('token');
+                window.location.href = '/';
+                return true;
+            }
+            return false;
+        }
+
         const Auth = {
             async init() {
                 const token = localStorage.getItem('token');
@@ -342,6 +353,7 @@
                 UI.updateAuth();
                 Draft.load();
                 if (window.Studio) Studio.loadPendingPost();
+                Studio.updateFeeDisplay();
 
                 document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
                 document.getElementById('studioPostContent').addEventListener('input', () => Draft.save());
@@ -360,6 +372,7 @@
                             return;
                         }
                     } else {
+                        if (handle401(res)) return;
                         localStorage.removeItem('token');
                         window.location.href = '/';
                     }
@@ -401,6 +414,26 @@
                 
                 document.getElementById(`step${this.currentStep}`).classList.add('active');
                 document.getElementById(`stepIndicator${this.currentStep}`).classList.add('active');
+            },
+
+            async updateFeeDisplay() {
+                const el = document.getElementById('studioFeeDisplay');
+                if (!el) return;
+                try {
+                    const r = await fetch(`${API_BASE}/config/fees`);
+                    if (r.ok) {
+                        const cfg = await r.json();
+                        const fromWei = (val) => {
+                            if (typeof Web3 !== 'undefined') return Web3.utils.fromWei(String(val), 'ether');
+                            return (Number(val) / 1e18).toFixed(6);
+                        };
+                        el.textContent = fromWei(cfg.fee) + ' BNB';
+                    } else {
+                        el.textContent = '以支付时为准';
+                    }
+                } catch (e) {
+                    el.textContent = '以支付时为准';
+                }
             },
 
             checkWalletEnv() {
@@ -531,7 +564,7 @@
                     const fromWei = (val) => {
                         if (window.web3) return window.web3.utils.fromWei(val, 'ether');
                         if (typeof Web3 !== 'undefined') return Web3.utils.fromWei(val, 'ether');
-                        return '0.001';
+                        return '0.001';  /* 与后端 POST_FEE 默认一致，仅作展示兜底 */
                     };
                     
                     const feeInBNB = fromWei(config.fee.toString());
@@ -719,6 +752,7 @@
                         })
                     });
                     
+                    if (handle401(res)) return;
                     if (res.ok) {
                         this.addLog("✅ 发布成功!");
                         Draft.clear();

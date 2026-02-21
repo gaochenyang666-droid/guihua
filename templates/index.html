@@ -248,6 +248,16 @@
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
 
+        function handle401(res) {
+            if (res && res.status === 401) {
+                localStorage.removeItem('token');
+                currentUser = null;
+                window.location.href = '/';
+                return true;
+            }
+            return false;
+        }
+
         function formatUserId(userId) {
             const idStr = String(userId);
             if (idStr.length < 10) {
@@ -275,7 +285,7 @@
                     // Validate token validity
                     fetch(`${API_BASE}/user/me`, { headers: {'Authorization': `Bearer ${token}`} })
                     .then(res => {
-                        if (res.status === 401) this.logout();
+                        if (res.status === 401) { localStorage.removeItem('token'); currentUser = null; window.location.href = '/'; }
                     }).catch(() => {
                         // Network error or server down, maybe keep login state?
                         // For safety, let's not force logout on network error unless we are sure
@@ -292,6 +302,7 @@
                     const res = await fetch(`${API_BASE}/user/me`, {
                         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                     });
+                    if (handle401(res)) return;
                     if (res.ok) currentUser = await res.json();
                     else this.logout();
                 } catch(e) { console.error(e); }
@@ -481,6 +492,7 @@
                 const res = await fetch(`${API_BASE}/notifications`, {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
+                if (handle401(res)) return;
                 const data = await res.json();
                 
                 const list = document.getElementById('notificationList');
@@ -919,6 +931,7 @@
                 body.innerHTML = '加载中...';
                 
                 const res = await fetch(`${API_BASE}/posts/${id}`);
+                if (handle401(res)) return;
                 const p = await res.json();
                 
                 let contentHtml = p.content;
