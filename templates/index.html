@@ -125,9 +125,11 @@
                             <span style="background: var(--bg-card); padding: 0 0.5rem; color: var(--text-muted); position: relative; top: -0.8rem; font-size: 0.8rem;">或</span>
                         </div>
                         
-                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-orange); color: var(--accent-orange);" onclick="Auth.loginWeb3()">
-                            <i class="fas fa-wallet"></i> 钱包连接 (Web3)
+                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.loginWeb3()">
+                            <i class="fas fa-wallet"></i> 币安钱包 / 钱包连接
                         </button>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">点击后将在浏览器中拉起钱包，请在弹出的窗口中授权</p>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
 
                         <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
                             <a href="#" onclick="Auth.toggleForm()" style="color: var(--accent-purple);">没有账号？点击注册</a>
@@ -340,19 +342,17 @@
                 try {
                     let address;
                     let accounts;
-                    
-                    try {
-                        accounts = await window.web3.eth.requestAccounts();
-                    } catch (e) {
-                         if (window.BinanceChain) {
-                             accounts = await window.BinanceChain.request({ method: 'eth_requestAccounts' });
-                         } else if (window.ethereum) {
-                             accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-                         } else {
-                             return Toast.error('无法连接钱包');
-                         }
+                    const provider = window.BinanceChain || window.ethereum;
+                    if (!provider) {
+                        return Toast.error('请安装币安钱包、MetaMask 或其他 Web3 钱包');
                     }
-                    
+                    Toast.info('正在拉起钱包，请在弹出的窗口中授权…');
+                    try {
+                        accounts = await provider.request({ method: 'eth_requestAccounts' });
+                    } catch (e) {
+                        if (e.code === 4001 || e.message && e.message.includes('reject')) return Toast.error('已取消授权');
+                        return Toast.error('无法连接钱包: ' + (e.message || '请重试'));
+                    }
                     if (!accounts || accounts.length === 0) return Toast.error('未检测到账户');
                     address = accounts[0];
                     

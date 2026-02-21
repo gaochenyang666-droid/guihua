@@ -1,13 +1,14 @@
 import os
 import re
 import json
+import hashlib
 import secrets
+import threading
 import bleach
 import requests
 import base64
 import random
 import time
-import threading
 from datetime import datetime, timedelta
 from functools import wraps
 from dotenv import load_dotenv
@@ -80,15 +81,35 @@ BSC_RPC_LIST = [
     'https://bsc.publicnode.com'
 ]
 
-# 发帖费：.env 中 POST_FEE 为 BNB 单位（如 0.001），不要填 Wei
+# 发帖费：动态为 1 USD 等值 BNB；取价失败则用 .env POST_FEE（BNB 单位）兜底
 # 打赏平台抽成比例（7% 平台建设费，93% 给作者；打赏必须先打到平台钱包，再由平台转给作者）
 TIP_PLATFORM_FEE_PERCENT = 7
+POST_FEE_FALLBACK_BNB = os.environ.get('POST_FEE', '0.001')
 app.config['BSC'] = {
     'RPC_URL': BSC_RPC_LIST[0],
     'CHAIN_ID': 56,
     'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS'),
-    'POST_FEE': Web3.to_wei(os.environ.get('POST_FEE', '0.001'), 'ether')
+    'POST_FEE': Web3.to_wei(POST_FEE_FALLBACK_BNB, 'ether')
 }
+
+def get_bnb_price_usd():
+    """获取 BNB 美元价格（Binance 现货），失败返回 None。"""
+    try:
+        r = requests.get('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT', timeout=5)
+        if r.ok:
+            data = r.json()
+            return float(data.get('price', 0)) or None
+    except Exception as e:
+        print(f"BNB price fetch error: {e}")
+    return None
+
+def get_post_fee_wei():
+    """发帖费（Wei）：1 USD 等值 BNB；取价失败时用环境变量 POST_FEE 兜底。"""
+    price = get_bnb_price_usd()
+    if price and price > 0:
+        bnb_per_usd = 1.0 / price
+        return int(Web3.to_wei(bnb_per_usd, 'ether'))
+    return app.config['BSC']['POST_FEE']
 
 db = SQLAlchemy(app)
 w3 = Web3(Web3.HTTPProvider(app.config['BSC']['RPC_URL']))
@@ -175,23 +196,6 @@ def process_pending_tip_payouts():
         db.session.rollback()
     return (len(tips), sent, failed)
 
-# ============== 年度身份 ID 生成（防并发冲突） ==============
-_yearly_id_lock = threading.Lock()
-
-def generate_yearly_id(user_type=0):
-    """生成带类型的年度 ID。格式：[年份4位] + [类型1位] + [序号5位]。user_type: 0=普通, 1=创作者, 9=管理员。加锁防并发重复。"""
-    with _yearly_id_lock:
-        year = datetime.now().year
-        prefix = (year * 1000000) + (user_type * 100000)
-        last_user = User.query.filter(
-            User.id >= prefix,
-            User.id < prefix + 100000
-        ).order_by(User.id.desc()).first()
-        if last_user:
-            return last_user.id + 1
-        return prefix + 1
-
-
 # ============== Models ==============
 class User(db.Model):
     __tablename__ = 'users'
@@ -235,7 +239,6 @@ class User(db.Model):
             'has_nft_badge': self.has_nft_badge,
             'is_admin': self.is_admin,
             'is_banned': self.is_banned,
-            'posts_count': self.posts.count()
         }
 
 class Post(db.Model):
@@ -249,6 +252,8 @@ class Post(db.Model):
     view_count = db.Column(db.Integer, default=0)
     tx_hash = db.Column(db.String(66), unique=True, nullable=True)
     ipfs_cid = db.Column(db.String(100), nullable=True)
+    nft_token_id = db.Column(db.BigInteger, nullable=True, index=True)
+    nft_tx_hash = db.Column(db.String(66), nullable=True)
     is_paid = db.Column(db.Boolean, default=False)
     
     # New: Region and On-Chain Status
@@ -307,6 +312,8 @@ class Post(db.Model):
             'is_bookmarked': is_bookmarked,
             'tx_hash': self.tx_hash,
             'ipfs_cid': self.ipfs_cid,
+            'nft_token_id': self.nft_token_id,
+            'nft_tx_hash': self.nft_tx_hash,
             'post_type': self.post_type,
             'created_at': self.created_at.isoformat(),
             'is_repost': self.is_repost,
@@ -356,6 +363,36 @@ class Comment(db.Model):
         if recursive:
             data['replies'] = [reply.to_dict(recursive=True) for reply in self.replies.all()]
         return data
+
+
+def build_comment_tree(comments):
+    """将扁平评论列表在内存中组装成树形结构，避免递归查询 N+1。comments 需已 joinedload(Comment.author)。"""
+    by_parent = {}
+    for c in comments:
+        pid = c.parent_id
+        if pid not in by_parent:
+            by_parent[pid] = []
+        by_parent[pid].append(c)
+
+    def to_dict_node(c):
+        return {
+            'id': c.id,
+            'content': c.content,
+            'author': c.author.to_dict(),
+            'created_at': c.created_at.isoformat(),
+            'parent_id': c.parent_id,
+            'replies': []
+        }
+
+    def fill_replies(nodes):
+        for n in nodes:
+            d = to_dict_node(n)
+            children = by_parent.get(n.id) or []
+            d['replies'] = list(fill_replies(children))
+            yield d
+
+    roots = sorted(by_parent.get(None) or [], key=lambda c: c.created_at, reverse=True)
+    return list(fill_replies(roots))
 
 class Like(db.Model):
     __tablename__ = 'likes'
@@ -436,9 +473,21 @@ ALLOWED_AVATARS = ['👻', '💀', '👽', '👾', '🤖', '🎃', '🧛', '🧟
 def get_random_avatar():
     return random.choice(ALLOWED_AVATARS)
 
+IMGBB_MAX_SIZE = 2 * 1024 * 1024  # 2MB
+IMGBB_ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
 def upload_to_imgbb(file):
+    if not file or not getattr(file, 'filename', None):
+        return None
+    filename = (file.filename or '').lower()
+    if '.' not in filename or filename.rsplit('.', 1)[-1] not in IMGBB_ALLOWED_EXTENSIONS:
+        return None
     try:
-        # Convert file to base64
+        file.seek(0, os.SEEK_END)
+        size = file.tell()
+        file.seek(0)
+        if size > IMGBB_MAX_SIZE:
+            return None
         img_b64 = base64.b64encode(file.read()).decode('utf-8')
         # According to docs: don't add expiration for permanent storage
         payload = {
@@ -490,21 +539,24 @@ def get_arweave_wallet():
     # 1. Try Environment Variable (JSON Data)
     key_data_str = os.environ.get('AR_KEY_DATA')
     if key_data_str:
+        import tempfile
+        tmp_path = None
         try:
-            # Create a temporary file to load the wallet (arweave-python-client typically expects a file path)
-            # Or try passing dict if supported. Standard usage is file path.
-            # To be safe and compatible with most versions: write to temp file
-            import tempfile
             with tempfile.NamedTemporaryFile(mode='w+', delete=False) as tmp:
                 tmp.write(key_data_str)
                 tmp_path = tmp.name
-            
             wallet = Wallet(tmp_path)
-            os.unlink(tmp_path) # Clean up
             wallet.api_url = ARWEAVE_GATEWAY
             return wallet
         except Exception as e:
             print(f"Error loading wallet from AR_KEY_DATA: {e}")
+            return None
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     # 2. Try Environment Variable (File Path)
     key_file_env = os.environ.get('AR_KEY_FILE')
@@ -563,6 +615,118 @@ def upload_to_arweave_native(data):
         return None
 
 
+def build_and_upload_nft_metadata(post):
+    """
+    按 NFT 标准生成 metadata（name, description, content_hash, author_id, image, external_url），
+    上传至 Arweave，返回 metadata 的 Arweave tx id（即 tokenURI 路径），失败返回 None。
+    """
+    try:
+        content_hash = hashlib.sha256((post.content or '').encode('utf-8')).hexdigest()
+        external_url = f"https://arweave.net/{post.ipfs_cid}" if post.ipfs_cid else ""
+        metadata = {
+            "name": (post.title or "")[:200],
+            "description": (post.content or "").replace("<", " ").replace(">", " ")[:500],
+            "content_hash": content_hash,
+            "author_id": post.author_id,
+            "image": post.cover_image or "",
+            "external_url": external_url,
+            "platform": "GuiHua Web3",
+            "post_id": post.id,
+            "created_at": post.created_at.isoformat() if post.created_at else ""
+        }
+        tx_id = upload_to_arweave_native(metadata)
+        return tx_id
+    except Exception as e:
+        print(f"NFT metadata upload error: {e}")
+        return None
+
+
+# NFT 铸造：.env 中 ADMIN_PRIVATE_KEY（铸造用私钥）、NFT_CONTRACT_ADDRESS（ERC-721 合约地址）
+ADMIN_PRIVATE_KEY = os.environ.get('ADMIN_PRIVATE_KEY')
+NFT_CONTRACT_ADDRESS = os.environ.get('NFT_CONTRACT_ADDRESS')
+
+# ERC-721 常见 mint 接口：mint(address to, string tokenURI) 或 safeMint(address to, string tokenURI)
+NFT_MINT_ABI = [{
+    "inputs": [{"name": "to", "type": "address"}, {"name": "tokenURI", "type": "string"}],
+    "name": "mint",
+    "outputs": [{"name": "", "type": "uint256"}],
+    "stateMutability": "nonpayable",
+    "type": "function"
+}]
+
+def mint_nft(to_address, token_uri):
+    """
+    调用合约 mint(to, tokenURI)。使用 ADMIN_PRIVATE_KEY 发送交易。
+    返回 (token_id, tx_hash) 成功；(None, error_msg) 失败。
+    """
+    if not ADMIN_PRIVATE_KEY or not NFT_CONTRACT_ADDRESS or not Web3.is_address(to_address):
+        return None, "NFT mint not configured or invalid to_address"
+    try:
+        from eth_account import Account
+        w3_conn = get_working_web3()
+        account = Account.from_key(ADMIN_PRIVATE_KEY)
+        contract = w3_conn.eth.contract(
+            address=Web3.to_checksum_address(NFT_CONTRACT_ADDRESS),
+            abi=NFT_MINT_ABI
+        )
+        tx = contract.functions.mint(Web3.to_checksum_address(to_address), token_uri).build_transaction({
+            'from': account.address,
+            'nonce': w3_conn.eth.get_transaction_count(account.address),
+            'gas': 200000,
+            'chainId': app.config['BSC']['CHAIN_ID']
+        })
+        signed = account.sign_transaction(tx)
+        tx_hash = w3_conn.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = None
+        for _ in range(30):
+            time.sleep(2)
+            receipt = w3_conn.eth.get_transaction_receipt(tx_hash)
+            if receipt is not None:
+                break
+        if not receipt or receipt['status'] != 1:
+            return None, "Mint tx failed or timeout"
+        token_id = None
+        for log in receipt.get('logs', []):
+            topics = log.get('topics', [])
+            if len(topics) >= 4:
+                try:
+                    token_id = int(topics[3].hex(), 16)
+                    break
+                except (IndexError, ValueError, AttributeError):
+                    pass
+        return token_id, tx_hash.hex()
+    except Exception as e:
+        return None, str(e)[:300]
+
+
+def async_mint_nft_for_post(post_id):
+    """后台线程：为帖子生成 NFT 元数据、上传 Arweave、铸造 NFT、更新 Post.nft_token_id / nft_tx_hash。"""
+    with app.app_context():
+        try:
+            post = Post.query.get(post_id)
+            if not post or not post.ipfs_cid:
+                return
+            to_address = (post.author.wallet_address or post.author.address or '').strip()
+            if not to_address or not Web3.is_address(to_address):
+                print(f"Post {post_id}: author has no wallet address, skip mint")
+                return
+            metadata_tx_id = build_and_upload_nft_metadata(post)
+            if not metadata_tx_id:
+                print(f"Post {post_id}: metadata upload failed, skip mint")
+                return
+            token_uri = f"https://arweave.net/{metadata_tx_id}"
+            token_id, tx_hash_or_err = mint_nft(to_address, token_uri)
+            if token_id is not None and tx_hash_or_err:
+                post.nft_token_id = token_id
+                post.nft_tx_hash = tx_hash_or_err
+                db.session.commit()
+                print(f"Post {post_id} NFT minted: token_id={token_id}, tx={tx_hash_or_err}")
+            else:
+                print(f"Post {post_id} mint failed: {tx_hash_or_err}")
+        except Exception as e:
+            print(f"async_mint_nft_for_post error: {e}")
+
+
 def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amount=None):
     """
     Verify transaction on BSC.
@@ -576,9 +740,8 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
         expected_recipient = app.config['BSC']['RECEIVE_ADDRESS']
     if not expected_recipient:
         return False, 'Platform receive address not configured'
-    # 发帖费写死 0.001 BNB，避免 .env 误填 Wei 导致校验异常
     if min_amount is None:
-        min_amount = Web3.to_wei(0.001, 'ether')
+        min_amount = get_post_fee_wei()  # 使用配置发帖费（1 USD 等值 BNB），勿硬编码
 
     # Check format
     if not re.match(r"^0x[a-fA-F0-9]{64}$", tx_hash):
@@ -704,19 +867,12 @@ def get_nonce():
 
     user = User.query.filter_by(address=address).first()
     if not user:
-        for _ in range(3):
-            try:
-                user = User(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
-                user.id = generate_yearly_id(user_type=1)
-                db.session.add(user)
-                db.session.commit()
-                break
-            except Exception as e:
-                db.session.rollback()
-                if 'unique' in str(e).lower() or 'IntegrityError' in type(e).__name__:
-                    continue
-                raise
-        else:
+        try:
+            user = User(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
+            db.session.add(user)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
             return jsonify({'error': 'Failed to create user, please retry'}), 500
     
     # Always refresh nonce
@@ -791,20 +947,15 @@ def register():
         if User.query.filter_by(username=username).first():
             return jsonify({'error': 'Username already exists'}), 400
 
-        for attempt in range(3):
-            try:
-                user = User(username=username, nickname=username, avatar=get_random_avatar())
-                user.id = generate_yearly_id(user_type=0)
-                user.set_password(password)
-                db.session.add(user)
-                db.session.commit()
-                break
-            except Exception as e:
-                db.session.rollback()
-                if ('unique' in str(e).lower() or 'IntegrityError' in type(e).__name__) and attempt < 2:
-                    continue
-                print(f"Register Error: {e}")
-                return jsonify({'error': 'Registration failed'}), 500
+        try:
+            user = User(username=username, nickname=username, avatar=get_random_avatar())
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"Register Error: {e}")
+            return jsonify({'error': 'Registration failed'}), 500
         
         token = jwt.encode({
             'user_id': user.id,
@@ -926,11 +1077,14 @@ def get_fees():
     receive_address = app.config['BSC']['RECEIVE_ADDRESS']
     if not receive_address:
         return jsonify({'error': 'Platform receive address not configured'}), 503
-    # Return fee as string to avoid JS number precision loss for large wei values
+    fee_wei = get_post_fee_wei()
+    bnb_price_usd = get_bnb_price_usd()
     return jsonify({
-        'fee': str(app.config['BSC']['POST_FEE']),
+        'fee': str(fee_wei),
         'chain_id': app.config['BSC']['CHAIN_ID'],
-        'receive_address': receive_address
+        'receive_address': receive_address,
+        'fee_usd': 1,
+        'bnb_price_usd': round(bnb_price_usd, 4) if bnb_price_usd else None
     })
 
 @app.route('/api/gas/price', methods=['GET'])
@@ -952,14 +1106,12 @@ def search_posts():
     q = request.args.get('q', '').strip()
     if not q:
         return jsonify({'posts': []})
-        
-    # Use simple LIKE search (SQLite default)
-    # For production with PostgreSQL, use Full Text Search (tsvector)
+    # 转义 LIKE 通配符，防止 %/_ 导致全表扫描或注入
+    escaped_q = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
     posts = Post.query.filter(
-        (Post.title.ilike(f'%{q}%')) | 
-        (Post.content.ilike(f'%{q}%'))
+        (Post.title.ilike(f'%{escaped_q}%', escape='\\')) |
+        (Post.content.ilike(f'%{escaped_q}%', escape='\\'))
     ).filter_by(is_hidden=False).order_by(Post.created_at.desc()).limit(20).all()
-    
     return jsonify({'posts': [p.to_dict() for p in posts]})
 
 @app.route('/api/posts/check_tx', methods=['GET'])
@@ -1024,11 +1176,13 @@ def get_user_profile(username):
             
     if not user:
         return jsonify({'error': 'User not found'}), 404
-        
+
     posts = Post.query.filter_by(author_id=user.id, is_hidden=False).order_by(Post.created_at.desc()).all()
-    
+    user_data = user.to_dict()
+    user_data['posts_count'] = len(posts)
+
     return jsonify({
-        'user': user.to_dict(),
+        'user': user_data,
         'posts': [p.to_dict() for p in posts]
     })
 
@@ -1085,12 +1239,10 @@ def get_posts():
     per_page = request.args.get('per_page', 20, type=int)
     region = request.args.get('region') # Filter by region
     
-    # Optimize query with eager loading
-    from sqlalchemy.orm import joinedload, subqueryload
+    from sqlalchemy.orm import joinedload
     query = Post.query.options(
-        joinedload(Post.author), # Eager load author
-        # Note: We can't easily eager load 'likes' count efficiently in standard ORM without column_property or similar,
-        # but we can optimize the 'is_liked' check below.
+        joinedload(Post.author),
+        joinedload(Post.votes),
     )
 
     if sort_by == 'hot':
@@ -1205,10 +1357,10 @@ def create_post():
         # Admin: Skip verify, Skip Arweave
         pass
     else:
-        # Regular User: 必须带 tx_hash，且经 verify_transaction 校验 to/from/value 与唯一性
+        # Regular User: 必须带 tx_hash，且经 verify_transaction 校验 to/from/value 与唯一性（min_amount = 1 USD 等值 BNB）
         if not tx_hash:
             return jsonify({'error': 'Transaction hash required'}), 400
-        is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address)
+        is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address, min_amount=get_post_fee_wei())
         if not is_valid:
             return jsonify({'error': error_msg}), 400
             
@@ -1294,6 +1446,9 @@ def create_post():
             return jsonify({'error': 'Transaction hash already used'}), 400
         print(f"Create Post DB Error: {e}")
         return jsonify({'error': 'Database error'}), 500
+
+    if post.ipfs_cid and ADMIN_PRIVATE_KEY and NFT_CONTRACT_ADDRESS:
+        threading.Thread(target=async_mint_nft_for_post, args=(post.id,), daemon=True).start()
     
     return jsonify({'message': 'Post created', 'post': post.to_dict()}), 201
 
@@ -1312,14 +1467,14 @@ def get_post_detail(post_id):
             except: pass
             
         post_data = post.to_dict(current_user_id)
-        
-        # Manually fetch comments to build tree (or rely on recursive to_dict if we implemented it)
-        # Since I updated Comment.to_dict(recursive=True), let's use that but we need to structure it.
-        # Actually, let's just fetch top-level comments and let them recurse.
-        top_level_comments = Comment.query.filter_by(post_id=post_id, parent_id=None).order_by(Comment.created_at.desc()).all()
-        post_data['comments'] = [c.to_dict(recursive=True) for c in top_level_comments]
-        post_data['comments_count'] = post.comments.count() # Total count
-            
+
+        from sqlalchemy.orm import joinedload
+        all_comments = Comment.query.filter_by(post_id=post_id).options(
+            joinedload(Comment.author)
+        ).order_by(Comment.created_at.asc()).all()
+        post_data['comments'] = build_comment_tree(all_comments)
+        post_data['comments_count'] = len(all_comments)
+
         return jsonify(post_data)
     except Exception as e:
         print(f"Post Detail Error: {e}")
@@ -1756,7 +1911,6 @@ def init_db_data():
                 avatar='👺',
                 address='0x1234567890123456789012345678901234567890'
             )
-            admin.id = generate_yearly_id(user_type=9)
             admin.set_password('Gao200430')
             db.session.add(admin)
             try:

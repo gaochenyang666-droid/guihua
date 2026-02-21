@@ -427,7 +427,8 @@
                             if (typeof Web3 !== 'undefined') return Web3.utils.fromWei(String(val), 'ether');
                             return (Number(val) / 1e18).toFixed(6);
                         };
-                        el.textContent = fromWei(cfg.fee) + ' BNB';
+                        const bnb = fromWei(cfg.fee);
+                        el.textContent = (cfg.fee_usd === 1 ? `${bnb} BNB (约 1 USD)` : `${bnb} BNB`);
                     } else {
                         el.textContent = '以支付时为准';
                     }
@@ -568,7 +569,8 @@
                     };
                     
                     const feeInBNB = fromWei(config.fee.toString());
-                    document.getElementById('previewAmount').textContent = `${feeInBNB} BNB`;
+                    const feeLabel = config.fee_usd === 1 ? `${feeInBNB} BNB (约 1 USD)` : `${feeInBNB} BNB`;
+                    document.getElementById('previewAmount').textContent = feeLabel;
                     const addrEl = document.getElementById('previewReceiveAddress');
                     if (addrEl && config.receive_address) addrEl.textContent = config.receive_address;
                     

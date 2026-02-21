@@ -138,6 +138,16 @@
             `;
             
             if(posts && posts.length > 0) {
+                const proofLink = (p) => {
+                    const parts = [];
+                    if (p.tx_hash) parts.push('<a href="https://bscscan.com/tx/' + p.tx_hash + '" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证</a>');
+                    if (p.ipfs_cid) {
+                        const isAr = (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'));
+                        const url = isAr ? 'https://arweave.net/' + p.ipfs_cid : 'https://ipfs.io/ipfs/' + p.ipfs_cid;
+                        parts.push('<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>');
+                    }
+                    return parts.length ? '<div style="margin-top:0.4rem; font-size:0.75rem;">' + parts.join(' · ') + '</div>' : '';
+                };
                 document.getElementById('postsArea').innerHTML = posts.map(p => `
                     <div class="post-item glass" onclick="window.location.href='/?post=${p.id}'"> 
                         ${p.cover_image ? `<img src="${p.cover_image}" class="post-cover" loading="lazy" onerror="this.style.display='none'">` : '<div class="post-cover" style="display:flex;align-items:center;justify-content:center;font-size:2rem;">📝</div>'}
@@ -147,6 +157,7 @@
                             <div style="margin-top:0.5rem; font-size:0.8rem; color:var(--text-secondary);">
                                 📅 ${new Date(p.created_at).toLocaleDateString()} · 💬 ${p.comments_count} · ❤️ ${p.likes_count}
                             </div>
+                            ${proofLink(p)}
                         </div>
                     </div>
                 `).join('');
