@@ -235,7 +235,7 @@ class User(db.Model):
             'id': self.id,
             'type': 'web3' if self.address else 'web2',
             'address': self.address,
-            'wallet_address': self.wallet_address or self.address, # Fallback to login address
+            'wallet_address': getattr(self, 'wallet_address', None) or self.address,  # Fallback to login address
             'username': self.username,
             'nickname': self.nickname or self.username or (self.address[:6] + '...' if self.address else 'Unknown'),
             'avatar': self.avatar,
@@ -1281,11 +1281,10 @@ def get_posts():
         )
 
         if sort_by == 'hot':
-            # PostgreSQL 兼容：用子查询按点赞数排序，避免 GROUP BY 与 SELECT * 冲突
-            subq = db.session.query(Post.id, func.count(Like.id).label('like_count')).outerjoin(
-                Like, Post.id == Like.post_id
-            ).group_by(Post.id).subquery()
-            query = query.join(subq, Post.id == subq.c.id).order_by(subq.c.like_count.desc())
+            # 用标量子查询按点赞数排序，避免 JOIN 子查询在部分环境下报错
+            from sqlalchemy import select
+            like_count_subq = select(func.count(Like.id)).where(Like.post_id == Post.id).correlate(Post).scalar_subquery()
+            query = query.order_by(like_count_subq.desc())
         elif sort_by == 'bookmarks':
             if current_user_id:
                 query = query.join(Bookmark).filter(Bookmark.user_id == current_user_id)
@@ -2259,6 +2258,20 @@ def init_db_data():
 # 生产环境已移除：/api/debug/reset_db、/api/debug/seed（防止误开导致清库/刷数据）
 # 数据库变更请使用 Flask-Migrate (alembic)，勿用 drop_all
 
+def _ensure_users_wallet_address():
+    """启动时确保 users 表存在 wallet_address 列（Render 等可能为旧 schema）。"""
+    from sqlalchemy import text
+    if db.engine.dialect.name != 'postgresql':
+        return
+    try:
+        db.session.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address VARCHAR(42)'))
+        db.session.commit()
+        print('[Startup] users.wallet_address ensured.')
+    except Exception as e:
+        db.session.rollback()
+        if 'already exists' not in str(e).lower():
+            print(f'[Startup] users.wallet_address skip: {e}')
+
 def _ensure_posts_nft_columns():
     """启动时确保 posts 表存在 nft_token_id、nft_tx_hash 列（Render 等可能未跑过迁移）。"""
     from sqlalchemy import text
@@ -2312,6 +2325,7 @@ if __name__ == '__main__':
     # 表结构变更请使用 Flask-Migrate (alembic)，勿在生产环境使用 drop_all
     with app.app_context():
         db.create_all()
+        _ensure_users_wallet_address()
         _ensure_posts_nft_columns()
         _ensure_posts_tx_nullable()
         init_db_data()
@@ -2321,6 +2335,7 @@ else:
     # When running with Gunicorn, create tables if they don't exist
     with app.app_context():
         db.create_all()
+        _ensure_users_wallet_address()
         _ensure_posts_nft_columns()
         _ensure_posts_tx_nullable()
         init_db_data()
