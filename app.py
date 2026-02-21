@@ -1254,81 +1254,83 @@ def read_all_notifications():
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
-    token = None
-    current_user_id = None
-    if 'Authorization' in request.headers:
-        try:
-            token = request.headers['Authorization'].split(" ")[1]
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user_id = data['user_id']
-        except: pass
+    try:
+        token = None
+        current_user_id = None
+        if 'Authorization' in request.headers:
+            try:
+                token = request.headers['Authorization'].split(" ")[1]
+                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+                current_user_id = data['user_id']
+            except Exception:
+                pass
 
-    sort_by = request.args.get('sort', 'new')
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-    region = request.args.get('region') # Filter by region
-    
-    from sqlalchemy.orm import joinedload
-    query = Post.query.options(
-        joinedload(Post.author),
-        joinedload(Post.votes),
-    )
+        sort_by = request.args.get('sort', 'new')
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', 20, type=int), 50)
+        region = request.args.get('region')
 
-    if sort_by == 'hot':
-        # Simple hot sort
+        from sqlalchemy.orm import joinedload
         from sqlalchemy import func
-        query = query.outerjoin(Like).group_by(Post.id).order_by(func.count(Like.id).desc())
-    elif sort_by == 'bookmarks':
-        if current_user_id:
-            query = query.join(Bookmark).filter(Bookmark.user_id == current_user_id)
+        query = Post.query.options(
+            joinedload(Post.author),
+            joinedload(Post.votes),
+        )
+
+        if sort_by == 'hot':
+            # PostgreSQL 兼容：用子查询按点赞数排序，避免 GROUP BY 与 SELECT * 冲突
+            subq = db.session.query(Post.id, func.count(Like.id).label('like_count')).outerjoin(
+                Like, Post.id == Like.post_id
+            ).group_by(Post.id).subquery()
+            query = query.join(subq, Post.id == subq.c.id).order_by(subq.c.like_count.desc())
+        elif sort_by == 'bookmarks':
+            if current_user_id:
+                query = query.join(Bookmark).filter(Bookmark.user_id == current_user_id)
+            else:
+                return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': 1})
         else:
-            return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': 1})
-    else: # 'new'
-        query = query.order_by(Post.created_at.desc())
+            query = query.order_by(Post.created_at.desc())
 
-    # Filter by Region
-    if region:
-        query = query.filter_by(region=region)
+        if region:
+            query = query.filter_by(region=region)
 
-    # Filter hidden posts unless admin
-    current_user = None
-    if current_user_id:
-        current_user = User.query.get(current_user_id)
-        
-    if not current_user or not current_user.is_admin:
-        query = query.filter_by(is_hidden=False)
+        current_user = None
+        if current_user_id:
+            current_user = User.query.get(current_user_id)
+        if not current_user or not current_user.is_admin:
+            query = query.filter_by(is_hidden=False)
 
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    posts = pagination.items
-    
-    # Batch fetch likes/bookmarks for current user to avoid N+1
-    user_likes = set()
-    user_bookmarks = set()
-    
-    if current_user_id and posts:
-        post_ids = [p.id for p in posts]
-        likes = Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()
-        user_likes = {l.post_id for l in likes}
-        
-        bookmarks = Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()
-        user_bookmarks = {b.post_id for b in bookmarks}
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        posts = pagination.items
 
-    # Manual to_dict construction to inject pre-fetched state
-    posts_data = []
-    for p in posts:
-        # We use a modified to_dict logic here or update the object temporarily (not recommended for persistent session)
-        # Better to construct dict manually or pass state to a helper
-        p_dict = p.to_dict() # Call basic to_dict without user_id
-        p_dict['is_liked'] = p.id in user_likes
-        p_dict['is_bookmarked'] = p.id in user_bookmarks
-        posts_data.append(p_dict)
-    
-    return jsonify({
-        'posts': posts_data,
-        'total': pagination.total,
-        'pages': pagination.pages,
-        'current_page': page
-    })
+        user_likes = set()
+        user_bookmarks = set()
+        if current_user_id and posts:
+            post_ids = [p.id for p in posts]
+            user_likes = {l.post_id for l in Like.query.filter(
+                Like.user_id == current_user_id, Like.post_id.in_(post_ids)
+            ).all()}
+            user_bookmarks = {b.post_id for b in Bookmark.query.filter(
+                Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)
+            ).all()}
+
+        posts_data = []
+        for p in posts:
+            p_dict = p.to_dict()
+            p_dict['is_liked'] = p.id in user_likes
+            p_dict['is_bookmarked'] = p.id in user_bookmarks
+            posts_data.append(p_dict)
+
+        return jsonify({
+            'posts': posts_data,
+            'total': pagination.total,
+            'pages': pagination.pages,
+            'current_page': page
+        })
+    except Exception as e:
+        traceback.print_exc()
+        print(f"[get_posts] ERROR: {e}")
+        return jsonify({'error': 'Failed to load posts', 'posts': [], 'total': 0, 'pages': 0, 'current_page': 1}), 500
 
 @app.route('/api/posts', methods=['POST'])
 @token_required

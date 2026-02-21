@@ -2,6 +2,11 @@
 """确保 posts 表的 tx_hash、ipfs_cid 允许 NULL，便于管理员发帖（无需上链）。
 在项目根目录执行：python scripts/migrate_posts_nullable_tx.py
 Render 上若管理员发帖报 Database error，可在 Shell 中运行此脚本。
+
+若首页 /api/posts 报 500 且日志提示缺少 nft 列，可在 PostgreSQL 控制台手动执行：
+  ALTER TABLE posts ADD COLUMN IF NOT EXISTS nft_token_id BIGINT;
+  ALTER TABLE posts ADD COLUMN IF NOT EXISTS nft_tx_hash VARCHAR(66);
+（注意：nft_token_id 为 BIGINT 而非 VARCHAR）
 """
 import os
 import sys

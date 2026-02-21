@@ -637,17 +637,14 @@
                         }
                     }
                     UI.renderPosts(data.posts, this.currentPage > 1);
-                        
-                        if(data.pages) {
-                            this.totalPages = data.pages;
-                            const loadMore = document.getElementById('loadMoreArea');
-                            if(this.currentPage < this.totalPages) {
-                                loadMore.style.display = 'block';
-                            } else {
-                                loadMore.style.display = 'none';
-                            }
+                    if (data.pages) {
+                        this.totalPages = data.pages;
+                        const loadMore = document.getElementById('loadMoreArea');
+                        if (loadMore) {
+                            loadMore.style.display = this.currentPage < this.totalPages ? 'block' : 'none';
                         }
                     }
+                }
                 } catch (e) {
                     console.error("Failed to load posts:", e);
                     if(this.currentPage === 1) {
