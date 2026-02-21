@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import traceback
 import hashlib
 import secrets
 import threading
@@ -1364,8 +1365,8 @@ def create_post():
             'vote_options': vote_options
         }
     else:
-        # JSON fallback
-        data = request.get_json()
+        # JSON fallback（避免 get_json() 为 None 时 .get 报错）
+        data = request.get_json() or {}
     
     tx_hash = data.get('tx_hash')
     ipfs_cid = data.get('ipfs_cid')
@@ -1382,7 +1383,7 @@ def create_post():
     is_on_chain = False
 
     if g.current_user.is_admin:
-        # 管理员直接发帖：不上链、不支付，仅普通论坛帖，仅管理员可发
+        # 管理员直接发帖：不上链、不支付，仅普通论坛帖；确保 tx_hash/ipfs_cid 为 None 避免 DB NOT NULL 报错
         tx_hash = None
         ipfs_cid = None
     else:
@@ -1471,9 +1472,18 @@ def create_post():
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        if 'unique' in str(e).lower() and 'tx_hash' in str(e).lower():
+        err_str = str(e).lower()
+        if 'unique' in err_str and 'tx_hash' in err_str:
             return jsonify({'error': 'Transaction hash already used'}), 400
+        # 管理员发帖常见：数据库 tx_hash/ipfs_cid 为 NOT NULL 时插 None 会报错
+        if 'null' in err_str or 'not null' in err_str:
+            print(f"Create Post DB Error (nullable?): {e}")
+            traceback.print_exc()
+            return jsonify({
+                'error': '发帖失败：数据库字段不允许为空。请确认 posts 表的 tx_hash、ipfs_cid 列已设为允许 NULL（管理员发帖无需上链）。'
+            }), 500
         print(f"Create Post DB Error: {e}")
+        traceback.print_exc()
         return jsonify({'error': 'Database error'}), 500
 
     if post.ipfs_cid and ADMIN_PRIVATE_KEY and NFT_CONTRACT_ADDRESS:
