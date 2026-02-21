@@ -86,7 +86,7 @@
 
     <nav class="navbar glass">
         <a href="/" class="logo">
-            <img src="/logo.svg" alt="GuiHua Logo">
+            <img src="/static/logo.svg" alt="GuiHua Logo">
             <span>诡话</span> 
             <span style="font-size: 0.8em; opacity: 0.7; font-weight: 400;">Web3</span>
         </a>
@@ -228,6 +228,53 @@
         const API_BASE = '/api'; 
         let currentUser = null;
 
+        const Editor = {
+            format(cmd) { document.execCommand(cmd, false, null); },
+            async uploadImage(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch(`${API_BASE}/upload`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (data.url) document.execCommand('insertImage', false, data.url);
+                } catch(e) { console.error(e); Toast.error('上传出错'); }
+            },
+            async uploadCover(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch(`${API_BASE}/upload`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (data.url) {
+                        document.getElementById('studioPostImage').value = data.url;
+                        this.previewCover(data.url);
+                    }
+                } catch(e) { console.error(e); Toast.error('上传出错'); }
+            },
+            previewCover(url) {
+                const p = document.getElementById('coverPreview');
+                if(url) {
+                    p.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`;
+                    p.style.border = '1px solid var(--accent-purple)';
+                } else {
+                    p.innerHTML = '<span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>';
+                    p.style.border = '1px dashed var(--border-color)';
+                }
+            }
+        };
+
         const Draft = {
             save() {
                 const title = document.getElementById('studioPostTitle').value;
@@ -265,9 +312,8 @@
                     window.location.href = '/';
                 }
                 UI.updateAuth();
-                Draft.load(); // Load draft after auth check
+                Draft.load(); 
                 
-                // Auto-save listeners
                 document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
                 document.getElementById('studioPostContent').addEventListener('input', () => Draft.save());
             },
@@ -297,9 +343,9 @@
             isPublishing: false,
             logInterval: null,
             timeoutId: null,
+            pendingTxHash: null,
 
             nextStep(step) {
-                // Validation
                 if (this.currentStep === 1) {
                     const title = document.getElementById('studioPostTitle').value;
                     const content = document.getElementById('studioPostContent').innerText;
@@ -332,7 +378,6 @@
 
             checkWalletEnv() {
                 const area = document.getElementById('walletActionArea');
-                // Just show the button, logic moved to drawer
                 area.innerHTML = `
                     <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.initPayment()">
                         ⚡ 确认支付并发布
@@ -381,23 +426,28 @@
             },
 
             openDrawer() {
-                document.getElementById('paymentDrawer').classList.add('active');
-                document.querySelector('.main-container').style.filter = 'blur(5px)';
+                const drawer = document.getElementById('paymentDrawer');
+                if (drawer) {
+                    drawer.classList.add('active');
+                    const container = document.querySelector('.studio-container') || document.querySelector('.main-container');
+                    if(container) container.style.filter = 'blur(5px)';
+                }
             },
 
             closeDrawer() {
                 document.getElementById('paymentDrawer').classList.remove('active');
-                document.querySelector('.main-container').style.filter = 'none';
+                const container = document.querySelector('.studio-container') || document.querySelector('.main-container');
+                if(container) container.style.filter = 'none';
                 this.stopLogs();
                 if(this.timeoutId) clearTimeout(this.timeoutId);
                 this.isPublishing = false;
-                document.getElementById('publishBtn').disabled = false;
+                const btn = document.getElementById('publishBtn');
+                if(btn) btn.disabled = false;
             },
 
             async initPayment() {
                 if (this.isPublishing) return;
                 
-                // 1. Reset UI to Preview Mode
                 document.getElementById('drawerPreviewMode').style.display = 'block';
                 document.getElementById('drawerProgressMode').style.display = 'none';
                 document.getElementById('previewAmount').textContent = 'Loading...';
@@ -405,13 +455,18 @@
                 this.openDrawer();
 
                 try {
-                    // 2. Fetch Fees
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
-                    const feeInBNB = window.web3 ? window.web3.utils.fromWei(config.fee, 'ether') : '0.0003';
+                    
+                    const fromWei = (val) => {
+                        if (window.web3) return window.web3.utils.fromWei(val, 'ether');
+                        if (typeof Web3 !== 'undefined') return Web3.utils.fromWei(val, 'ether');
+                        return '0.0003';
+                    };
+                    
+                    const feeInBNB = fromWei(config.fee);
                     document.getElementById('previewAmount').textContent = `${feeInBNB} BNB`;
                     
-                    // 3. Check Environment for Deep Link
                     const area = document.getElementById('drawerActionArea');
                     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
                     
@@ -440,7 +495,6 @@
             },
 
             async confirmPayment() {
-                // Switch to Progress Mode
                 document.getElementById('drawerPreviewMode').style.display = 'none';
                 document.getElementById('drawerProgressMode').style.display = 'block';
                 
@@ -451,7 +505,7 @@
             async pollTxStatus(txHash) {
                 this.addLog("🔄 网络波动，正在后台轮询上链状态...");
                 let attempts = 0;
-                const maxAttempts = 30; // 90 seconds
+                const maxAttempts = 30; 
                 
                 const poll = async () => {
                     if (attempts >= maxAttempts) {
@@ -474,7 +528,6 @@
                             setTimeout(poll, 3000);
                         }
                     } catch (e) {
-                        console.error("Poll error", e);
                         setTimeout(poll, 3000);
                     }
                 };
@@ -490,28 +543,37 @@
                 const btn = document.getElementById('publishBtn');
 
                 this.isPublishing = true;
-                btn.disabled = true;
+                if(btn) btn.disabled = true;
                 
-                // Safety Timeout
                 this.timeoutId = setTimeout(() => {
                     document.getElementById('forceCloseLoading').style.display = 'block';
                 }, 60000);
 
-                let txHash = null;
+                let txHash = this.pendingTxHash;
 
                 try {
+                    // Initialize Web3 if needed
+                    if (typeof window.web3 === 'undefined') {
+                        if (window.ethereum || window.BinanceChain) {
+                            window.web3 = new Web3(window.ethereum || window.BinanceChain);
+                        } else {
+                            throw new Error("No wallet found");
+                        }
+                    }
+                    const web3 = window.web3;
+
                     // 1. Fee Config
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
                     
                     // 2. Chain Check
-                    if (window.web3) {
-                        const chainId = await window.web3.eth.getChainId();
+                    if (web3) {
+                        const chainId = await web3.eth.getChainId();
                         if (Number(chainId) !== Number(config.chain_id)) {
                             try {
                                 await window.ethereum.request({
                                     method: 'wallet_switchEthereumChain',
-                                    params: [{ chainId: window.web3.utils.toHex(config.chain_id) }],
+                                    params: [{ chainId: web3.utils.toHex(config.chain_id) }],
                                 });
                             } catch (switchError) {
                                 throw new Error(`请切换到 BSC Testnet (Chain ID: ${config.chain_id})`);
@@ -519,17 +581,20 @@
                         }
                     }
 
-                    // 3. Payment
-                    this.addLog("等待钱包确认...");
-                    const provider = window.BinanceChain || window.ethereum;
-                    txHash = await provider.request({
-                        method: 'eth_sendTransaction',
-                        params: [{
-                            to: config.receive_address,
-                            from: currentUser.address,
-                            value: window.web3.utils.toHex(config.fee)
-                        }]
-                    });
+                    // 3. Payment (Skip if already paid)
+                    if (!txHash) {
+                        this.addLog("等待钱包确认...");
+                        const provider = window.BinanceChain || window.ethereum;
+                        txHash = await provider.request({
+                            method: 'eth_sendTransaction',
+                            params: [{
+                                to: config.receive_address,
+                                from: currentUser.address,
+                                value: web3.utils.toHex(config.fee)
+                            }]
+                        });
+                        this.pendingTxHash = txHash; // Save for retry
+                    }
                     
                     this.addLog("交易已广播: " + txHash.substring(0, 10) + "...");
                     document.getElementById('txHashDisplay').style.display = 'block';
@@ -540,7 +605,7 @@
                     let receipt = null;
                     for(let i=0; i<60; i++) { 
                         try {
-                            receipt = await window.web3.eth.getTransactionReceipt(txHash);
+                            receipt = await web3.eth.getTransactionReceipt(txHash);
                             if(receipt && receipt.status) break;
                         } catch(e) {}
                         await new Promise(r => setTimeout(r, 1000));
@@ -566,6 +631,7 @@
                     if (res.ok) {
                         this.addLog("✅ 发布成功!");
                         Draft.clear();
+                        this.pendingTxHash = null; // Clear on success
                         Toast.success('发布成功');
                         setTimeout(() => {
                             window.location.href = '/';
@@ -595,53 +661,13 @@
                     this.addLog("❌ 错误: " + e.message);
                     Toast.error('发布失败: ' + e.message);
                     document.getElementById('forceCloseLoading').style.display = 'block';
+                    
+                    // Allow retry without paying again
+                    if (this.pendingTxHash && btn) {
+                        btn.innerHTML = '🔄 重试发布 (已支付)';
+                    }
                 } finally {
                     // Manual close required on failure
-                }
-            }
-        };
-
-        const Editor = {
-            format(cmd) { document.execCommand(cmd, false, null); },
-            async uploadImage(input) {
-                // ... Existing logic ...
-                const file = input.files[0];
-                if (!file) return;
-                const formData = new FormData();
-                formData.append('file', file);
-                try {
-                    const res = await fetch(`${API_BASE}/upload`, {
-                        method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData
-                    });
-                    const data = await res.json();
-                    if (data.url) document.execCommand('insertImage', false, data.url);
-                } catch(e) { Toast.error('上传出错'); }
-            },
-            async uploadCover(input) {
-                // ... Existing logic ...
-                const file = input.files[0];
-                if (!file) return;
-                const formData = new FormData();
-                formData.append('file', file);
-                try {
-                    const res = await fetch(`${API_BASE}/upload`, {
-                        method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData
-                    });
-                    const data = await res.json();
-                    if (data.url) {
-                        document.getElementById('studioPostImage').value = data.url;
-                        this.previewCover(data.url);
-                    }
-                } catch(e) { Toast.error('上传出错'); }
-            },
-            previewCover(url) {
-                const p = document.getElementById('coverPreview');
-                if(url) {
-                    p.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`;
-                    p.style.border = '1px solid var(--accent-purple)';
-                } else {
-                    p.innerHTML = '<span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>';
-                    p.style.border = '1px dashed var(--border-color)';
                 }
             }
         };
