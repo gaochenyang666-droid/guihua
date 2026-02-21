@@ -989,6 +989,28 @@ def login():
     
     return jsonify({'error': 'Invalid credentials'}), 401
 
+@app.route('/api/auth/web2/change-password', methods=['POST'])
+def change_password_no_login():
+    """找回/修改密码：凭账号和原密码即可设置新密码，无需登录。"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Missing data'}), 400
+    username = data.get('username')
+    old_password = data.get('old_password')
+    new_password = data.get('new_password')
+    if not username or not old_password or not new_password:
+        return jsonify({'error': '请填写用户名、原密码和新密码'}), 400
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': '用户不存在'}), 404
+    if not user.check_password(old_password):
+        return jsonify({'error': '原密码错误'}), 401
+    if not user.password_hash:
+        return jsonify({'error': '该账号为钱包登录，无密码可修改'}), 400
+    user.set_password(new_password)
+    db.session.commit()
+    return jsonify({'message': '密码已修改，请用新密码登录'})
+
 @app.route('/api/user/me', methods=['GET', 'PUT'])
 @token_required
 def user_me():
@@ -1360,8 +1382,9 @@ def create_post():
     is_on_chain = False
 
     if g.current_user.is_admin:
-        # Admin: Skip verify, Skip Arweave
-        pass
+        # 管理员直接发帖：不上链、不支付，仅普通论坛帖，仅管理员可发
+        tx_hash = None
+        ipfs_cid = None
     else:
         # Regular User: 必须带 tx_hash，且经 verify_transaction 校验 to/from/value 与唯一性（min_amount = 1 USD 等值 BNB）
         if not tx_hash:
@@ -1405,8 +1428,8 @@ def create_post():
     clean_title = bleach.clean(data.get('title', ''), strip=True)
     if not clean_title or not clean_title.strip():
         return jsonify({'error': '标题不能为空'}), 400
-    if not clean_content or len(clean_content.strip()) < 10:
-        return jsonify({'error': '正文不能为空且至少 10 字'}), 400
+    if not clean_content or not clean_content.strip():
+        return jsonify({'error': '正文不能为空'}), 400
 
     # 封面选填：空字符串规范为 None
     cover_image = data.get('cover_image')

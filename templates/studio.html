@@ -366,8 +366,8 @@
                     });
                     if (res.ok) {
                         currentUser = await res.json();
-                        if (currentUser.type !== 'web3') {
-                            alert('仅限 Web3 创作者进入');
+                        if (!currentUser.is_admin && currentUser.type !== 'web3') {
+                            alert('仅限 Web3 创作者或管理员进入');
                             window.location.href = '/';
                             return;
                         }
@@ -391,7 +391,7 @@
                 if (this.currentStep === 1) {
                     const title = document.getElementById('studioPostTitle').value;
                     const content = document.getElementById('studioPostContent').innerText;
-                    if(!title.trim() || content.trim().length < 10) return Toast.error('请完善标题和正文 (至少10字)');
+                    if(!title.trim() || !content.trim()) return Toast.error('请填写标题和正文');
                 }
                 if (this.currentStep === 2 && step === 3) {
                     this.checkWalletEnv();
@@ -439,7 +439,15 @@
 
             checkWalletEnv() {
                 const area = document.getElementById('walletActionArea');
-                area.innerHTML = `
+                const isAdmin = currentUser && currentUser.is_admin;
+                area.innerHTML = isAdmin ? `
+                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 0.8rem;" onclick="Studio.initPayment()">
+                        ⚡ 支付并上链发布 (Web3)
+                    </button>
+                    <button class="btn btn-ghost" id="adminDirectPublishBtn" style="width: 100%; padding: 1rem; font-size: 1rem; border-color: var(--accent-purple); color: var(--accent-purple);" onclick="Studio.publishAsAdmin()">
+                        📝 直接发帖（仅管理员，不上链）
+                    </button>
+                ` : `
                     <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.initPayment()">
                         ⚡ 确认支付并发布
                     </button>
@@ -796,6 +804,56 @@
                     }
                 } finally {
                     // Manual close required on failure
+                }
+            },
+
+            async publishAsAdmin() {
+                if (!currentUser || !currentUser.is_admin) {
+                    Toast.error('仅管理员可操作');
+                    return;
+                }
+                const title = document.getElementById('studioPostTitle').value.trim();
+                const content = document.getElementById('studioPostContent').innerHTML;
+                const textContent = (document.getElementById('studioPostContent').innerText || '').trim();
+                if (!title) {
+                    Toast.error('请填写标题');
+                    return;
+                }
+                if (!textContent) {
+                    Toast.error('请填写正文');
+                    return;
+                }
+                const coverImage = document.getElementById('studioPostImage').value || '';
+                const btn = document.getElementById('adminDirectPublishBtn');
+                if (btn) btn.disabled = true;
+                try {
+                    const res = await fetch(`${API_BASE}/posts`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({
+                            title,
+                            content,
+                            cover_image: coverImage || null,
+                            images: [],
+                            region: '其他'
+                        })
+                    });
+                    if (handle401(res)) return;
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) {
+                        Draft.clear();
+                        Toast.success('已发布（普通帖，未上链）');
+                        setTimeout(() => { window.location.href = '/'; }, 1500);
+                    } else {
+                        Toast.error(data.error || '发布失败');
+                    }
+                } catch (e) {
+                    Toast.error('发布失败: ' + (e.message || '网络错误'));
+                } finally {
+                    if (btn) btn.disabled = false;
                 }
             }
         };

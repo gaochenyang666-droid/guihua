@@ -132,7 +132,9 @@
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
 
                         <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                            <a href="#" onclick="Auth.toggleForm()" style="color: var(--accent-purple);">没有账号？点击注册</a>
+                            <a href="#" onclick="Auth.toggleForm('register'); return false;" style="color: var(--accent-purple);">没有账号？点击注册</a>
+                            <span style="color: var(--text-muted);"> · </span>
+                            <a href="#" onclick="Auth.toggleForm('changePassword'); return false;" style="color: var(--accent-purple);">找回密码</a>
                         </div>
                     </form>
                 </div>
@@ -149,7 +151,31 @@
                     </div>
                     <button class="btn btn-primary" style="width: 100%;" onclick="Auth.register()">立即签约</button>
                     <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                        <a href="#" onclick="Auth.toggleForm()" style="color: var(--text-secondary);">返回登录</a>
+                        <a href="#" onclick="Auth.toggleForm('login'); return false;" style="color: var(--text-secondary);">返回登录</a>
+                    </div>
+                </div>
+
+                <!-- 找回密码：账号 + 原密码 → 设置新密码 -->
+                <div id="changePasswordFormContainer" style="display: none;">
+                    <div class="form-group">
+                        <label class="form-label">用户名</label>
+                        <input type="text" class="form-input" id="cpUsername" placeholder="您的账号" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">原密码</label>
+                        <input type="password" class="form-input" id="cpOldPassword" placeholder="当前使用的密码" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">新密码</label>
+                        <input type="password" class="form-input" id="cpNewPassword" placeholder="新密码" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">确认新密码</label>
+                        <input type="password" class="form-input" id="cpConfirmPassword" placeholder="再输入一次新密码" />
+                    </div>
+                    <button type="button" class="btn btn-primary" style="width: 100%;" onclick="Auth.changePassword()">确认修改密码</button>
+                    <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
+                        <a href="#" onclick="Auth.toggleForm('login'); return false;" style="color: var(--text-secondary);">返回登录</a>
                     </div>
                 </div>
             </div>
@@ -310,14 +336,13 @@
                 } catch(e) { console.error(e); }
             },
 
-            toggleForm() {
+            toggleForm(mode) {
                 const login = document.getElementById('loginFormContainer');
                 const reg = document.getElementById('registerFormContainer');
-                if (login.style.display === 'none') {
-                    login.style.display = 'block'; reg.style.display = 'none';
-                } else {
-                    login.style.display = 'none'; reg.style.display = 'block';
-                }
+                const cp = document.getElementById('changePasswordFormContainer');
+                login.style.display = (mode === 'login') ? 'block' : 'none';
+                reg.style.display = (mode === 'register') ? 'block' : 'none';
+                if (cp) cp.style.display = (mode === 'changePassword') ? 'block' : 'none';
             },
 
             async loginWeb3() {
@@ -409,6 +434,35 @@
                     Toast.error('网络错误');
                 } finally {
                     if(btn) { btn.disabled = false; btn.textContent = '登录'; }
+                }
+            },
+
+            async changePassword() {
+                const username = (document.getElementById('cpUsername') || {}).value;
+                const oldPassword = (document.getElementById('cpOldPassword') || {}).value;
+                const newPassword = (document.getElementById('cpNewPassword') || {}).value;
+                const confirmPassword = (document.getElementById('cpConfirmPassword') || {}).value;
+                if (!username || !oldPassword || !newPassword) {
+                    return Toast.error('请填写用户名、原密码和新密码');
+                }
+                if (newPassword !== confirmPassword) {
+                    return Toast.error('两次输入的新密码不一致');
+                }
+                try {
+                    const res = await fetch(`${API_BASE}/auth/web2/change-password`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, old_password: oldPassword, new_password: newPassword })
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        Toast.success(data.message || '密码已修改');
+                        Auth.toggleForm('login');
+                    } else {
+                        Toast.error(data.error || '修改失败');
+                    }
+                } catch (e) {
+                    Toast.error('网络错误');
                 }
             },
 

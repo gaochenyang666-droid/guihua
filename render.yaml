@@ -1,0 +1,5 @@
+# Render 部署配置（可选）
+# Web Service → Settings → Build & Deploy：
+#   Build Command: 留空或 pip install -r requirements.txt
+#   Start Command: gunicorn -b 0.0.0.0:$PORT app:app
+# 若首页没有帖子，到 Dashboard 里该 Service 的 Shell 中执行：python3 scripts/seed_posts.py
