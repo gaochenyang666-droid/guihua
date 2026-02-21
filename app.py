@@ -1255,68 +1255,104 @@ def read_all_notifications():
     db.session.commit()
     return jsonify({'message': 'All marked as read'})
 
+def _get_posts_fallback(page, per_page, current_user_id):
+    """兜底：仅查 posts 表，不 join users，避免缺列导致 500。返回 (posts_data, total, pages)。"""
+    query = Post.query.filter_by(is_hidden=False).order_by(Post.created_at.desc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    posts = pagination.items
+    post_ids = [p.id for p in posts]
+    user_likes = set()
+    user_bookmarks = set()
+    if current_user_id and post_ids:
+        user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
+        user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
+    posts_data = []
+    for p in posts:
+        try:
+            images_list = []
+            if getattr(p, 'images', None):
+                try:
+                    images_list = json.loads(p.images) if isinstance(p.images, str) else (p.images or [])
+                except (TypeError, ValueError):
+                    pass
+            likes_count = Like.query.filter_by(post_id=p.id).count()
+            comments_count = Comment.query.filter_by(post_id=p.id).count()
+            votes_list = []
+            for v in Vote.query.filter_by(post_id=p.id).all():
+                votes_list.append({'id': v.id, 'option_text': getattr(v, 'option_text', ''), 'vote_count': getattr(v, 'vote_count', 0)})
+            author = {'id': p.author_id, 'nickname': '用户', 'avatar': '👻'}
+            posts_data.append({
+                'id': p.id,
+                'title': getattr(p, 'title', ''),
+                'content': getattr(p, 'content', ''),
+                'cover_image': getattr(p, 'cover_image', None),
+                'images': images_list,
+                'author': author,
+                'view_count': getattr(p, 'view_count', 0),
+                'likes_count': likes_count,
+                'comments_count': comments_count,
+                'votes': votes_list,
+                'is_liked': p.id in user_likes,
+                'is_bookmarked': p.id in user_bookmarks,
+                'tx_hash': getattr(p, 'tx_hash', None),
+                'ipfs_cid': getattr(p, 'ipfs_cid', None),
+                'nft_token_id': getattr(p, 'nft_token_id', None),
+                'nft_tx_hash': getattr(p, 'nft_tx_hash', None),
+                'post_type': getattr(p, 'post_type', 0),
+                'created_at': p.created_at.isoformat() if getattr(p, 'created_at', None) else '',
+                'is_repost': getattr(p, 'is_repost', False),
+                'original_post_id': getattr(p, 'original_post_id', None),
+                'original_post': None,
+                'repost_comment': getattr(p, 'repost_comment', None),
+                'is_hidden': getattr(p, 'is_hidden', False),
+                'allow_comments': getattr(p, 'allow_comments', True),
+                'region': getattr(p, 'region', '其他'),
+                'is_on_chain': getattr(p, 'is_on_chain', False),
+            })
+        except Exception as e:
+            print(f"[get_posts fallback] skip post id={getattr(p, 'id', None)}: {e}")
+    return posts_data, pagination.total, pagination.pages
+
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
+    token = None
+    current_user_id = None
+    if 'Authorization' in request.headers:
+        try:
+            token = request.headers['Authorization'].split(" ")[1]
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user_id = data['user_id']
+        except Exception:
+            pass
+
+    sort_by = request.args.get('sort', 'new')
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 20, type=int), 50)
+    region = request.args.get('region')
+
     try:
-        token = None
-        current_user_id = None
-        if 'Authorization' in request.headers:
-            try:
-                token = request.headers['Authorization'].split(" ")[1]
-                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-                current_user_id = data['user_id']
-            except Exception:
-                pass
-
-        sort_by = request.args.get('sort', 'new')
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('per_page', 20, type=int), 50)
-        region = request.args.get('region')
-
         from sqlalchemy.orm import joinedload
-        from sqlalchemy import func
-        query = Post.query.options(
-            joinedload(Post.author),
-            joinedload(Post.votes),
-        )
-
-        if sort_by == 'hot':
-            # 用标量子查询按点赞数排序，避免 JOIN 子查询在部分环境下报错
-            from sqlalchemy import select
-            like_count_subq = select(func.count(Like.id)).where(Like.post_id == Post.id).correlate(Post).scalar_subquery()
-            query = query.order_by(like_count_subq.desc())
-        elif sort_by == 'bookmarks':
+        query = Post.query.options(joinedload(Post.author), joinedload(Post.votes))
+        if sort_by == 'bookmarks':
             if current_user_id:
                 query = query.join(Bookmark).filter(Bookmark.user_id == current_user_id)
             else:
-                return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': 1})
+                return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
         else:
             query = query.order_by(Post.created_at.desc())
-
         if region:
             query = query.filter_by(region=region)
-
-        current_user = None
-        if current_user_id:
-            current_user = User.query.get(current_user_id)
-        if not current_user or not current_user.is_admin:
+        current_user = User.query.get(current_user_id) if current_user_id else None
+        if not current_user or not getattr(current_user, 'is_admin', False):
             query = query.filter_by(is_hidden=False)
-
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         posts = pagination.items
-
         user_likes = set()
         user_bookmarks = set()
         if current_user_id and posts:
             post_ids = [p.id for p in posts]
-            user_likes = {l.post_id for l in Like.query.filter(
-                Like.user_id == current_user_id, Like.post_id.in_(post_ids)
-            ).all()}
-            user_bookmarks = {b.post_id for b in Bookmark.query.filter(
-                Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)
-            ).all()}
-
-        # 列表接口不请求 Arweave，内容来自 DB 的 Post.content
+            user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
+            user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
         posts_data = []
         for p in posts:
             try:
@@ -1326,18 +1362,17 @@ def get_posts():
                 posts_data.append(p_dict)
             except Exception as e:
                 print(f"[get_posts] skip post id={getattr(p, 'id', None)}: {e}")
-                traceback.print_exc()
-
-        return jsonify({
-            'posts': posts_data,
-            'total': pagination.total,
-            'pages': pagination.pages,
-            'current_page': page
-        })
+        return jsonify({'posts': posts_data, 'total': pagination.total, 'pages': pagination.pages, 'current_page': page})
     except Exception as e:
         traceback.print_exc()
-        print(f"[get_posts] ERROR: {e}")
-        return jsonify({'error': 'Failed to load posts', 'posts': [], 'total': 0, 'pages': 0, 'current_page': 1}), 500
+        print(f"[get_posts] ERROR (using fallback): {e}")
+        try:
+            posts_data, total, pages = _get_posts_fallback(page, per_page, current_user_id)
+            return jsonify({'posts': posts_data, 'total': total, 'pages': pages, 'current_page': page})
+        except Exception as e2:
+            traceback.print_exc()
+            print(f"[get_posts] fallback also failed: {e2}")
+            return jsonify({'error': 'Failed to load posts', 'posts': [], 'total': 0, 'pages': 0, 'current_page': page}), 500
 
 @app.route('/api/posts', methods=['POST'])
 @token_required
