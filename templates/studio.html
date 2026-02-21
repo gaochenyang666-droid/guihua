@@ -35,15 +35,19 @@
                 <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem;">
                     <span style="color:var(--text-secondary);">结算网络</span>
                     <span style="display:flex; align-items:center; gap:0.4rem;">
-                        <i class="fab fa-ethereum" style="color:var(--accent-gold);"></i> BSC Testnet
+                        <i class="fab fa-ethereum" style="color:var(--accent-gold);"></i> BSC Mainnet 主网
                     </span>
                 </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem;">
+                    <span style="color:var(--text-secondary);">收款地址</span>
+                </div>
+                <div style="font-size:0.7rem; word-break:break-all; color:var(--accent-gold); margin-bottom:0.8rem; padding:0.4rem; background:rgba(0,0,0,0.2); border-radius:6px;" id="previewReceiveAddress">—</div>
                 <div style="width:100%; height:1px; background:var(--border-color); margin:0.8rem 0;"></div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span style="color:var(--text-secondary);">预估总费用</span>
                     <div style="text-align:right;">
                         <div style="font-size:1.2rem; font-weight:bold; color:var(--accent-gold);" id="previewAmount">Loading...</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">Gas + Storage</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">真实 BNB，请核对收款地址</div>
                     </div>
                 </div>
             </div>
@@ -86,7 +90,7 @@
 
     <nav class="navbar glass">
         <a href="/" class="logo">
-            <img src="/static/logo.svg" alt="GuiHua Logo">
+            <img src="/static/logo.svg" alt="GuiHua Logo" onerror="this.onerror=null;this.style.visibility='hidden'">
             <span>诡话</span> 
             <span style="font-size: 0.8em; opacity: 0.7; font-weight: 400;">Web3</span>
         </a>
@@ -175,7 +179,7 @@
                     <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 16px; margin-bottom: 2rem; border: 1px solid var(--border-color);">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
                             <span style="color: var(--text-secondary);">上链网络</span>
-                            <span>BSC Testnet (ID: 97)</span>
+                            <span>BSC Mainnet 主网 (ID: 56)</span>
                         </div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
                             <span style="color: var(--text-secondary);">存储协议</span>
@@ -457,6 +461,11 @@
                 try {
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
+                    if (!cRes.ok) {
+                        Toast.error(config.error || '无法获取支付配置');
+                        this.closeDrawer();
+                        return;
+                    }
                     
                     const fromWei = (val) => {
                         if (window.web3) return window.web3.utils.fromWei(val, 'ether');
@@ -466,6 +475,8 @@
                     
                     const feeInBNB = fromWei(config.fee.toString());
                     document.getElementById('previewAmount').textContent = `${feeInBNB} BNB`;
+                    const addrEl = document.getElementById('previewReceiveAddress');
+                    if (addrEl && config.receive_address) addrEl.textContent = config.receive_address;
                     
                     const area = document.getElementById('drawerActionArea');
                     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -537,6 +548,12 @@
             async publish() {
                 if (this.isPublishing) return;
                 
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    Toast.error('登录已失效，请重新登录');
+                    return;
+                }
+                
                 const title = document.getElementById('studioPostTitle').value;
                 const content = document.getElementById('studioPostContent').innerHTML;
                 const coverImage = document.getElementById('studioPostImage').value;
@@ -562,9 +579,12 @@
                     }
                     const web3 = window.web3;
 
-                    // 1. Fee Config
+                    // 1. Fee Config（fee 为 Wei 字符串，勿再 toWei）
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
+                    if (!cRes.ok || !config.receive_address) {
+                        throw new Error(config.error || '无法获取支付配置');
+                    }
                     
                     // 2. Chain Check
                     if (web3) {
@@ -576,21 +596,23 @@
                                     params: [{ chainId: web3.utils.toHex(String(config.chain_id)) }],
                                 });
                             } catch (switchError) {
-                                throw new Error(`请切换到 BSC Testnet (Chain ID: ${config.chain_id})`);
+                                throw new Error(`请切换到 BSC Mainnet 主网 (Chain ID: ${config.chain_id})`);
                             }
                         }
                     }
 
                     // 3. Payment (Skip if already paid)
+                    // 注意：config.fee 来自后端，已是 Wei，直接转 hex 发送；切勿 toWei(fee,'ether') 否则金额会放大 10^18 倍
                     if (!txHash) {
                         this.addLog("等待钱包确认...");
                         const provider = window.BinanceChain || window.ethereum;
+                        const valueWei = config.fee.toString();
                         txHash = await provider.request({
                             method: 'eth_sendTransaction',
                             params: [{
                                 to: config.receive_address,
                                 from: currentUser.address,
-                                value: web3.utils.toHex(config.fee.toString())
+                                value: web3.utils.toHex(valueWei)
                             }]
                         });
                         this.pendingTxHash = txHash; // Save for retry
@@ -615,16 +637,20 @@
                     
                     this.addLog("交易确认成功! 正在存入 Arweave...");
                     
-                    // 5. Backend Upload
+                    // 5. Backend Upload（必带 tx_hash，与后端 /api/posts 要求一致）
                     const res = await fetch(`${API_BASE}/posts`, {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                            'Authorization': `Bearer ${token}`
                         },
                         body: JSON.stringify({
-                            title, content, tx_hash: txHash,
-                            cover_image: coverImage, images: []
+                            title,
+                            content,
+                            tx_hash: txHash,
+                            cover_image: coverImage,
+                            images: [],
+                            region: '其他'
                         })
                     });
                     

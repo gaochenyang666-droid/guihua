@@ -62,17 +62,17 @@ else:
 if not app.config['SECRET_KEY']:
     raise ValueError("No SECRET_KEY set for Flask application")
 
-# BSC Testnet Configuration
+# BSC Mainnet Configuration (真实 BNB，请务必核对 RECEIVE_ADDRESS 与 POST_FEE)
 BSC_RPC_LIST = [
-    os.environ.get('BSC_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/'),
-    'https://data-seed-prebsc-2-s1.binance.org:8545/',
-    'https://data-seed-prebsc-1-s2.binance.org:8545/',
-    'https://bsc-testnet.publicnode.com'
+    os.environ.get('BSC_RPC_URL', 'https://bsc-dataseed.binance.org/'),
+    'https://bsc-dataseed1.defibit.io/',
+    'https://bsc-dataseed1.ninicoin.io/',
+    'https://bsc.publicnode.com'
 ]
 
 app.config['BSC'] = {
     'RPC_URL': BSC_RPC_LIST[0],
-    'CHAIN_ID': 97,
+    'CHAIN_ID': 56,
     'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS'),
     'POST_FEE': Web3.to_wei(os.environ.get('POST_FEE', '0.0003'), 'ether')
 }
@@ -813,10 +813,14 @@ def bind_wallet():
 
 @app.route('/api/config/fees', methods=['GET'])
 def get_fees():
+    receive_address = app.config['BSC']['RECEIVE_ADDRESS']
+    if not receive_address:
+        return jsonify({'error': 'Platform receive address not configured'}), 503
+    # Return fee as string to avoid JS number precision loss for large wei values
     return jsonify({
-        'fee': app.config['BSC']['POST_FEE'],
+        'fee': str(app.config['BSC']['POST_FEE']),
         'chain_id': app.config['BSC']['CHAIN_ID'],
-        'receive_address': app.config['BSC']['RECEIVE_ADDRESS']
+        'receive_address': receive_address
     })
 
 @app.route('/api/gas/price', methods=['GET'])
