@@ -80,26 +80,38 @@
             if(token) {
                 try {
                     const res = await fetch(`${API_BASE}/user/me`, { headers: { 'Authorization': `Bearer ${token}` } });
-                    if(res.ok) currentUser = await res.json();
+                    if(res.ok) {
+                        currentUser = await res.json();
+                    } else {
+                        if(res.status === 401) localStorage.removeItem('token');
+                    }
                 } catch(e) { console.error("Auth check failed", e); }
             }
 
             if(!userParam) {
-                if(!currentUser) return window.location.href = '/';
+                if(!currentUser) { window.location.href = '/'; return; }
                 displayedUser = currentUser;
-                renderProfile(currentUser, []); 
+                renderProfile(currentUser, []);
                 loadUserPosts(currentUser.username);
             } else {
                 try {
                     const res = await fetch(`${API_BASE}/users/${userParam}`);
-                    if(!res.ok) throw new Error('User not found');
-                    const data = await res.json();
+                    const data = await res.json().catch(() => ({}));
+                    if(!res.ok) {
+                        showProfileError(data.error || '用户不存在或已注销', true);
+                        return;
+                    }
                     displayedUser = data.user;
                     renderProfile(data.user, data.posts);
                 } catch(e) {
-                    document.getElementById('profileArea').innerHTML = `<div style="text-align:center; color:red; padding: 2rem;">${e.message}</div>`;
+                    showProfileError(e.message || '加载失败', true);
                 }
             }
+        }
+
+        function showProfileError(msg, showBack) {
+            const backHtml = showBack ? '<p style="margin-top:1rem;"><a href="/" class="btn btn-primary">返回首页</a></p>' : '';
+            document.getElementById('profileArea').innerHTML = `<div style="text-align:center; padding: 2rem; color: var(--text-secondary);"><p style="color:var(--accent-red); margin-bottom:0.5rem;">${msg}</p>${backHtml}</div>`;
         }
         
         function renderProfile(user, posts) {
@@ -167,9 +179,21 @@
         }
         
         async function loadUserPosts(username) {
-             const res = await fetch(`${API_BASE}/users/${username}`);
-             const data = await res.json();
-             renderProfile(data.user, data.posts); 
+            try {
+                const res = await fetch(`${API_BASE}/users/${username}`);
+                const data = await res.json().catch(() => ({}));
+                if(!res.ok) {
+                    if(res.status === 401) localStorage.removeItem('token');
+                    showProfileError(data.error || '用户不存在或已注销', true);
+                    return;
+                }
+                if(data.user) {
+                    displayedUser = data.user;
+                    renderProfile(data.user, data.posts || []);
+                }
+            } catch(e) {
+                showProfileError('加载帖子失败', true);
+            }
         }
 
         const EditProfile = {

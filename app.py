@@ -281,7 +281,10 @@ class Post(db.Model):
     original_post = db.relationship('Post', remote_side=[id], backref='reposts')
     
     def to_dict(self, current_user_id=None):
-        images_list = json.loads(self.images) if self.images else []
+        try:
+            images_list = json.loads(self.images) if self.images else []
+        except (TypeError, ValueError):
+            images_list = []
         is_liked = False
         is_bookmarked = False
         if current_user_id:
@@ -290,11 +293,12 @@ class Post(db.Model):
             
         original_post_data = None
         if self.original_post:
+            op_author = self.original_post.author.to_dict() if self.original_post.author else {'id': self.original_post.author_id, 'nickname': '已注销', 'avatar': '👻'}
             original_post_data = {
                 'id': self.original_post.id,
                 'title': self.original_post.title,
                 'content': self.original_post.content,
-                'author': self.original_post.author.to_dict()
+                'author': op_author
             }
             
         return {
@@ -303,7 +307,7 @@ class Post(db.Model):
             'content': self.content,
             'cover_image': self.cover_image,
             'images': images_list,
-            'author': self.author.to_dict(),
+            'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻'},
             'view_count': self.view_count,
             'likes_count': self.likes.count(),
             'comments_count': self.comments.count(),
@@ -353,10 +357,11 @@ class Comment(db.Model):
     replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
     
     def to_dict(self, recursive=False):
+        author_data = self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'avatar': '👻'}
         data = {
             'id': self.id,
             'content': self.content,
-            'author': self.author.to_dict(),
+            'author': author_data,
             'created_at': self.created_at.isoformat(),
             'parent_id': self.parent_id
         }
@@ -375,10 +380,11 @@ def build_comment_tree(comments):
         by_parent[pid].append(c)
 
     def to_dict_node(c):
+        author_data = c.author.to_dict() if c.author else {'id': c.author_id, 'nickname': '已注销', 'avatar': '👻'}
         return {
             'id': c.id,
             'content': c.content,
-            'author': c.author.to_dict(),
+            'author': author_data,
             'created_at': c.created_at.isoformat(),
             'parent_id': c.parent_id,
             'replies': []
@@ -704,7 +710,7 @@ def async_mint_nft_for_post(post_id):
     with app.app_context():
         try:
             post = Post.query.get(post_id)
-            if not post or not post.ipfs_cid:
+            if not post or not post.ipfs_cid or not post.author:
                 return
             to_address = (post.author.wallet_address or post.author.address or '').strip()
             if not to_address or not Web3.is_address(to_address):
@@ -1698,6 +1704,8 @@ def verify_tip():
     if not tx_hash or not post_id:
         return jsonify({'error': 'Missing parameters'}), 400
     post = Post.query.get_or_404(post_id)
+    if not post.author:
+        return jsonify({'error': 'Post author not found'}), 400
     platform_address = app.config['BSC']['RECEIVE_ADDRESS']
     if not platform_address:
         return jsonify({'error': 'Platform receive address not configured'}), 503
@@ -1923,10 +1931,17 @@ def init_db_data():
                 else:
                     print(f"Init Data Error (admin): {e}")
         
-        # Ensure 'Hua Xiansheng' article exists
+        # Ensure 'Hua Xiansheng' article exists（用 ilike 避免标题弯引号导致编码/匹配或 f405）
+        db.session.rollback()
         title = '甘肃“再生人”华先生访问记'
-        if not Post.query.filter_by(title=title).first():
-            content = """<p><strong>——某县局长，清晰讲述前世地主及死后做鬼经历</strong><br>
+        try:
+            existing = Post.query.filter(Post.title.ilike('%华先生访问记%')).first()
+        except Exception as e:
+            print(f"Init DB: seed post check failed: {e}")
+            existing = None
+        if not existing:
+            try:
+                content = """<p><strong>——某县局长，清晰讲述前世地主及死后做鬼经历</strong><br>
 《传统文化文摘》记者李懿桐采写<br>
 原文出处 高耀峰的博客</p>
 
@@ -2176,17 +2191,19 @@ def init_db_data():
 上报四重恩，下济三途苦。<br>
 若有见闻者，悉发菩提心。<br>
 尽此一报身，同生极乐国。</p>"""
-            
-            post = Post(
-                title=title,
-                content=content,
-                cover_image='/static/images/hua_cover.jpg', 
-                author_id=admin.id,
-                is_paid=True
-            )
-            db.session.add(post)
-            db.session.commit()
-            print("Article created.")
+                post = Post(
+                    title=title,
+                    content=content,
+                    cover_image='/static/images/hua_cover.jpg',
+                    author_id=admin.id,
+                    is_paid=True
+                )
+                db.session.add(post)
+                db.session.commit()
+                print("Article created.")
+            except Exception as e2:
+                db.session.rollback()
+                print(f"Init DB: seed article insert failed: {e2}")
 
     except Exception as e:
         print(f"Init Data Error: {e}")
