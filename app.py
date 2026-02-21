@@ -19,7 +19,10 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 from web3 import Web3
-from web3.middleware.geth_poa import geth_poa_middleware
+try:
+    from web3.middleware.geth_poa import geth_poa_middleware
+except ImportError:
+    from web3.middleware import geth_poa_middleware  # web3 v6
 import arweave
 from arweave.arweave_lib import Wallet, Transaction
 
