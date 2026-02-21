@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
     <title>诡话 - 灵异事件分享平台 (Web2)</title>
-    <link rel="icon" type="image/png" href="/static/default-avatar.png">
+    <!-- Favicon 统一使用 logo.svg，适配桌面与移动端 -->
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="stylesheet" href="/static/style.css">
     <!-- 引入 FontAwesome 和 Web3.js -->
@@ -17,7 +20,7 @@
 
     <nav class="navbar glass">
         <a href="/" class="logo">
-            <img src="/static/logo.svg" alt="GuiHua Logo" onerror="this.onerror=null;this.style.visibility='hidden'">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
             <span>诡话</span>
         </a>
         
@@ -210,6 +213,24 @@
         </div>
     </div>
 
+    <!-- 打赏作者模态框：打赏先进入平台钱包，7% 建设费，93% 给作者 -->
+    <div class="modal-overlay" id="tipAuthorModal" onclick="Modal.close('tipAuthorModal')">
+        <div class="modal glass" style="text-align: left;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>💰 打赏作者</h3>
+                <button class="modal-close" onclick="Modal.close('tipAuthorModal')">&times;</button>
+            </div>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+                打赏将先进入平台钱包，<strong style="color: var(--accent-gold);">7%</strong> 作为网站建设费，<strong style="color: var(--accent-green);">93%</strong> 将转给作者。
+            </p>
+            <div class="form-group">
+                <label class="form-label">金额 (BNB)</label>
+                <input type="text" id="tipAmountInput" class="form-input" value="0.001" placeholder="0.001">
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="TipAuthor.send()">确认打赏</button>
+        </div>
+    </div>
+
     <!-- 详情模态框 -->
     <div class="modal-overlay post-detail-modal" id="postDetailModal" onclick="Modal.close('postDetailModal')">
         <div class="modal glass" onclick="event.stopPropagation()">
@@ -226,6 +247,25 @@
     <script>
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
+
+        function formatUserId(userId) {
+            const idStr = String(userId);
+            if (idStr.length < 10) {
+                return `<span class="user-id-badge" style="color:#9ca3af;">💀 ${idStr}</span>`;
+            }
+            const year = idStr.substring(0, 4);
+            const type = idStr.substring(4, 5);
+            const yearColors = {
+                '2025': { color: '#FF00FF', emoji: '🕯️' },
+                '2026': { color: '#00FFCC', emoji: '👻' }
+            };
+            const typeConfigs = {
+                '1': { color: '#A855F7', emoji: '🔮' },
+                '9': { color: '#FFD700', emoji: '👁️' }
+            };
+            const res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
+            return `<span class="user-id-badge" style="color:${res.color}">${res.emoji} ${idStr}</span>`;
+        }
 
         const Auth = {
             async init() {
@@ -667,7 +707,10 @@
                 const grid = document.getElementById('postGrid');
                 const html = posts.map(p => {
                     const imgUrl = p.cover_image || (p.images && p.images.length ? p.images[0] : null);
-                    const img = imgUrl ? `<img src="${imgUrl}" class="post-image" loading="lazy" onerror="this.style.display='none'">` : '';
+                    const img = imgUrl
+                        ? `<img src="${imgUrl}" class="post-image" loading="lazy" onerror="this.style.display='none'">`
+                        : '';
+                    const imgPlaceholder = '<div class="post-image post-image-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:120px;background:var(--bg-secondary);color:var(--text-muted);font-size:2rem;">📝</div>';
                     
                     let content = p.content;
                     if (p.original_post_id && p.original_post) {
@@ -687,13 +730,14 @@
                     <div class="masonry-item">
                         <div class="post-card glass" onclick="Modal.openDetail(${p.id})" style="${borderStyle}">
                             ${badge}
-                            ${img}
+                            ${img || imgPlaceholder}
                             <div class="post-content">
                                 <div class="post-title">${p.title}</div>
                                 <div class="post-meta">
-                                    <div class="author-info" style="display:flex;align-items:center;gap:0.5rem;">
+                                    <div class="author-info" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                                         ${UI.renderAvatar(p.author)}
                                         <span>${p.author.nickname}</span>
+                                        ${p.author.id != null ? formatUserId(p.author.id) : ''}
                                     </div>
                                     <div style="display:flex; gap:0.5rem; align-items:center;">
                                         <span><i class="fas fa-heart" style="${p.is_liked ? 'color:var(--accent-red)' : ''}"></i> ${p.likes_count}</span>
@@ -770,6 +814,65 @@
                     `;
                 } catch(e) {
                     body.innerHTML = `<div style="color: var(--accent-red);">加载失败: ${e.message}</div>`;
+                }
+            }
+        };
+
+        let tipAuthorPostId = null;
+        const TipAuthor = {
+            open(postId) {
+                tipAuthorPostId = postId;
+                document.getElementById('tipAmountInput').value = '0.001';
+                Modal.open('tipAuthorModal');
+            },
+            async send() {
+                if (!tipAuthorPostId || !currentUser || !currentUser.address) {
+                    Toast.error('请先登录（钱包）');
+                    return;
+                }
+                const amountStr = (document.getElementById('tipAmountInput').value || '0.001').trim();
+                const amount = parseFloat(amountStr);
+                if (isNaN(amount) || amount < 0.0001) {
+                    Toast.error('请输入有效金额（至少 0.0001 BNB）');
+                    return;
+                }
+                try {
+                    const provider = window.BinanceChain || window.ethereum;
+                    if (!provider) return Toast.error('请安装钱包');
+                    const web3 = new Web3(provider);
+                    const cRes = await fetch(`${API_BASE}/config/fees`);
+                    const config = await cRes.json();
+                    if (!cRes.ok || !config.receive_address) {
+                        Toast.error('无法获取收款配置');
+                        return;
+                    }
+                    const valueWei = web3.utils.toHex(web3.utils.toWei(amountStr, 'ether'));
+                    const txHash = await provider.request({
+                        method: 'eth_sendTransaction',
+                        params: [{
+                            to: config.receive_address,
+                            from: currentUser.address,
+                            value: valueWei,
+                            gas: web3.utils.toHex(21000)
+                        }]
+                    });
+                    if (!txHash) { Toast.error('打赏取消'); return; }
+                    Toast.info('交易已发送，正在确认...');
+                    const verifyRes = await fetch(`${API_BASE}/tips/verify`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: JSON.stringify({ tx_hash: txHash, post_id: tipAuthorPostId })
+                    });
+                    const data = await verifyRes.json();
+                    if (verifyRes.ok) {
+                        Toast.success(`打赏成功！作者将收到 ${data.tip.author_receives_bnb} BNB（已扣 7% 建设费）`);
+                        Modal.close('tipAuthorModal');
+                        Modal.openDetail(tipAuthorPostId);
+                    } else {
+                        Toast.error(data.error || '验证失败');
+                    }
+                } catch (e) {
+                    Toast.error(e.message || '打赏失败');
                 }
             }
         };
@@ -864,8 +967,8 @@
 
                 body.innerHTML = `
                     <h2 style="margin-bottom:0.5rem;">${p.title}</h2>
-                    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
-                        发布者: ${p.author.nickname} | 浏览: ${p.view_count}
+                    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                        发布者: ${p.author.nickname} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
                     </div>
                     <div class="post-detail-content">
                         ${contentHtml}
@@ -881,10 +984,11 @@
                         ) : ''}
                     </div>
                     
-                    <div style="display:flex; gap:1rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem;">
+                    <div style="display:flex; gap:1rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem; flex-wrap:wrap;">
                         <button class="btn btn-ghost" onclick="Interact.like(${p.id})">😰 恐惧 (${p.likes_count})</button>
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
+                        ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id})">💰 打赏作者</button>` : ''}
                     </div>
 
                     ${adminControls}

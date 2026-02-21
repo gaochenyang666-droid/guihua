@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
     <title>用户档案 - 诡话</title>
-    <link rel="icon" type="image/png" href="/static/default-avatar.png">
+    <!-- Favicon 统一使用 logo.svg，适配桌面与移动端 -->
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -14,7 +17,7 @@
 <body>
     <nav class="navbar glass">
         <a href="/" class="logo">
-            <img src="/static/logo.svg" alt="GuiHua Logo" onerror="this.onerror=null;this.style.visibility='hidden'">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
             <span>诡话</span>
         </a>
         <div id="myActions"></div>
@@ -55,6 +58,19 @@
         let currentUser = null;
         let displayedUser = null;
         let tempAvatar = null;
+
+        function formatUserId(userId) {
+            const idStr = String(userId);
+            if (idStr.length < 10) {
+                return `<span class="user-id-badge" style="color:#9ca3af;">💀 ${idStr}</span>`;
+            }
+            const year = idStr.substring(0, 4);
+            const type = idStr.substring(4, 5);
+            const yearColors = { '2025': { color: '#FF00FF', emoji: '🕯️' }, '2026': { color: '#00FFCC', emoji: '👻' } };
+            const typeConfigs = { '1': { color: '#A855F7', emoji: '🔮' }, '9': { color: '#FFD700', emoji: '👁️' } };
+            const res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
+            return `<span class="user-id-badge" style="color:${res.color}">${res.emoji} ${idStr}</span>`;
+        }
         
         async function loadProfile() {
             const params = new URLSearchParams(window.location.search);
@@ -100,8 +116,9 @@
                             <h1 style="margin-bottom:0.5rem;">${user.nickname}</h1>
                             ${isMe ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>` : ''}
                         </div>
-                        <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem;">
-                            ${user.username} 
+                        <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                            ${user.username ? user.username + ' · ' : ''}
+                            ${typeof user.id !== 'undefined' ? formatUserId(user.id) : ''}
                             ${user.address ? `<span style="background:rgba(16,185,129,0.1); color:#10b981; padding:2px 6px; border-radius:4px; font-size:0.7rem;">${user.address.substring(0,6)}...${user.address.substring(38)}</span>` : ''}
                         </div>
                         ${user.bio ? `<div style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-primary); background:rgba(255,255,255,0.05); padding:0.5rem; border-radius:8px;">${user.bio}</div>` : ''}

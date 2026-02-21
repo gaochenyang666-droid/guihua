@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
     <title>诡话 - 创作者工作室</title>
-    <link rel="icon" type="image/png" href="/static/default-avatar.png">
+    <!-- Favicon 统一使用 logo.svg，适配桌面与移动端 -->
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
@@ -90,14 +93,15 @@
 
     <nav class="navbar glass">
         <a href="/" class="logo">
-            <img src="/static/logo.svg" alt="GuiHua Logo" onerror="this.onerror=null;this.style.visibility='hidden'">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
             <span>诡话</span> 
             <span style="font-size: 0.8em; opacity: 0.7; font-weight: 400;">Web3</span>
         </a>
         
         <div class="nav-actions">
-            <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
+            <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
+                <span id="userIdBadge"></span>
                 <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
             </div>
         </div>
@@ -114,7 +118,7 @@
                     </div>
                     <div class="step-item" id="stepIndicator2">
                         <div style="font-weight:bold;">2. 封面</div>
-                        <div style="font-size:0.8rem; opacity:0.7;">设置吸引人的封面</div>
+                        <div style="font-size:0.8rem; opacity:0.7;">选填，可跳过</div>
                     </div>
                     <div class="step-item" id="stepIndicator3">
                         <div style="font-weight:bold;">3. 永存</div>
@@ -148,14 +152,14 @@
                         </div>
                         <div id="studioPostContent" class="form-input" contenteditable="true" style="overflow-y: auto; min-height: 200px; max-height: 400px;"></div>
                     </div>
-                    <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="Studio.nextStep(2)">下一步: 上传封面</button>
+                    <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="Studio.nextStep(2)">下一步: 封面（选填）</button>
                 </div>
 
                 <!-- Step 2: Cover -->
                 <div class="step-content" id="step2">
                     <h2 style="margin-bottom: 1.5rem;">设置封面</h2>
                     <div class="form-group">
-                        <label class="form-label">封面图 (必填)</label>
+                        <label class="form-label">封面图 (选填)</label>
                         <div style="display:flex; flex-direction: column; gap:1rem;">
                             <div id="coverPreview" style="width:100%; aspect-ratio: 16/9; background:var(--bg-secondary); border-radius:8px; border:1px dashed var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden;">
                                 <span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>
@@ -187,15 +191,21 @@
                         </div>
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <span style="color: var(--text-secondary);">预估费用</span>
-                            <span style="font-size: 1.5rem; font-weight: bold; color: var(--accent-gold);">0.0003 BNB</span>
+                            <span style="font-size: 1.5rem; font-weight: bold; color: var(--accent-gold);">0.001 BNB</span>
                         </div>
                     </div>
 
                     <div id="walletActionArea">
-                        <!-- Button injected by JS based on environment -->
                         <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.publish()">
                             ⚡ 确认支付并发布
                         </button>
+                    </div>
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">已支付但未完成发帖？输入交易哈希继续（无需再付）</div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="text" id="resumeTxHashInput" class="form-input" placeholder="0x..." style="flex: 1; font-family: monospace; font-size: 0.8rem;">
+                            <button type="button" class="btn btn-ghost" onclick="Studio.resumeWithTxHash()">用该哈希继续</button>
+                        </div>
                     </div>
                     
                     <button class="btn btn-ghost" style="width: 100%; margin-top: 1rem;" onclick="Studio.prevStep(2)">返回修改</button>
@@ -231,6 +241,19 @@
     <script>
         const API_BASE = '/api'; 
         let currentUser = null;
+
+        function formatUserId(userId) {
+            const idStr = String(userId);
+            if (idStr.length < 10) {
+                return `<span class="user-id-badge" style="color:#9ca3af;">💀 ${idStr}</span>`;
+            }
+            const year = idStr.substring(0, 4);
+            const type = idStr.substring(4, 5);
+            const yearColors = { '2025': { color: '#FF00FF', emoji: '🕯️' }, '2026': { color: '#00FFCC', emoji: '👻' } };
+            const typeConfigs = { '1': { color: '#A855F7', emoji: '🔮' }, '9': { color: '#FFD700', emoji: '👁️' } };
+            const res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
+            return `<span class="user-id-badge" style="color:${res.color}">${res.emoji} ${idStr}</span>`;
+        }
 
         const Editor = {
             format(cmd) { document.execCommand(cmd, false, null); },
@@ -279,6 +302,7 @@
             }
         };
 
+        const PENDING_POST_KEY = 'studio_pending_post';
         const Draft = {
             save() {
                 const title = document.getElementById('studioPostTitle').value;
@@ -303,7 +327,7 @@
                     }
                 } catch(e) {}
             },
-            clear() { localStorage.removeItem('studio_draft'); }
+            clear() { localStorage.removeItem('studio_draft'); localStorage.removeItem(PENDING_POST_KEY); }
         };
 
         const Auth = {
@@ -316,8 +340,9 @@
                     window.location.href = '/';
                 }
                 UI.updateAuth();
-                Draft.load(); 
-                
+                Draft.load();
+                if (window.Studio) Studio.loadPendingPost();
+
                 document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
                 document.getElementById('studioPostContent').addEventListener('input', () => Draft.save());
             },
@@ -356,8 +381,6 @@
                     if(!title.trim() || content.trim().length < 10) return Toast.error('请完善标题和正文 (至少10字)');
                 }
                 if (this.currentStep === 2 && step === 3) {
-                    const cover = document.getElementById('studioPostImage').value;
-                    if(!cover) return Toast.error('请设置封面图');
                     this.checkWalletEnv();
                 }
 
@@ -429,6 +452,44 @@
                 Toast.success('已复制');
             },
 
+            savePendingPost(txHash) {
+                const title = document.getElementById('studioPostTitle').value;
+                const content = document.getElementById('studioPostContent').innerHTML;
+                const coverImage = document.getElementById('studioPostImage').value;
+                const data = { title, content, cover_image: coverImage, tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null), time: Date.now() };
+                try { localStorage.setItem(PENDING_POST_KEY, JSON.stringify(data)); } catch(e) {}
+            },
+            clearPendingPost() {
+                try { localStorage.removeItem(PENDING_POST_KEY); } catch(e) {}
+            },
+            loadPendingPost() {
+                try {
+                    const raw = localStorage.getItem(PENDING_POST_KEY);
+                    if (!raw) return;
+                    const p = JSON.parse(raw);
+                    if (!p.tx_hash || !p.time || (Date.now() - p.time > 24*60*60*1000)) return;
+                    this.pendingTxHash = p.tx_hash;
+                    if (p.title) document.getElementById('studioPostTitle').value = p.title;
+                    if (p.content) document.getElementById('studioPostContent').innerHTML = p.content;
+                    if (p.cover_image) document.getElementById('studioPostImage').value = p.cover_image;
+                    if (typeof Editor !== 'undefined' && Editor.previewCover) Editor.previewCover(p.cover_image);
+                    Toast.info('检测到未完成的发布（已支付），可直接点击发布继续，无需再次支付');
+                } catch(e) {}
+            },
+            resumeWithTxHash() {
+                const input = document.getElementById('resumeTxHashInput');
+                if (!input) return;
+                const txHash = (input.value || '').trim();
+                if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+                    Toast.error('请输入有效的 BSC 交易哈希（0x 开头，64 位十六进制）');
+                    return;
+                }
+                this.pendingTxHash = txHash;
+                this.savePendingPost(txHash);
+                input.value = '';
+                Toast.success('已记录该交易哈希，请直接点击「确认支付并发布」继续（不会再次扣款）');
+            },
+
             openDrawer() {
                 const drawer = document.getElementById('paymentDrawer');
                 if (drawer) {
@@ -470,7 +531,7 @@
                     const fromWei = (val) => {
                         if (window.web3) return window.web3.utils.fromWei(val, 'ether');
                         if (typeof Web3 !== 'undefined') return Web3.utils.fromWei(val, 'ether');
-                        return '0.0003';
+                        return '0.001';
                     };
                     
                     const feeInBNB = fromWei(config.fee.toString());
@@ -602,20 +663,24 @@
                     }
 
                     // 3. Payment (Skip if already paid)
-                    // 注意：config.fee 来自后端，已是 Wei，直接转 hex 发送；切勿 toWei(fee,'ether') 否则金额会放大 10^18 倍
+                    // 支付前把当前内容写入 localStorage，付完钱但发帖失败时可断点续传、无需再付
+                    this.savePendingPost(null);
+                    // 注意：config.fee 来自后端，已是 Wei 字符串；用 toBN 转 hex 避免 JS Number 精度丢失
                     if (!txHash) {
                         this.addLog("等待钱包确认...");
                         const provider = window.BinanceChain || window.ethereum;
-                        const valueWei = config.fee.toString();
+                        const valueHex = web3.utils.toHex(web3.utils.toBN(config.fee.toString()));
                         txHash = await provider.request({
                             method: 'eth_sendTransaction',
                             params: [{
                                 to: config.receive_address,
                                 from: currentUser.address,
-                                value: web3.utils.toHex(valueWei)
+                                value: valueHex,
+                                gas: web3.utils.toHex(21000)
                             }]
                         });
-                        this.pendingTxHash = txHash; // Save for retry
+                        this.pendingTxHash = txHash;
+                        this.savePendingPost(txHash);
                     }
                     
                     this.addLog("交易已广播: " + txHash.substring(0, 10) + "...");
@@ -657,7 +722,8 @@
                     if (res.ok) {
                         this.addLog("✅ 发布成功!");
                         Draft.clear();
-                        this.pendingTxHash = null; // Clear on success
+                        this.clearPendingPost();
+                        this.pendingTxHash = null;
                         Toast.success('发布成功');
                         setTimeout(() => {
                             window.location.href = '/';
@@ -716,9 +782,13 @@
                 const userMenu = document.getElementById('userMenu');
                 if (currentUser) {
                     userMenu.style.display = 'flex';
-                    let displayName = currentUser.nickname || currentUser.address.substring(0, 6);
-                    document.getElementById('userDisplayName').textContent = displayName;
-                    document.getElementById('userAvatarEmoji').textContent = currentUser.avatar || '👻';
+                    let displayName = currentUser.nickname || (currentUser.address ? currentUser.address.substring(0, 6) : '');
+                    const nameEl = document.getElementById('userDisplayName');
+                    if (nameEl) nameEl.textContent = displayName;
+                    const badgeEl = document.getElementById('userIdBadge');
+                    if (badgeEl && currentUser.id != null) badgeEl.innerHTML = formatUserId(currentUser.id);
+                    const avatarEl = document.getElementById('userAvatarEmoji');
+                    if (avatarEl) avatarEl.textContent = currentUser.avatar || '👻';
                 }
             }
         };

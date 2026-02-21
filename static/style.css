@@ -400,3 +400,28 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     width: 40px; height: 4px; background: var(--border-color); border-radius: 2px;
     margin: -1rem auto 1.5rem auto;
 }
+
+/* 导航栏 Logo：确保 static/logo.svg 存在；加载失败时保留占位避免塌陷 */
+.navbar-logo-img {
+    height: 32px;
+    width: auto;
+    max-width: 120px;
+    object-fit: contain;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+}
+
+/* 身份 ID 标签：Emoji + 颜色（诡异风格） */
+.user-id-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+    text-shadow: 0 0 5px currentColor;
+    border: 1px solid currentColor;
+    background: rgba(0, 0, 0, 0.2);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+}
