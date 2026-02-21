@@ -1954,7 +1954,12 @@ def init_db_data():
                 else:
                     print(f"Init Data Error (admin): {e}")
         
-        # Ensure 'Hua Xiansheng' article exists（用 ilike 避免标题弯引号导致编码/匹配或 f405）
+        # 在 rollback 前保存 admin.id，避免 rollback 后访问 admin 触发 identity map 失效 (2j85)
+        admin_id = getattr(admin, 'id', None) if admin else None
+        if not admin_id:
+            admin_id = User.query.filter(
+                or_(User.username == 'AdminGao', User.is_admin == True)
+            ).with_entities(User.id).scalar()
         db.session.rollback()
         title = '甘肃“再生人”华先生访问记'
         try:
@@ -1962,7 +1967,7 @@ def init_db_data():
         except Exception as e:
             print(f"Init DB: seed post check failed: {e}")
             existing = None
-        if not existing:
+        if not existing and admin_id:
             try:
                 content = """<p><strong>——某县局长，清晰讲述前世地主及死后做鬼经历</strong><br>
 《传统文化文摘》记者李懿桐采写<br>
@@ -2218,7 +2223,7 @@ def init_db_data():
                     title=title,
                     content=content,
                     cover_image='/static/images/hua_cover.jpg',
-                    author_id=admin.id,
+                    author_id=admin_id,
                     is_paid=True
                 )
                 db.session.add(post)
