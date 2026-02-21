@@ -39,12 +39,21 @@ ARWEAVE_GATEWAY = 'https://arweave.net'
 PINATA_API_KEY = os.environ.get('PINATA_API_KEY')
 PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY')
 
-# Database Configuration
+# Database Configuration（SQLite 建议用绝对路径，避免重启后工作目录变化导致数据“丢失”）
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'guijing.db'))
+_db_url = os.environ.get('DATABASE_URL', '').strip() or None
+if _db_url and _db_url.startswith('sqlite:///') and not _db_url.startswith('sqlite:////'):
+    # 相对路径如 sqlite:///guijing.db 转为基于项目目录的绝对路径，防止重启后 cwd 不同导致丢数据
+    _rel = _db_url.replace('sqlite:///', '')
+    if _rel and not os.path.isabs(_rel):
+        _db_url = 'sqlite:///' + os.path.join(basedir, _rel)
+if not _db_url:
+    _db_url = 'sqlite:///' + os.path.join(basedir, 'guijing.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# timeout 仅用于 SQLite（防锁库）；PostgreSQL 不支持该 DSN 选项，否则会报 invalid connection option "timeout"
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'connect_args': {'timeout': 30}
+    'connect_args': {'timeout': 30} if _db_url.startswith('sqlite') else {}
 }
 
 # Persistent SECRET_KEY
