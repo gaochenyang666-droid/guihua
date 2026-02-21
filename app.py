@@ -1257,61 +1257,138 @@ def read_all_notifications():
 
 def _get_posts_fallback(page, per_page, current_user_id):
     """兜底：仅查 posts 表，不 join users，避免缺列导致 500。返回 (posts_data, total, pages)。"""
-    query = Post.query.filter_by(is_hidden=False).order_by(Post.created_at.desc())
-    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    posts = pagination.items
-    post_ids = [p.id for p in posts]
+    from sqlalchemy import text
+    try:
+        query = Post.query.filter_by(is_hidden=False).order_by(Post.created_at.desc())
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        posts = pagination.items
+        total, pages = pagination.total, pagination.pages
+    except Exception as e:
+        print(f"[get_posts fallback] ORM query failed, using raw SQL: {e}")
+        try:
+            # 纯 SQL，只选最基础列，不依赖 ORM 与任何新增列
+            off = (page - 1) * per_page
+            rows = db.session.execute(text("""
+                SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
+                       tx_hash, ipfs_cid, is_paid, region, is_on_chain, post_type, is_hidden, allow_comments,
+                       is_repost, original_post_id, repost_comment
+                FROM posts WHERE is_hidden = false ORDER BY created_at DESC LIMIT :lim OFFSET :off
+            """), {'lim': per_page, 'off': off}).fetchall()
+            total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
+            pages = max(1, (total + per_page - 1) // per_page)
+            posts = rows
+        except Exception as e2:
+            print(f"[get_posts fallback] raw SQL failed: {e2}")
+            try:
+                rows = db.session.execute(text("""
+                    SELECT id, title, content, author_id, created_at, cover_image, view_count
+                    FROM posts WHERE is_hidden = false ORDER BY created_at DESC LIMIT :lim OFFSET :off
+                """), {'lim': per_page, 'off': (page - 1) * per_page}).fetchall()
+                total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
+                pages = max(1, (total + per_page - 1) // per_page)
+                posts = rows
+            except Exception as e3:
+                print(f"[get_posts fallback] minimal SQL failed: {e3}")
+                return [], 0, 1
+
+    post_ids = [p.id if hasattr(p, 'id') else p[0] for p in posts]
     user_likes = set()
     user_bookmarks = set()
     if current_user_id and post_ids:
-        user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
-        user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
+        try:
+            user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
+            user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
+        except Exception:
+            pass
+
     posts_data = []
     for p in posts:
         try:
+            if hasattr(p, 'id'):
+                pid, title, content, author_id = p.id, getattr(p, 'title', ''), getattr(p, 'content', ''), p.author_id
+                created_at = p.created_at.isoformat() if getattr(p, 'created_at', None) else ''
+                cover_image = getattr(p, 'cover_image', None)
+                images_raw = getattr(p, 'images', None)
+                view_count = getattr(p, 'view_count', 0)
+                tx_hash = getattr(p, 'tx_hash', None)
+                ipfs_cid = getattr(p, 'ipfs_cid', None)
+                post_type = getattr(p, 'post_type', 0)
+                is_repost = getattr(p, 'is_repost', False)
+                original_post_id = getattr(p, 'original_post_id', None)
+                repost_comment = getattr(p, 'repost_comment', None)
+                is_hidden = getattr(p, 'is_hidden', False)
+                allow_comments = getattr(p, 'allow_comments', True)
+                region = getattr(p, 'region', '其他')
+                is_on_chain = getattr(p, 'is_on_chain', False)
+            else:
+                r = p
+                pid = r[0]
+                title = r[1] or ''
+                content = r[2] or ''
+                author_id = r[3]
+                created_at = r[4].isoformat() if r[4] else ''
+                cover_image = r[5] if len(r) > 5 else None
+                images_raw = r[6] if len(r) > 6 else None
+                view_count = r[7] if len(r) > 7 else 0
+                tx_hash = r[8] if len(r) > 8 else None
+                ipfs_cid = r[9] if len(r) > 9 else None
+                post_type = r[13] if len(r) > 13 else 0
+                is_repost = r[16] if len(r) > 16 else False
+                original_post_id = r[17] if len(r) > 17 else None
+                repost_comment = r[18] if len(r) > 18 else None
+                is_hidden = r[14] if len(r) > 14 else False
+                allow_comments = r[15] if len(r) > 15 else True
+                region = r[11] if len(r) > 11 else '其他'
+                is_on_chain = r[12] if len(r) > 12 else False
+
             images_list = []
-            if getattr(p, 'images', None):
+            if images_raw:
                 try:
-                    images_list = json.loads(p.images) if isinstance(p.images, str) else (p.images or [])
+                    images_list = json.loads(images_raw) if isinstance(images_raw, str) else (images_raw or [])
                 except (TypeError, ValueError):
                     pass
-            likes_count = Like.query.filter_by(post_id=p.id).count()
-            comments_count = Comment.query.filter_by(post_id=p.id).count()
+            likes_count = 0
+            comments_count = 0
             votes_list = []
-            for v in Vote.query.filter_by(post_id=p.id).all():
-                votes_list.append({'id': v.id, 'option_text': getattr(v, 'option_text', ''), 'vote_count': getattr(v, 'vote_count', 0)})
-            author = {'id': p.author_id, 'nickname': '用户', 'avatar': '👻'}
+            try:
+                likes_count = Like.query.filter_by(post_id=pid).count()
+                comments_count = Comment.query.filter_by(post_id=pid).count()
+                for v in Vote.query.filter_by(post_id=pid).all():
+                    votes_list.append({'id': v.id, 'option_text': getattr(v, 'option_text', ''), 'vote_count': getattr(v, 'vote_count', 0)})
+            except Exception:
+                pass
+
             posts_data.append({
-                'id': p.id,
-                'title': getattr(p, 'title', ''),
-                'content': getattr(p, 'content', ''),
-                'cover_image': getattr(p, 'cover_image', None),
+                'id': pid,
+                'title': title,
+                'content': content,
+                'cover_image': cover_image,
                 'images': images_list,
-                'author': author,
-                'view_count': getattr(p, 'view_count', 0),
+                'author': {'id': author_id, 'nickname': '用户', 'avatar': '👻'},
+                'view_count': view_count,
                 'likes_count': likes_count,
                 'comments_count': comments_count,
                 'votes': votes_list,
-                'is_liked': p.id in user_likes,
-                'is_bookmarked': p.id in user_bookmarks,
-                'tx_hash': getattr(p, 'tx_hash', None),
-                'ipfs_cid': getattr(p, 'ipfs_cid', None),
-                'nft_token_id': getattr(p, 'nft_token_id', None),
-                'nft_tx_hash': getattr(p, 'nft_tx_hash', None),
-                'post_type': getattr(p, 'post_type', 0),
-                'created_at': p.created_at.isoformat() if getattr(p, 'created_at', None) else '',
-                'is_repost': getattr(p, 'is_repost', False),
-                'original_post_id': getattr(p, 'original_post_id', None),
+                'is_liked': pid in user_likes,
+                'is_bookmarked': pid in user_bookmarks,
+                'tx_hash': tx_hash,
+                'ipfs_cid': ipfs_cid,
+                'nft_token_id': None,
+                'nft_tx_hash': None,
+                'post_type': post_type,
+                'created_at': created_at,
+                'is_repost': is_repost,
+                'original_post_id': original_post_id,
                 'original_post': None,
-                'repost_comment': getattr(p, 'repost_comment', None),
-                'is_hidden': getattr(p, 'is_hidden', False),
-                'allow_comments': getattr(p, 'allow_comments', True),
-                'region': getattr(p, 'region', '其他'),
-                'is_on_chain': getattr(p, 'is_on_chain', False),
+                'repost_comment': repost_comment,
+                'is_hidden': is_hidden,
+                'allow_comments': allow_comments,
+                'region': region,
+                'is_on_chain': is_on_chain,
             })
         except Exception as e:
-            print(f"[get_posts fallback] skip post id={getattr(p, 'id', None)}: {e}")
-    return posts_data, pagination.total, pagination.pages
+            print(f"[get_posts fallback] skip row: {e}")
+    return posts_data, total, pages
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
