@@ -58,7 +58,7 @@
             </div>
             <div class="sidebar-card glass" style="font-size: 0.85rem; color: var(--text-secondary); display: block;">
                 <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
-                <p>所有内容均来自链上或 Web3 创作者。</p>
+                <p>所有内容均来自链上或 Web3 创作者。发帖仅需支付 BNB，永存档案由平台负责。</p>
             </div>
         </aside>
 
@@ -348,15 +348,24 @@
                 } else if (typeof window.ethereum !== 'undefined') {
                     window.web3 = new Web3(window.ethereum);
                 } else {
-                    // Mobile fallback detection
+                    // Mobile: 无注入钱包时引导用 App 内置浏览器打开
                     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                     if (isMobile) {
-                         if(confirm('检测到移动端未安装钱包插件。是否跳转到 MetaMask App 继续？')) {
-                             const dappUrl = window.location.host;
-                             window.location.href = `https://metamask.app.link/dapp/${dappUrl}`;
-                             return;
-                         }
-                        return Toast.error('请在 MetaMask / OKX 等钱包 App 的内置浏览器中打开本站');
+                        const fullUrl = window.location.href;
+                        const dappHost = window.location.host;
+                        const tryMetaMask = () => { window.location.href = `https://metamask.app.link/dapp/${dappHost}`; };
+                        const copyAndGuideBinance = () => {
+                            navigator.clipboard.writeText(fullUrl).then(() => {
+                                Toast.success('已复制链接');
+                                alert('请打开 币安 App → 底部「钱包」→ 右上角「…」→「浏览器」→ 粘贴地址访问本站');
+                            });
+                        };
+                        if (confirm('移动端未检测到钱包。\n\n• 选「确定」跳转 MetaMask App\n• 选「取消」复制链接，到币安 App 内置浏览器粘贴打开')) {
+                            tryMetaMask();
+                            return;
+                        }
+                        copyAndGuideBinance();
+                        return;
                     }
                     return Toast.error('请安装 MetaMask, Binance Wallet 或其他 Web3 钱包');
                 }
@@ -1023,9 +1032,13 @@
                 const token = localStorage.getItem('token');
                 if (token) headers['Authorization'] = `Bearer ${token}`;
                 const res = await fetch(`${API_BASE}/posts/${id}`, { headers });
-                if (handle401(res)) return;
                 const p = await res.json().catch(() => ({}));
                 if (!res.ok) {
+                    if (res.status === 401) {
+                        localStorage.removeItem('token');
+                        currentUser = null;
+                        UI.updateAuth();
+                    }
                     body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${p.error || '加载失败'}</div>`;
                     return;
                 }
@@ -1090,7 +1103,7 @@
                             ${p.tx_hash ? `<a href="https://bscscan.com/tx/${p.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证 BSCScan</a>` : '<span style="color:var(--text-muted);">无支付凭证</span>'}
                             ${p.ipfs_cid ? (
                                 (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ?
-                                `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案 Arweave</a><span style="color:var(--text-muted); font-size:0.8rem;">（可在 <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">arweave.net</a> 按 TXID 查询）</span>` :
+                                `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>` :
                                 `<a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-green);">💾 永存档案 IPFS</a>`
                             ) : ''}
                             ${p.nft_tx_hash ? `<a href="https://bscscan.com/tx/${p.nft_tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-cyan, #0ea5e9);">🖼 NFT 铸造 BSCScan</a>` : ''}
@@ -1102,7 +1115,7 @@
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id})">💰 打赏作者</button>` : ''}
-                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步到 Arweave</button>` : ''}
+                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
                         ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-cyan, #0ea5e9);" onclick="Interact.mintNft(${p.id})">🖼 制作 NFT</button>` : ''}
                     </div>
 
@@ -1150,7 +1163,7 @@
                 try {
                     const res = await fetch(`${API_BASE}/posts/${id}/sync-arweave`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
                     const data = await res.json().catch(() => ({}));
-                    if (res.ok) { Toast.success(data.message || '已同步到 Arweave'); Modal.openDetail(id); }
+                    if (res.ok) { Toast.success(data.message || '已同步永存档案'); Modal.openDetail(id); }
                     else Toast.error(data.error || '同步失败');
                 } catch (e) { Toast.error('网络错误'); }
             },
@@ -1234,7 +1247,10 @@
             }
             Auth.init();
             Post.load();
-            
+            const postId = new URLSearchParams(window.location.search).get('post');
+            if (postId && /^\d+$/.test(postId)) {
+                setTimeout(() => Modal.openDetail(parseInt(postId, 10)), 300);
+            }
             document.getElementById('loginForm').onsubmit = (e) => {
                 e.preventDefault();
                 Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);

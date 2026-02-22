@@ -646,7 +646,7 @@ def upload_to_arweave_native(data):
         return None
 
 
-def upload_to_arweave_with_retry(data, retries=2):
+def upload_to_arweave_with_retry(data, retries=3):
     """
     支付发帖流程专用：必须写入永存档案。先尝试 Arweave（可重试），失败则尝试 Pinata。
     返回 (storage_id, 'arweave'|'ipfs'|None), 若为 None 表示都失败。
@@ -656,11 +656,14 @@ def upload_to_arweave_with_retry(data, retries=2):
         if tx_id:
             return (tx_id, 'arweave')
         if attempt < retries:
-            time.sleep(2)
+            time.sleep(3)
     if PINATA_API_KEY and PINATA_SECRET_API_KEY:
-        cid = upload_to_pinata(data)
-        if cid:
-            return (cid, 'ipfs')
+        for attempt in range(2):
+            cid = upload_to_pinata(data)
+            if cid:
+                return (cid, 'ipfs')
+            if attempt < 1:
+                time.sleep(2)
     return (None, None)
 
 
@@ -1637,10 +1640,10 @@ def create_post():
             'region': region,
             'platform': 'GuiHua Web3 (Arweave)'
         }
-        storage_id, storage_type = upload_to_arweave_with_retry(payload, retries=2)
+        storage_id, storage_type = upload_to_arweave_with_retry(payload, retries=3)
         if not storage_id:
             return jsonify({
-                'error': '永存档案写入失败，请稍后重试。您的支付已确认，无需再次支付，直接点击「确认支付并发布」即可。',
+                'error': '永存档案写入失败（Arweave/Pinata 暂时不可用）。您的支付已确认，无需再次支付，请稍后点击「重试发布」再试；若多次失败请检查服务端 Arweave 钱包余额或 Pinata 配置。',
                 'code': 'ARWEAVE_FAIL'
             }), 503
         ipfs_cid = storage_id
