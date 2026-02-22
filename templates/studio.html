@@ -270,7 +270,10 @@
                     canvas.width = w; canvas.height = h;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(img, 0, 0, w, h);
-                    canvas.toBlob(blob => resolve(blob || new Blob()), 'image/jpeg', quality);
+                    canvas.toBlob(function(blob) {
+                        if (blob && blob.size > 0) resolve(blob);
+                        else resolve(file);
+                    }, 'image/jpeg', quality);
                 };
                 img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
                 img.src = url;
@@ -298,7 +301,8 @@
             previewCover(url) {
                 const p = document.getElementById('coverPreview');
                 if(url) {
-                    p.innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">`;
+                    const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+                    p.innerHTML = `<img src="${esc(url)}" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover; border-radius:8px;" onerror="this.style.display='none'">`;
                     p.style.border = '1px solid var(--accent-purple)';
                 } else {
                     p.innerHTML = '<span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>';
@@ -905,7 +909,13 @@
 
         function initQuill() {
             const el = document.getElementById('studioPostContent');
-            if (!el || typeof Quill === 'undefined') return;
+            if (!el) return;
+            if (typeof Quill === 'undefined') {
+                const wrap = document.getElementById('quillEditorWrap');
+                if (wrap) wrap.innerHTML = '<p style="padding:1rem;color:var(--accent-red);">富文本编辑器加载失败，请刷新页面或检查网络后重试。</p>';
+                return;
+            }
+            if (studioQuill) return;
             studioQuill = new Quill(el, {
                 theme: 'snow',
                 placeholder: '撰写你的怪谈… 可插入图片',
@@ -926,9 +936,9 @@
                     const file = input.files && input.files[0];
                     if (!file) return;
                     try {
-                        const blob = await compressImage(file, 1000, 0.7);
+                        let data = await compressImage(file, 1000, 0.7).catch(() => file);
                         const formData = new FormData();
-                        formData.append('file', blob, (file.name || 'image.jpg').replace(/\.[^.]+$/, '.jpg'));
+                        formData.append('file', data, (file.name || 'image.jpg').replace(/\.[^.]+$/, '.jpg'));
                         const res = await fetch(API_BASE + '/upload', {
                             method: 'POST',
                             headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },

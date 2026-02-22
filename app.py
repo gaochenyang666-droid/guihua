@@ -2768,7 +2768,7 @@ def init_db_data():
                 post = Post(
                     title=title,
                     content=content,
-                    cover_image='/static/images/hua_cover.jpg',
+                    cover_image=None,
                     author_id=admin_id,
                     is_paid=True
                 )
