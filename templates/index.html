@@ -482,6 +482,7 @@
                 UI.updateAuth();
                 Modal.close('loginModal');
                 Toast.success('认证成功');
+                Post.load({ sort: Post.currentSort || 'new' });
             },
 
             logout() {
@@ -491,6 +492,12 @@
                 currentUser = null;
                 UI.updateAuth();
                 Toast.info('已退出');
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                const newNav = document.querySelector('.nav-item[data-sort="new"]');
+                if (newNav) newNav.classList.add('active');
+                Post.currentSort = 'new';
+                Post.currentPage = 1;
+                Post.load();
             },
 
             /** 登录即将过期提醒（无 Refresh Token 时的替代）：接近 24h 弹一次提醒 */
@@ -1083,7 +1090,7 @@
                             ${p.tx_hash ? `<a href="https://bscscan.com/tx/${p.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证 BSCScan</a>` : '<span style="color:var(--text-muted);">无支付凭证</span>'}
                             ${p.ipfs_cid ? (
                                 (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ?
-                                `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案 Arweave</a>` :
+                                `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案 Arweave</a><span style="color:var(--text-muted); font-size:0.8rem;">（可在 <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">arweave.net</a> 按 TXID 查询）</span>` :
                                 `<a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-green);">💾 永存档案 IPFS</a>`
                             ) : ''}
                             ${p.nft_tx_hash ? `<a href="https://bscscan.com/tx/${p.nft_tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-cyan, #0ea5e9);">🖼 NFT 铸造 BSCScan</a>` : ''}
@@ -1095,7 +1102,8 @@
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id})">💰 打赏作者</button>` : ''}
-                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && (p.tx_hash || p.ipfs_cid) && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-cyan, #0ea5e9);" onclick="Interact.mintNft(${p.id})">🖼 制作 NFT</button>` : ''}
+                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步到 Arweave</button>` : ''}
+                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-cyan, #0ea5e9);" onclick="Interact.mintNft(${p.id})">🖼 制作 NFT</button>` : ''}
                     </div>
 
                     ${adminControls}
@@ -1137,6 +1145,15 @@
 
             async like(id) { await this.do(`${API_BASE}/posts/${id}/like`); Modal.openDetail(id); },
             async bookmark(id) { await this.do(`${API_BASE}/posts/${id}/bookmark`); Modal.openDetail(id); },
+            async syncArweave(id) {
+                if (!currentUser) return Modal.open('loginModal');
+                try {
+                    const res = await fetch(`${API_BASE}/posts/${id}/sync-arweave`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) { Toast.success(data.message || '已同步到 Arweave'); Modal.openDetail(id); }
+                    else Toast.error(data.error || '同步失败');
+                } catch (e) { Toast.error('网络错误'); }
+            },
             async mintNft(id) {
                 if (!currentUser) return Modal.open('loginModal');
                 try {

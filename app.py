@@ -646,6 +646,24 @@ def upload_to_arweave_native(data):
         return None
 
 
+def upload_to_arweave_with_retry(data, retries=2):
+    """
+    支付发帖流程专用：必须写入永存档案。先尝试 Arweave（可重试），失败则尝试 Pinata。
+    返回 (storage_id, 'arweave'|'ipfs'|None), 若为 None 表示都失败。
+    """
+    for attempt in range(max(1, retries + 1)):
+        tx_id = upload_to_arweave_native(data)
+        if tx_id:
+            return (tx_id, 'arweave')
+        if attempt < retries:
+            time.sleep(2)
+    if PINATA_API_KEY and PINATA_SECRET_API_KEY:
+        cid = upload_to_pinata(data)
+        if cid:
+            return (cid, 'ipfs')
+    return (None, None)
+
+
 def build_and_upload_nft_metadata(post):
     """
     按 NFT 标准生成 metadata（name, description, content_hash, author_id, image, external_url），
@@ -1607,7 +1625,7 @@ def create_post():
         is_paid = True
         is_on_chain = True
         
-        # Arweave Upload (Server pays)
+        # 永存档案：支付后必须立即写入 Arweave（或 Pinata 兜底），否则不发帖
         clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
         payload = {
             'title': data.get('title'),
@@ -1619,14 +1637,13 @@ def create_post():
             'region': region,
             'platform': 'GuiHua Web3 (Arweave)'
         }
-        
-        ar_tx_id = upload_to_arweave_native(payload)
-        if ar_tx_id:
-            ipfs_cid = ar_tx_id
-        else:
-            # Fallback to Pinata if Arweave fails
-            if PINATA_API_KEY:
-                ipfs_cid = upload_to_pinata(payload)
+        storage_id, storage_type = upload_to_arweave_with_retry(payload, retries=2)
+        if not storage_id:
+            return jsonify({
+                'error': '永存档案写入失败，请稍后重试。您的支付已确认，无需再次支付，直接点击「确认支付并发布」即可。',
+                'code': 'ARWEAVE_FAIL'
+            }), 503
+        ipfs_cid = storage_id
 
     # 防重复：保存前再次确认该交易哈希未被任何帖子使用（与 verify_transaction + unique 约束三重保险，防并发）
     if tx_hash:
@@ -1729,6 +1746,37 @@ def get_post_detail(post_id):
     except Exception as e:
         print(f"Post Detail Error: {e}")
         return jsonify({'error': 'Failed to load post'}), 500
+
+@app.route('/api/posts/<int:post_id>/sync-arweave', methods=['POST'])
+@token_required
+def sync_post_to_arweave(post_id):
+    """将已有帖子内容同步到 Arweave，生成永存档案（仅作者或管理员；帖子需有 tx_hash 且尚未有 ipfs_cid）。"""
+    post = Post.query.get_or_404(post_id)
+    if post.author_id != g.current_user.id and not getattr(g.current_user, 'is_admin', False):
+        return jsonify({'error': '仅作者或管理员可操作'}), 403
+    if not post.tx_hash:
+        return jsonify({'error': '该帖子无支付凭证，无法同步到 Arweave'}), 400
+    if post.ipfs_cid:
+        return jsonify({'error': '该帖子已有永存档案', 'ipfs_cid': post.ipfs_cid}), 400
+    author_address = (post.author.wallet_address or post.author.address or '').strip() if post.author else ''
+    payload = {
+        'title': post.title,
+        'content': post.content or '',
+        'cover_image': post.cover_image,
+        'author': author_address,
+        'timestamp': post.created_at.isoformat() if post.created_at else datetime.utcnow().isoformat(),
+        'tx_hash': post.tx_hash,
+        'region': getattr(post, 'region', '其他') or '其他',
+        'platform': 'GuiHua Web3 (Arweave)'
+    }
+    ar_tx_id = upload_to_arweave_native(payload)
+    if not ar_tx_id and PINATA_API_KEY:
+        ar_tx_id = upload_to_pinata(payload)
+    if not ar_tx_id:
+        return jsonify({'error': 'Arweave 与备用存储均失败，请稍后重试'}), 503
+    post.ipfs_cid = ar_tx_id
+    db.session.commit()
+    return jsonify({'message': '已同步到 Arweave', 'ipfs_cid': ar_tx_id, 'arweave_url': f'https://arweave.net/{ar_tx_id}'})
 
 @app.route('/api/posts/<int:post_id>/mint-nft', methods=['POST'])
 @token_required

@@ -743,9 +743,9 @@
 
                     if(!receipt || !receipt.status) throw new Error('交易未确认');
                     
-                    this.addLog("交易确认成功! 正在存入 Arweave...");
+                    this.addLog("交易确认成功! 正在写入永存档案（Arweave）...");
                     
-                    // 5. Backend Upload（必带 tx_hash，与后端 /api/posts 要求一致）
+                    // 5. Backend Upload：支付已确认，后端立即写入 Arweave，成功后才创建帖子
                     const res = await fetch(`${API_BASE}/posts`, {
                         method: 'POST',
                         headers: { 
@@ -764,7 +764,7 @@
                     
                     if (handle401(res)) return;
                     if (res.ok) {
-                        this.addLog("✅ 发布成功!");
+                        this.addLog("✅ 永存档案已写入，发布成功!");
                         Draft.clear();
                         this.clearPendingPost();
                         this.pendingTxHash = null;
@@ -773,8 +773,12 @@
                             window.location.href = '/';
                         }, 2000);
                     } else {
-                        const errData = await res.json();
-                        throw new Error(errData.error || 'Server Error');
+                        const errData = await res.json().catch(() => ({}));
+                        const msg = errData.error || ('请求失败 ' + res.status);
+                        if (res.status === 503 && (errData.code === 'ARWEAVE_FAIL' || msg.includes('永存档案'))) {
+                            this.addLog("⚠️ 永存档案写入暂时失败，请点击「重试发布」再试（无需再次支付）");
+                        }
+                        throw new Error(msg);
                     }
                 } catch(e) { 
                     console.error(e);
