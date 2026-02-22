@@ -1,6 +1,7 @@
 # Web3 v6 与 eth-account 0.8 兼容，避免 v5 与 eth-account 版本冲突
+# eth_keyfile 依赖 pkg_resources，需显式安装 setuptools（Python 3.12+ 不再内置）
+setuptools>=65.0.0
 gunicorn==21.2.0
-setuptools
 Flask==2.3.2
 Flask-SQLAlchemy==3.0.3
 Flask-Cors==3.0.10

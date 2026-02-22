@@ -76,7 +76,92 @@ PLATFORM_PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef123456789
    ```
    保存后，cron 会按 schedule 自动执行。
 
-5. **Render 等无 crontab 时**：可在其 Cron Job 或 Scheduled Job 里配置同一条命令（`cd 项目目录 && python3 scripts/process_withdrawals.py`），或改用下面的「方式二」用 HTTP 定时调用。
+5. **在 Render 上**：见下文的「[方式一在 Render 上一步步配置](#方式一在-render-上一步步配置)」。
+
+---
+
+#### 方式一在 Render 上一步步配置
+
+Render 没有服务器 crontab，要用 **Cron Job** 这种独立服务，和你的 Web Service 用同一个仓库，按 schedule 自动跑脚本。
+
+**第 1 步：打开 Dashboard 并新建 Cron Job**
+
+1. 登录 [Render Dashboard](https://dashboard.render.com/)。
+2. 在 **Dashboard** 里点 **New +** → 选 **Cron Job**。
+3. 连接仓库：选你当前用的 **GitHub（或 GitLab/Bitbucket）** 账号下的 **guihua** 仓库（和 Web Service 同一个），分支选 **main**（或你部署用的分支）。
+
+**第 2 步：填写 Cron Job 基本信息**
+
+- **Name**：随便起名，例如 `guihua-auto-withdrawals`。
+- **Region**：和你的 Web Service 同一区域即可（可选离用户近的）。
+
+**第 3 步：Build 设置（安装依赖）**
+
+- **Runtime**：选 **Python 3**（和主站一致）。
+- **Build Command**：若页面有这一项，填 `pip install -r requirements.txt`（让每次跑脚本时能 import 主站依赖）；若 Render 已自动识别 Python 并安装依赖，可留空。
+- Cron Job 没有「Start Command」，真正执行的是下面第 5 步的 **Command**。
+
+**第 4 步：Schedule（执行频率）**
+
+在 **Schedule** 里填 cron 表达式，时间一律是 **UTC**：
+
+- 每天 **UTC 2:00**（约北京时间 10:00）：`0 2 * * *`
+- 每天 **UTC 18:00**（约北京时间次日 02:00）：`0 18 * * *`
+- 每 12 小时一次：`0 */12 * * *`
+
+按你需要选一个即可。
+
+**第 5 步：Command（每次要执行的命令）**
+
+在 **Command** 里填（从仓库根目录执行，无需写 `cd`）：
+
+```bash
+python3 scripts/process_withdrawals.py
+```
+
+保存。
+
+**第 6 步：环境变量（和 Web Service 一致）**
+
+Cron Job 要连数据库、读钱包配置，必须和主站用同一套环境变量。任选一种方式即可。
+
+**方式 A：主站已经用了 Environment Group**
+
+1. 在 Render Dashboard 左侧点进你的 **Cron Job**（例如 `guihua-auto-withdrawals`）。
+2. 左侧点 **Environment**。
+3. 找到 **Linked Environment Groups** 区域，点下拉框，选中主站用的那个 **Environment Group**（名字和你主站链接的相同）。
+4. 点 **Link**。链接后，该 Group 里的所有变量（如 `DATABASE_URL`、`PLATFORM_PRIVATE_KEY`、`RECEIVE_ADDRESS` 等）都会自动注入到 Cron Job，无需再逐个填。
+5. 保存（选 **Save only** 或 **Save and deploy** 均可）。
+
+**方式 B：主站是逐个填的环境变量（没有用 Group）**
+
+1. 在 Render Dashboard 左侧点进你的 **Cron Job**。
+2. 左侧点 **Environment**。
+3. 在 **Environment Variables** 区域，和主站保持一致地添加变量：
+   - 点 **+ Add Environment Variable**，**Key** 填变量名，**Value** 填值（与主站 Web Service 里完全一致），保存一条再添加下一条。
+   - 必填的大致有：`DATABASE_URL`、`RECEIVE_ADDRESS`、`PLATFORM_PRIVATE_KEY`、`BSC_RPC_URL`；若主站还配了 `USDT_CONTRACT_ADDRESS`、`SECRET_KEY`、`FLASK_APP` 等，也一并加上。
+4. 若你本机有和主站一致的 `.env` 文件，可点 **Add from .env**，把 `.env` 内容粘贴进弹窗，可批量添加（注意不要包含真实私钥到公开位置）。
+5. 保存（选 **Save only** 或 **Save and deploy**）。
+
+**如何确认主站用的是哪种？**  
+打开主站 Web Service → **Environment**：若能看到 **Linked Environment Groups** 且下面已链接了一个 Group，就是方式 A；若只有 **Environment Variables** 下一行行 Key/Value，就是方式 B。
+
+**第 7 步：创建并测试**
+
+1. 点 **Create Cron Job**，Render 会先按你的设置 build 一次。
+2. Build 成功后，在 Cron Job 页面点 **Trigger Run** 手动跑一次，看 **Logs** 里是否有：
+   ```text
+   Auto withdrawals: processed=x, sent=x, failed=x
+   ```
+3. 若报错「找不到模块」或「数据库连不上」，检查 Environment 是否和 Web Service 一致、是否有 `DATABASE_URL` 和 `PLATFORM_PRIVATE_KEY`。
+
+**第 8 步：之后**
+
+- 之后每次到点会自动跑，无需再操作。
+- 想改时间：在 Cron Job 的 **Settings** 里改 **Schedule**。
+- 想立刻再跑一次：点 **Trigger Run**。
+
+**注意**：Render 的 Cron Job 按运行时间计费，有每月最低约 $1；脚本跑完就退出，一般几秒到几十秒，费用很低。
 
 ---
 
