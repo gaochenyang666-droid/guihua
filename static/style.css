@@ -361,6 +361,8 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .post-detail-modal .modal { max-width: 900px; }
+.post-detail-content { word-break: break-word; }
+.post-detail-content img { max-width: 100%; height: auto; display: block; margin: 0.5rem 0; border-radius: var(--radius-sm); }
 .modal-header { display: flex; justify-content: space-between; margin-bottom: 1.5rem; align-items: center; }
 .modal-close { background: none; border: none; font-size: 1.8rem; color: var(--text-muted); cursor: pointer; transition: color 0.2s; }
 .modal-close:hover { color: var(--text-primary); }

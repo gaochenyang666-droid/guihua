@@ -833,7 +833,7 @@
                 const html = posts.map(p => {
                     const imgUrl = p.cover_image || (p.images && p.images.length ? p.images[0] : null);
                     const img = imgUrl
-                        ? `<img src="${imgUrl}" class="post-image" loading="lazy" onerror="this.style.display='none'">`
+                        ? `<div class="post-image-wrap" style="position:relative;min-height:120px;background:var(--bg-secondary);"><img src="${imgUrl}" class="post-image" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';var n=this.nextElementSibling;if(n)n.style.display=\'flex\'"><div class="post-image-placeholder" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:var(--text-muted);font-size:2rem;">📝</div></div>`
                         : '';
                     const imgPlaceholder = '<div class="post-image post-image-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:120px;background:var(--bg-secondary);color:var(--text-muted);font-size:2rem;">📝</div>';
                     
@@ -1062,11 +1062,25 @@
             }
         };
 
+        let currentDetailPostId = null;
+        function waitForImages(container) {
+            const imgs = container.querySelectorAll('img');
+            if (!imgs.length) return Promise.resolve();
+            return Promise.all(Array.from(imgs).map(img => {
+                if (img.complete) return Promise.resolve();
+                return new Promise(r => { img.onload = r; img.onerror = r; });
+            }));
+        }
+
         const Modal = {
             open(id) { document.getElementById(id).classList.add('active'); },
-            close(id) { document.getElementById(id).classList.remove('active'); },
+            close(id) {
+                if (id === 'postDetailModal') currentDetailPostId = null;
+                document.getElementById(id).classList.remove('active');
+            },
             
             async openDetail(id) {
+                currentDetailPostId = id;
                 this.open('postDetailModal');
                 const body = document.getElementById('postDetailBody');
                 body.innerHTML = '加载中...';
@@ -1175,9 +1189,32 @@
                         </div>
                     </div>
                 `;
+                body.querySelectorAll('.post-detail-content img').forEach(function(im) {
+                    im.setAttribute('referrerpolicy', 'no-referrer');
+                    im.loading = 'lazy';
+                });
+                const modalScrollEl = document.querySelector('#postDetailModal .modal');
+                const savedScroll = localStorage.getItem('post_scroll_' + id);
+                if (savedScroll !== null && savedScroll !== '' && modalScrollEl) {
+                    waitForImages(body).then(() => {
+                        requestAnimationFrame(() => {
+                            modalScrollEl.scrollTop = parseInt(savedScroll, 10) || 0;
+                            if (typeof Toast !== 'undefined' && Toast.info) Toast.info('已自动跳转到上次阅读位置');
+                        });
+                    });
+                }
             }
         };
-        
+
+        (function setupDetailScrollSave() {
+            const modalScrollEl = document.querySelector('#postDetailModal .modal');
+            if (modalScrollEl) {
+                modalScrollEl.addEventListener('scroll', function() {
+                    if (currentDetailPostId != null) localStorage.setItem('post_scroll_' + currentDetailPostId, String(modalScrollEl.scrollTop));
+                });
+            }
+        })();
+
         const Interact = {
             currentReplyParentId: null,
             

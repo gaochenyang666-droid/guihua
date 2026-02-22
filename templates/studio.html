@@ -11,7 +11,16 @@
     <link rel="apple-touch-icon" href="/static/logo.svg">
     <link rel="manifest" href="/static/manifest.json">
     <link rel="stylesheet" href="/static/style.css">
+    <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+    <style>
+        #quillEditorWrap .ql-editor { background: rgba(0,0,0,0.2); color: var(--text-primary, #fff); min-height: 200px; }
+        #quillEditorWrap .ql-toolbar { background: rgba(0,0,0,0.2); border-color: var(--border-color); }
+        #quillEditorWrap .ql-toolbar .ql-stroke { stroke: var(--border-color); }
+        #quillEditorWrap .ql-toolbar .ql-fill { fill: var(--text-muted); }
+        #quillEditorWrap .ql-toolbar .ql-picker { color: var(--text-secondary); }
+    </style>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+    <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 </head>
 <body>
@@ -135,17 +144,12 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label" style="display:flex; justify-content:space-between;">
-                            <span>正文内容</span>
+                            <span>正文内容（富文本，可任意位置插图）</span>
                             <span style="font-size:0.8rem; color:var(--text-muted);" id="draftStatus"></span>
                         </label>
-                        <div class="toolbar" style="margin-bottom: 0.5rem; display: flex; gap: 0.5rem;">
-                            <button class="tool-btn" onclick="Editor.format('bold')"><b>B</b></button>
-                            <button class="tool-btn" onclick="Editor.format('italic')"><i>I</i></button>
-                            <label class="tool-btn" style="cursor: pointer;">
-                                📷 <input type="file" style="display: none;" onchange="Editor.uploadImage(this)">
-                            </label>
+                        <div id="quillEditorWrap" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); min-height: 260px;">
+                            <div id="studioPostContent" style="min-height: 200px;"></div>
                         </div>
-                        <div id="studioPostContent" class="form-input" contenteditable="true" style="overflow-y: auto; min-height: 200px; max-height: 400px;"></div>
                     </div>
                     <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="Studio.nextStep(2)">下一步: 封面（选填）</button>
                 </div>
@@ -252,24 +256,28 @@
             return `<span class="user-id-badge" style="color:${res.color}${glow}">${res.emoji} ${idStr}</span>`;
         }
 
+        let studioQuill = null;
+
+        function compressImage(file, maxWidth, quality) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    let w = img.width, h = img.height;
+                    if (w > maxWidth) { h = (h * maxWidth) / w; w = maxWidth; }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    canvas.toBlob(blob => resolve(blob || new Blob()), 'image/jpeg', quality);
+                };
+                img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
+                img.src = url;
+            });
+        }
+
         const Editor = {
-            format(cmd) { document.execCommand(cmd, false, null); },
-            async uploadImage(input) {
-                const file = input.files[0];
-                if (!file) return;
-                const formData = new FormData();
-                formData.append('file', file, file.name || 'image.png');
-                try {
-                    const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData });
-                    const data = await res.json().catch(() => ({}));
-                    if (res.ok && data.url) {
-                        document.execCommand('insertImage', false, data.url);
-                        Toast.success('图片已插入');
-                    } else {
-                        Toast.error(data.error || '上传失败');
-                    }
-                } catch(e) { Toast.error('网络错误'); }
-            },
             async uploadCover(input) {
                 const file = input.files[0];
                 if (!file) return;
@@ -302,8 +310,9 @@
         const PENDING_POST_KEY = 'studio_pending_post';
         const Draft = {
             save() {
+                if (!studioQuill) return;
                 const title = document.getElementById('studioPostTitle').value;
-                const content = document.getElementById('studioPostContent').innerHTML;
+                const content = studioQuill.root.innerHTML;
                 if(title || content) {
                     localStorage.setItem('studio_draft', JSON.stringify({title, content, time: Date.now()}));
                     const status = document.getElementById('draftStatus');
@@ -315,11 +324,12 @@
                 }
             },
             load() {
+                if (!studioQuill) return;
                 try {
                     const d = JSON.parse(localStorage.getItem('studio_draft'));
                     if(d && (Date.now() - d.time < 24*60*60*1000)) {
                         if(d.title) document.getElementById('studioPostTitle').value = d.title;
-                        if(d.content) document.getElementById('studioPostContent').innerHTML = d.content;
+                        if(d.content) studioQuill.clipboard.dangerouslyPasteHTML(d.content || '');
                         if(d.title || d.content) Toast.info('已自动恢复上次的草稿 📝');
                     }
                 } catch(e) {}
@@ -351,7 +361,7 @@
                 Studio.updateFeeDisplay();
 
                 document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
-                document.getElementById('studioPostContent').addEventListener('input', () => Draft.save());
+                if (studioQuill) studioQuill.on('text-change', () => Draft.save());
             },
 
             async fetchMe() {
@@ -385,8 +395,8 @@
             nextStep(step) {
                 if (this.currentStep === 1) {
                     const title = document.getElementById('studioPostTitle').value;
-                    const content = document.getElementById('studioPostContent').innerText;
-                    if(!title.trim() || !content.trim()) return Toast.error('请填写标题和正文');
+                    const content = studioQuill ? studioQuill.getText().trim() : '';
+                    if(!title.trim() || !content) return Toast.error('请填写标题和正文');
                 }
                 if (this.currentStep === 2 && step === 3) {
                     this.checkWalletEnv();
@@ -494,7 +504,7 @@
 
             savePendingPost(txHash) {
                 const title = document.getElementById('studioPostTitle').value;
-                const content = document.getElementById('studioPostContent').innerHTML;
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
                 const coverImage = document.getElementById('studioPostImage').value;
                 const data = { title, content, cover_image: coverImage, tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null), time: Date.now() };
                 try { localStorage.setItem(PENDING_POST_KEY, JSON.stringify(data)); } catch(e) {}
@@ -510,7 +520,7 @@
                     if (!p.tx_hash || !p.time || (Date.now() - p.time > 24*60*60*1000)) return;
                     this.pendingTxHash = p.tx_hash;
                     if (p.title) document.getElementById('studioPostTitle').value = p.title;
-                    if (p.content) document.getElementById('studioPostContent').innerHTML = p.content;
+                    if (p.content && studioQuill) studioQuill.clipboard.dangerouslyPasteHTML(p.content);
                     if (p.cover_image) document.getElementById('studioPostImage').value = p.cover_image;
                     if (typeof Editor !== 'undefined' && Editor.previewCover) Editor.previewCover(p.cover_image);
                     Toast.info('检测到未完成的发布（已支付），可直接点击发布继续，无需再次支付');
@@ -654,7 +664,7 @@
                 }
                 
                 const title = document.getElementById('studioPostTitle').value;
-                const content = document.getElementById('studioPostContent').innerHTML;
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
                 const coverImage = document.getElementById('studioPostImage').value;
                 const btn = document.getElementById('publishBtn');
 
@@ -815,8 +825,8 @@
                     return;
                 }
                 const title = document.getElementById('studioPostTitle').value.trim();
-                const content = document.getElementById('studioPostContent').innerHTML;
-                const textContent = (document.getElementById('studioPostContent').innerText || '').trim();
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
+                const textContent = studioQuill ? studioQuill.getText().trim() : '';
                 if (!title) {
                     Toast.error('请填写标题');
                     return;
@@ -893,7 +903,57 @@
             close(id) { document.getElementById(id).classList.remove('active'); }
         };
 
+        function initQuill() {
+            const el = document.getElementById('studioPostContent');
+            if (!el || typeof Quill === 'undefined') return;
+            studioQuill = new Quill(el, {
+                theme: 'snow',
+                placeholder: '撰写你的怪谈… 可插入图片',
+                modules: {
+                    toolbar: [
+                        ['bold', 'italic', 'underline'],
+                        [{ list: 'ordered' }, { list: 'bullet' }],
+                        ['link', 'image']
+                    ]
+                }
+            });
+            const toolbar = studioQuill.getModule('toolbar');
+            toolbar.addHandler('image', function() {
+                const input = document.createElement('input');
+                input.setAttribute('type', 'file');
+                input.setAttribute('accept', 'image/png,image/jpeg,image/gif,image/webp');
+                input.onchange = async function() {
+                    const file = input.files && input.files[0];
+                    if (!file) return;
+                    try {
+                        const blob = await compressImage(file, 1000, 0.7);
+                        const formData = new FormData();
+                        formData.append('file', blob, (file.name || 'image.jpg').replace(/\.[^.]+$/, '.jpg'));
+                        const res = await fetch(API_BASE + '/upload', {
+                            method: 'POST',
+                            headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
+                            body: formData
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (res.ok && data.url) {
+                            const range = studioQuill.getSelection(true) || { index: studioQuill.getLength() };
+                            studioQuill.insertEmbed(range.index, 'image', data.url);
+                            studioQuill.setSelection(range.index + 1);
+                            if (typeof Toast !== 'undefined') Toast.success('图片已插入');
+                        } else {
+                            if (typeof Toast !== 'undefined') Toast.error(data.error || '上传失败');
+                        }
+                    } catch (e) {
+                        if (typeof Toast !== 'undefined') Toast.error('上传失败: ' + (e.message || '网络错误'));
+                    }
+                    input.value = '';
+                };
+                input.click();
+            });
+        }
+
         window.addEventListener('load', () => {
+            initQuill();
             const c = document.getElementById('ghostFireContainer');
             for(let i=0; i<6; i++) {
                 const d = document.createElement('div'); d.className='ghost-fire';

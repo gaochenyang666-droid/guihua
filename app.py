@@ -108,6 +108,15 @@ app.config['BSC'] = {
     'POST_FEE_USDT_FALLBACK': POST_FEE_USDT_FALLBACK,
 }
 
+# 帖子正文 HTML 白名单：允许富文本与正文内图片，放行 img 的 src/alt/style/class 防 XSS
+POST_CONTENT_TAGS = ['b', 'i', 'u', 'img', 'p', 'br', 'div', 'span']
+POST_CONTENT_ATTRS = {'img': ['src', 'alt', 'style', 'class']}
+
+def _bleach_clean_post_content(html):
+    if not html:
+        return ''
+    return bleach.clean(html, tags=POST_CONTENT_TAGS, attributes=POST_CONTENT_ATTRS, strip=True)
+
 def get_bnb_price_usd():
     """获取 BNB 美元价格（Binance 现货），失败返回 None。"""
     try:
@@ -1771,8 +1780,8 @@ def create_post():
         is_paid = True
         is_on_chain = True
         
-        # 永存档案：支付后必须立即写入 Arweave（或 Pinata 兜底），否则不发帖
-        clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
+        # 永存档案：支付后必须立即写入 Arweave（或 Pinata 兜底），否则不发帖；放行 img 的 src/alt/style/class 以保留正文内图片
+        clean_content = _bleach_clean_post_content(data.get('content', ''))
         payload = {
             'title': data.get('title'),
             'content': clean_content,
@@ -1798,8 +1807,8 @@ def create_post():
         if existing_post:
             return jsonify({'error': '该交易已用于其他帖子'}), 400
 
-    # 4. Create Post
-    clean_content = bleach.clean(data.get('content', ''), tags=['b','i','u','img','p','br','div','span'], strip=True)
+    # 4. Create Post（正文 HTML 允许 img 等，需放行 img 属性防 XSS）
+    clean_content = _bleach_clean_post_content(data.get('content', ''))
     clean_title = bleach.clean(data.get('title', ''), strip=True)
     if not clean_title or not clean_title.strip():
         return jsonify({'error': '标题不能为空'}), 400
@@ -2341,7 +2350,7 @@ def update_post(post_id):
     if title:
         post.title = bleach.clean(title, strip=True)
     if content:
-        post.content = bleach.clean(content, tags=['b','i','u','img','p','br','div','span'], strip=True)
+        post.content = _bleach_clean_post_content(content)
         
     db.session.commit()
     return jsonify({'message': 'Post updated', 'post': post.to_dict()})
