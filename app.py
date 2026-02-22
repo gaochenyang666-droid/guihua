@@ -485,12 +485,17 @@ def get_random_avatar():
 
 IMGBB_MAX_SIZE = 2 * 1024 * 1024  # 2MB
 IMGBB_ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+# 只允许图片 MIME，防止伪扩展名（如 .php/.svg 嵌 JS）导致的安全问题
+IMGBB_ALLOWED_MIMES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
 
 def upload_to_imgbb(file):
     if not file or not getattr(file, 'filename', None):
         return None
     filename = (file.filename or '').lower()
     if '.' not in filename or filename.rsplit('.', 1)[-1] not in IMGBB_ALLOWED_EXTENSIONS:
+        return None
+    content_type = (getattr(file, 'content_type', None) or '').strip().lower()
+    if content_type and content_type not in IMGBB_ALLOWED_MIMES:
         return None
     try:
         file.seek(0, os.SEEK_END)
