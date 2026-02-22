@@ -1392,6 +1392,7 @@ def _get_posts_fallback(page, per_page, current_user_id):
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
+    """帖子列表：内容来自 DB（Post.content），不请求 Arweave，无 content_arweave_id。"""
     token = None
     current_user_id = None
     if 'Authorization' in request.headers:
@@ -2433,23 +2434,26 @@ def _check_receive_address():
         print('  Example: RECEIVE_ADDRESS=0xYourBSCWalletAddress')
         print('=' * 60)
 
+# 仅当设置 ALLOW_INIT_DB=true 时执行种子数据（避免每次重启都插测试文章；需造数时在 Render 临时加该环境变量）
+def _should_run_init_db():
+    return os.environ.get('ALLOW_INIT_DB', '').strip().lower() in ('true', '1', 'yes')
+
 if __name__ == '__main__':
-    # 表结构变更请使用 Flask-Migrate (alembic)，勿在生产环境使用 drop_all
     with app.app_context():
         db.create_all()
         _ensure_users_wallet_address()
         _ensure_posts_nft_columns()
         _ensure_posts_tx_nullable()
-        init_db_data()
+        if _should_run_init_db():
+            init_db_data()
         _check_receive_address()
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true', port=int(os.environ.get('PORT', 5001)))
 else:
-    # When running with Gunicorn, create tables if they don't exist
     with app.app_context():
         db.create_all()
         _ensure_users_wallet_address()
         _ensure_posts_nft_columns()
         _ensure_posts_tx_nullable()
-        init_db_data()
+        if _should_run_init_db():
+            init_db_data()
         _check_receive_address()
-# Force Update 2026
