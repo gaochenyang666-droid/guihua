@@ -212,6 +212,11 @@ def try_send_tip_payout_raw(to_address, amount_raw):
         platform_address = account.address
         if platform_address.lower() != (app.config['BSC']['RECEIVE_ADDRESS'] or '').lower():
             return ('failed', 'Platform key does not match RECEIVE_ADDRESS')
+        balance_bnb = w3_conn.eth.get_balance(platform_address)
+        min_bnb_wei = Web3.to_wei(0.0005, 'ether')
+        if balance_bnb < min_bnb_wei:
+            print(f"[WARN] Platform wallet BNB low: {balance_bnb} wei. Top up for gas.")
+            return ('failed', '平台钱包 BNB 不足，无法支付 Gas，请充值后重试')
         nonce = w3_conn.eth.get_transaction_count(platform_address)
         base_gas = w3_conn.eth.gas_price
         gas_price = min(int(base_gas * 1.1), Web3.to_wei(20, 'gwei'))
@@ -551,6 +556,37 @@ class Tip(db.Model):
     sender = db.relationship('User', foreign_keys=[from_user_id])
     recipient = db.relationship('User', foreign_keys=[to_user_id])
     post = db.relationship('Post')
+
+
+class Report(db.Model):
+    """用户举报：举报人、被举报人/帖子、原因、状态（待处理/已处理/已忽略）。"""
+    __tablename__ = 'reports'
+    id = db.Column(db.Integer, primary_key=True)
+    reporter_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False)
+    reported_user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
+    reason = db.Column(db.String(500), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, resolved, dismissed
+    admin_notes = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reporter = db.relationship('User', foreign_keys=[reporter_id])
+    reported_user = db.relationship('User', foreign_keys=[reported_user_id])
+    post = db.relationship('Post')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'reporter_id': self.reporter_id,
+            'reported_user_id': self.reported_user_id,
+            'post_id': self.post_id,
+            'reason': self.reason,
+            'status': self.status,
+            'admin_notes': self.admin_notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'reporter_nickname': self.reporter.nickname if self.reporter else None,
+            'reported_nickname': self.reported_user.nickname if self.reported_user else None,
+            'post_title': self.post.title[:50] if self.post and self.post.title else None,
+        }
 
 # ============== Helpers ==============
 ALLOWED_AVATARS = ['👻', '💀', '👽', '👾', '🤖', '🎃', '🧛', '🧟', '🧞', '🧝', '🧙', '🧚', '🧜', '👼', '👿', '👺', '👹', '🤡', '💩', '🦄']
@@ -921,10 +957,10 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
         return False, 'Transaction hash already used (history)'
 
     print(f"Verifying tx: {tx_hash} for user {user_address} (type={payment_type})")
-
+    # 缩短阻塞：5 次 x 2 秒 = 最多 10 秒，避免长时间占用 Worker。生产环境建议改为「返回处理中 + 后台队列轮询」
     tx = None
     receipt = None
-    for attempt in range(15):
+    for attempt in range(5):
         for rpc in BSC_RPC_LIST:
             try:
                 provider = Web3(Web3.HTTPProvider(rpc))
@@ -937,7 +973,7 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
                 continue
         if tx and receipt:
             break
-        time.sleep(3)
+        time.sleep(2)
 
     if not tx or not receipt:
         return False, 'Transaction not found on chain (timeout)'
@@ -1017,6 +1053,21 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
         return False, 'Verification process failed'
 
 
+# 简单按 IP 限流（防撞库/刷接口），多 Worker 下每进程独立计数
+_rate_limit_store = {}
+def _rate_limit(key_prefix, max_per_minute=5):
+    ip = (request.remote_addr or 'unknown').strip()
+    key = f"{key_prefix}:{ip}"
+    now = time.time()
+    if key not in _rate_limit_store:
+        _rate_limit_store[key] = []
+    times = _rate_limit_store[key]
+    times[:] = [t for t in times if now - t < 60]
+    if len(times) >= max_per_minute:
+        return True
+    times.append(now)
+    return False
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -1072,6 +1123,8 @@ def profile():
 
 @app.route('/api/auth/nonce', methods=['GET'])
 def get_nonce():
+    if _rate_limit('nonce', 30):
+        return jsonify({'error': '请求过于频繁'}), 429
     address = request.args.get('address')
     if not address: return jsonify({'error': 'Missing address'}), 400
     
@@ -1183,6 +1236,8 @@ def register():
 
 @app.route('/api/auth/web2/login', methods=['POST'])
 def login():
+    if _rate_limit('login', 10):
+        return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
@@ -1199,7 +1254,9 @@ def login():
 
 @app.route('/api/auth/web2/change-password', methods=['POST'])
 def change_password_no_login():
-    """找回/修改密码：凭账号和原密码即可设置新密码，无需登录。"""
+    """找回/修改密码：凭账号和原密码即可设置新密码，无需登录。限流防撞库。"""
+    if _rate_limit('change_password', 5):
+        return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Missing data'}), 400
@@ -2398,6 +2455,60 @@ def ban_user(user_id):
 def list_users():
     users = User.query.order_by(User.created_at.desc()).all()
     return jsonify([u.to_dict() for u in users])
+
+@app.route('/api/reports', methods=['POST'])
+@token_required
+def create_report():
+    """用户举报帖子或用户。"""
+    data = request.get_json() or {}
+    post_id = data.get('post_id')
+    reported_user_id = data.get('reported_user_id')
+    reason = (data.get('reason') or '').strip()
+    if not reason or len(reason) > 500:
+        return jsonify({'error': '请填写举报原因（最多500字）'}), 400
+    if not post_id and not reported_user_id:
+        return jsonify({'error': '请指定举报的帖子或用户'}), 400
+    if post_id:
+        post = Post.query.get(post_id)
+        if not post:
+            return jsonify({'error': '帖子不存在'}), 404
+        reported_user_id = post.author_id
+    r = Report(
+        reporter_id=g.current_user.id,
+        reported_user_id=reported_user_id,
+        post_id=post_id,
+        reason=reason,
+        status='pending'
+    )
+    db.session.add(r)
+    db.session.commit()
+    return jsonify({'message': '举报已提交，管理员会尽快处理', 'id': r.id}), 201
+
+@app.route('/api/admin/reports', methods=['GET'])
+@token_required
+@admin_required
+def list_reports():
+    """管理员查看举报列表。"""
+    status = request.args.get('status')
+    q = Report.query.order_by(Report.created_at.desc())
+    if status:
+        q = q.filter_by(status=status)
+    reports = q.limit(200).all()
+    return jsonify([r.to_dict() for r in reports])
+
+@app.route('/api/admin/reports/<int:report_id>', methods=['PUT'])
+@token_required
+@admin_required
+def update_report(report_id):
+    """管理员处理举报：status=resolved|dismissed, admin_notes=..."""
+    r = Report.query.get_or_404(report_id)
+    data = request.get_json() or {}
+    if data.get('status') in ('resolved', 'dismissed'):
+        r.status = data['status']
+    if 'admin_notes' in data:
+        r.admin_notes = (data['admin_notes'] or '')[:500]
+    db.session.commit()
+    return jsonify({'message': '已更新', 'report': r.to_dict()})
 
 @app.route('/api/admin/process-tip-payouts', methods=['POST'])
 @token_required

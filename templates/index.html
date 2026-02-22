@@ -334,6 +334,11 @@
                     if(localStorage.getItem('token') === 'undefined') localStorage.removeItem('token');
                 }
                 UI.updateAuth();
+                if (localStorage.getItem('token') && typeof Notification !== 'undefined' && Notification.load) {
+                    setInterval(function() {
+                        if (document.visibilityState === 'visible') Notification.load();
+                    }, 60000);
+                }
             },
 
             async fetchMe() {
@@ -1169,6 +1174,7 @@
                         <button class="btn btn-ghost" onclick="Interact.like(${p.id})">😰 恐惧 (${p.likes_count})</button>
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
+                        ${currentUser && currentUser.id !== p.author.id ? `<button class="btn btn-ghost" style="color:var(--text-muted); font-size:0.85rem;" onclick="Interact.report(${p.id})">🚩 举报</button>` : ''}
                         ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id})">💰 打赏作者</button>` : ''}
                         ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
                     </div>
@@ -1231,6 +1237,23 @@
                 this.currentReplyParentId = null;
                 document.getElementById('replyTarget').style.display = 'none';
                 document.getElementById('commentInput').placeholder = '发表评论...';
+            },
+
+            async report(postId) {
+                if (!currentUser) return Modal.open('loginModal');
+                const reason = prompt('请简要说明举报原因（违规内容、广告、抄袭等）：');
+                if (reason == null || !reason.trim()) return;
+                if (reason.length > 500) { Toast.error('原因最多500字'); return; }
+                try {
+                    const res = await fetch(`${API_BASE}/reports`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: JSON.stringify({ post_id: postId, reason: reason.trim() })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) { Toast.success(data.message || '举报已提交'); }
+                    else Toast.error(data.error || '提交失败');
+                } catch (e) { Toast.error('网络错误'); }
             },
 
             async like(id) { await this.do(`${API_BASE}/posts/${id}/like`); Modal.openDetail(id); },

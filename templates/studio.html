@@ -284,6 +284,10 @@
             async uploadCover(input) {
                 const file = input.files[0];
                 if (!file) return;
+                if (file.size > 2 * 1024 * 1024) {
+                    Toast.error('封面图需小于 2MB，请压缩或换图');
+                    return;
+                }
                 const formData = new FormData();
                 formData.append('file', file, file.name || 'cover.png');
                 try {
@@ -935,6 +939,10 @@
                 input.onchange = async function() {
                     const file = input.files && input.files[0];
                     if (!file) return;
+                    if (file.size > 2 * 1024 * 1024) {
+                        if (typeof Toast !== 'undefined') Toast.error('图片需小于 2MB，请压缩或换图');
+                        return;
+                    }
                     try {
                         let data = await compressImage(file, 1000, 0.7).catch(() => file);
                         const formData = new FormData();
