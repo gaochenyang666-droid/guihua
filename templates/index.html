@@ -1254,10 +1254,11 @@
                 if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); Post.load(); }
             },
             async adminToggleComments(id) {
-                const res = await fetch(`${API_BASE}/posts/${id}/comments`, {
+                const res = await fetch(`${API_BASE}/admin/posts/${id}/toggle-comments`, {
                     method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
                 });
                 if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); }
+                else { const d = await res.json(); Toast.error(d.error || '操作失败'); }
             }
         };
 

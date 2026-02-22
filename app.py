@@ -286,6 +286,8 @@ class User(db.Model):
         self.password_hash = generate_password_hash(password)
         
     def check_password(self, password):
+        if not self.password_hash:
+            return False
         return check_password_hash(self.password_hash, password)
     
     def refresh_nonce(self):
@@ -2353,10 +2355,11 @@ def toggle_hide_post(post_id):
     db.session.commit()
     return jsonify({'message': 'Toggled hide status', 'is_hidden': post.is_hidden})
 
-@app.route('/api/posts/<int:post_id>/comments', methods=['POST'])
+@app.route('/api/admin/posts/<int:post_id>/toggle-comments', methods=['POST'])
 @token_required
 @admin_required
 def toggle_post_comments(post_id):
+    """管理员切换帖子「允许评论」状态。与 POST .../comments（发表评论）区分开。"""
     post = Post.query.get_or_404(post_id)
     post.allow_comments = not post.allow_comments
     db.session.commit()
