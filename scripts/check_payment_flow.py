@@ -12,19 +12,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def main():
-    from app import app, verify_transaction
+    from app import app, verify_transaction, get_post_fee_usdt_raw
 
     errors = []
     with app.app_context():
-        # 1. get_fees 逻辑：有 RECEIVE_ADDRESS 时应有 fee/chain_id
+        # 1. get_fees 逻辑：有 RECEIVE_ADDRESS 时应有 USDT 合约 + chain_id，发帖费由 get_post_fee_usdt_raw() 动态计算
         addr = app.config.get('BSC', {}).get('RECEIVE_ADDRESS')
-        fee = app.config.get('BSC', {}).get('POST_FEE')
+        usdt_contract = app.config.get('BSC', {}).get('USDT_CONTRACT_ADDRESS')
         chain_id = app.config.get('BSC', {}).get('CHAIN_ID')
         if addr:
-            if fee is not None and chain_id is not None:
-                print("[OK] BSC RECEIVE_ADDRESS + POST_FEE + CHAIN_ID 已配置")
+            try:
+                fee_raw = get_post_fee_usdt_raw()
+            except Exception:
+                fee_raw = None
+            if usdt_contract and chain_id is not None and fee_raw is not None and fee_raw > 0:
+                print("[OK] BSC RECEIVE_ADDRESS + USDT 合约 + CHAIN_ID + 发帖费 已配置")
             else:
-                errors.append("RECEIVE_ADDRESS 已配置但 POST_FEE 或 CHAIN_ID 缺失")
+                errors.append("RECEIVE_ADDRESS 已配置但 USDT_CONTRACT / CHAIN_ID 缺失或发帖费无效")
         else:
             print("[--] RECEIVE_ADDRESS 未配置（生产需配置）")
 

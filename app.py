@@ -78,7 +78,7 @@ else:
 if not app.config['SECRET_KEY']:
     raise ValueError("No SECRET_KEY set for Flask application")
 
-# BSC Mainnet Configuration (真实 BNB，请务必核对 RECEIVE_ADDRESS 与 POST_FEE)
+# BSC Mainnet Configuration（发帖费收 USDT BEP-20，打赏仍为 BNB）
 BSC_RPC_LIST = [
     os.environ.get('BSC_RPC_URL', 'https://bsc-dataseed.binance.org/'),
     'https://bsc-dataseed1.defibit.io/',
@@ -88,17 +88,24 @@ BSC_RPC_LIST = [
 
 # JWT 过期时间（小时）；上线后可按需改为 24
 JWT_EXPIRY_HOURS = 24
-# 支付校验：要求交易已被至少 N 个区块确认，防链重组假充值。BSC 约 3 秒/块，2 约 6 秒；若追求极致安全可改为 3（约 9–10 秒）
+# 支付校验：要求交易已被至少 N 个区块确认，防链重组假充值。BSC 约 3 秒/块，2 约 6 秒
 TX_CONFIRMATIONS_NEEDED = 2
-# 发帖费：动态为 1 USD 等值 BNB；取价失败则用 .env POST_FEE（BNB 单位）兜底
 # 打赏平台抽成比例（7% 平台建设费，93% 给作者）
 TIP_PLATFORM_FEE_PERCENT = 7
-POST_FEE_FALLBACK_BNB = os.environ.get('POST_FEE', '0.001')
+# 发帖费：1 人民币等值 USDT（取价失败时用 POST_FEE_USDT 兜底，单位 USDT）
+POST_FEE_CNY = float(os.environ.get('POST_FEE_CNY', '1').strip() or '1')
+POST_FEE_USDT_FALLBACK = float(os.environ.get('POST_FEE_USDT', '0.14').strip() or '0.14')
+# BSC 主网 USDT 合约（Binance-Peg BSC-USD），18 位小数
+USDT_CONTRACT_BSC = (os.environ.get('USDT_CONTRACT_ADDRESS') or '0x55d398326f99059fF775485246999027B3197955').strip()
+USDT_DECIMALS = 18
 app.config['BSC'] = {
     'RPC_URL': BSC_RPC_LIST[0],
     'CHAIN_ID': 56,
     'RECEIVE_ADDRESS': os.environ.get('RECEIVE_ADDRESS'),
-    'POST_FEE': Web3.to_wei(POST_FEE_FALLBACK_BNB, 'ether')
+    'USDT_CONTRACT_ADDRESS': USDT_CONTRACT_BSC,
+    'USDT_DECIMALS': USDT_DECIMALS,
+    'POST_FEE_CNY': POST_FEE_CNY,
+    'POST_FEE_USDT_FALLBACK': POST_FEE_USDT_FALLBACK,
 }
 
 def get_bnb_price_usd():
@@ -112,13 +119,29 @@ def get_bnb_price_usd():
         print(f"BNB price fetch error: {e}")
     return None
 
-def get_post_fee_wei():
-    """发帖费（Wei）：1 USD 等值 BNB；取价失败时用环境变量 POST_FEE 兜底。"""
-    price = get_bnb_price_usd()
-    if price and price > 0:
-        bnb_per_usd = 1.0 / price
-        return int(Web3.to_wei(bnb_per_usd, 'ether'))
-    return app.config['BSC']['POST_FEE']
+def get_usdt_per_cny():
+    """1 人民币 = ? USDT（取价失败返回 None，调用方用兜底）。"""
+    try:
+        r = requests.get('https://api.exchangerate-api.com/v4/latest/USD', timeout=5)
+        if r.ok:
+            data = r.json()
+            cny_per_usd = float((data.get('rates') or {}).get('CNY', 0) or 0)
+            if cny_per_usd > 0:
+                return 1.0 / cny_per_usd
+    except Exception as e:
+        print(f"CNY/USD rate fetch error: {e}")
+    return None
+
+def get_post_fee_usdt_raw():
+    """发帖费（USDT 最小单位）：1 人民币等值；取价失败用 POST_FEE_USDT 兜底。"""
+    decimals = app.config['BSC']['USDT_DECIMALS']
+    cny = app.config['BSC']['POST_FEE_CNY']
+    usdt_per_cny = get_usdt_per_cny()
+    if usdt_per_cny and usdt_per_cny > 0:
+        fee_usdt = cny * usdt_per_cny
+    else:
+        fee_usdt = app.config['BSC']['POST_FEE_USDT_FALLBACK']
+    return int(fee_usdt * (10 ** decimals))
 
 db = SQLAlchemy(app)
 w3 = Web3(Web3.HTTPProvider(app.config['BSC']['RPC_URL']))
@@ -144,16 +167,40 @@ def get_working_web3():
             continue
     return w3
 
-# 平台热钱包私钥（用于打赏自动打款：从平台钱包把 93% 转给作者）。不配置则只记账不自动转款
+# 平台热钱包私钥（用于打赏自动打款：从平台钱包把 93% USDT 转给作者）。不配置则只记账不自动转款
 PLATFORM_PRIVATE_KEY = os.environ.get('PLATFORM_PRIVATE_KEY')
 
-def try_send_tip_payout(tip, author_wei):
-    """从平台钱包向作者地址转 author_wei（93% 部分）。返回 (status, tx_hash_or_error)。"""
+def _encode_usdt_transfer(to_address, amount_raw):
+    """编码 USDT transfer(address,uint256) 的 data。amount_raw 为本笔打赏作者应得（93%），单位最小精度。"""
+    try:
+        from eth_abi import encode
+        # 确保为 int，且不超过 uint256（防止误传巨大数）
+        amount_raw = int(amount_raw)
+        if amount_raw < 0 or amount_raw > (1 << 256) - 1:
+            return None
+        selector = bytes.fromhex('a9059cbb')
+        encoded = encode(['address', 'uint256'], [Web3.to_checksum_address(to_address), amount_raw])
+        return '0x' + (selector + encoded).hex()
+    except (ImportError, TypeError, ValueError):
+        return None
+
+def try_send_tip_payout(tip, author_amount_raw):
+    """从平台钱包向作者地址转 author_amount_raw（93% 部分，USDT 最小单位）。返回 (status, tx_hash_or_error)。"""
     if not PLATFORM_PRIVATE_KEY or not tip.recipient:
         return ('no_key', None)
+    tip_full = int(tip.amount)
+    # 安全：打款金额不得超过本笔打赏金额，且必须为正数（防止误传“全部余额”等）
+    if author_amount_raw <= 0 or author_amount_raw > tip_full:
+        return ('failed', 'Invalid payout amount (must be 0 < amount <= tip amount)')
     author_address = (tip.recipient.wallet_address or tip.recipient.address or '').strip()
     if not author_address or not Web3.is_address(author_address):
         return ('no_address', None)
+    usdt_contract = app.config['BSC'].get('USDT_CONTRACT_ADDRESS')
+    if not usdt_contract:
+        return ('failed', 'USDT contract not configured')
+    data_hex = _encode_usdt_transfer(author_address, author_amount_raw)
+    if not data_hex:
+        return ('failed', 'eth_abi not available for USDT transfer')
     try:
         from eth_account import Account
         w3_conn = get_working_web3()
@@ -167,10 +214,11 @@ def try_send_tip_payout(tip, author_wei):
         tx = {
             'nonce': nonce,
             'chainId': app.config['BSC']['CHAIN_ID'],
-            'to': Web3.to_checksum_address(author_address),
-            'value': author_wei,
-            'gas': 21000,
-            'gasPrice': gas_price  # 1.1x 实时 gas，上限 20 gwei
+            'to': Web3.to_checksum_address(usdt_contract),
+            'value': 0,
+            'data': data_hex,
+            'gas': 100000,
+            'gasPrice': gas_price
         }
         signed = account.sign_transaction(tx)
         tx_hash = w3_conn.eth.send_raw_transaction(signed.raw_transaction)
@@ -188,9 +236,9 @@ def process_pending_tip_payouts():
     ).all()
     sent, failed = 0, 0
     for tip in tips:
-        full_wei = int(tip.amount)
-        author_wei = (full_wei * (100 - TIP_PLATFORM_FEE_PERCENT)) // 100
-        status, result = try_send_tip_payout(tip, author_wei)
+        full_raw = int(tip.amount)
+        author_raw = (full_raw * (100 - TIP_PLATFORM_FEE_PERCENT)) // 100
+        status, result = try_send_tip_payout(tip, author_raw)
         tip.payout_status = status
         if status == 'sent':
             tip.payout_tx_hash = result
@@ -499,38 +547,44 @@ IMGBB_ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 IMGBB_ALLOWED_MIMES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
 
 def upload_to_imgbb(file):
+    """返回 (url, error_msg)。成功时 url 为字符串、error_msg 为 None；失败时 url 为 None、error_msg 为简短原因。"""
+    if not IMGBB_API_KEY or not IMGBB_API_KEY.strip():
+        return (None, "图片服务未配置（IMGBB_API_KEY）")
     if not file or not getattr(file, 'filename', None):
-        return None
+        return (None, "未选择文件")
     filename = (file.filename or '').lower()
-    if '.' not in filename or filename.rsplit('.', 1)[-1] not in IMGBB_ALLOWED_EXTENSIONS:
-        return None
+    ext = filename.rsplit('.', 1)[-1] if '.' in filename else ''
+    if ext not in IMGBB_ALLOWED_EXTENSIONS:
+        return (None, f"仅支持 png/jpg/jpeg/gif/webp，当前: {filename or '无扩展名'}")
     content_type = (getattr(file, 'content_type', None) or '').strip().lower()
     if content_type and content_type not in IMGBB_ALLOWED_MIMES:
-        return None
+        return (None, f"图片类型不允许: {content_type}")
     try:
         file.seek(0, os.SEEK_END)
         size = file.tell()
         file.seek(0)
         if size > IMGBB_MAX_SIZE:
-            return None
+            return (None, f"图片超过 2MB（当前 {size // (1024*1024)}MB）")
         img_b64 = base64.b64encode(file.read()).decode('utf-8')
-        # According to docs: don't add expiration for permanent storage
-        payload = {
-            "key": IMGBB_API_KEY,
-            "image": img_b64
-        }
+        payload = {"key": IMGBB_API_KEY, "image": img_b64}
         response = requests.post("https://api.imgbb.com/1/upload", data=payload, timeout=_REQUESTS_TIMEOUT)
         if response.status_code == 200:
             json_resp = response.json()
-            if 'data' in json_resp and 'url' in json_resp['data']:
-                return json_resp['data']['url']
-        return None
+            if isinstance(json_resp, dict) and json_resp.get('data') and json_resp['data'].get('url'):
+                return (json_resp['data']['url'], None)
+        try:
+            err_info = response.json() if response.text else {}
+            msg = err_info.get('error', {}).get('message', response.text[:100] if response.text else f"HTTP {response.status_code}")
+        except Exception:
+            msg = f"HTTP {response.status_code}"
+        print(f"ImgBB Error: {msg}")
+        return (None, f"ImgBB 上传失败: {msg}")
     except requests.Timeout:
         print("ImgBB Error: upload timeout")
-        return None
+        return (None, "上传超时，请重试")
     except Exception as e:
         print(f"ImgBB Error: {e}")
-        return None
+        return (None, str(e)[:150])
 
 def upload_to_pinata(json_data):
     if not PINATA_API_KEY or not PINATA_SECRET_API_KEY:
@@ -810,11 +864,20 @@ def async_mint_nft_for_post(post_id):
             print(f"async_mint_nft_for_post error: {e}")
 
 
-def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amount=None):
+# ERC20/BEP-20 Transfer(address,address,uint256) 事件 topic[0]
+_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+
+
+def _addr_to_topic(addr):
+    """将 0x 地址转为 32 字节 topic 格式（小写）。"""
+    a = (addr or '').lower().replace('0x', '')
+    return '0x' + a.zfill(64)
+
+
+def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amount=None, payment_type='bnb'):
     """
     Verify transaction on BSC.
-    Checks: Status, Sender (必须为当前用户), Receiver (必须为平台收款地址), Amount (>= 发帖费), Uniqueness.
-    收款地址与最低金额均从环境变量来，不硬编码。查交易时多 RPC 兜底。
+    payment_type: 'bnb' = 原生 BNB 转账（打赏）；'usdt' = BEP-20 USDT 转账（发帖费）。
     """
     if not user_address:
         return False, 'User address not bound'
@@ -824,7 +887,10 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
     if not expected_recipient:
         return False, 'Platform receive address not configured'
     if min_amount is None:
-        min_amount = get_post_fee_wei()  # 使用配置发帖费（1 USD 等值 BNB），勿硬编码
+        if payment_type == 'usdt':
+            min_amount = get_post_fee_usdt_raw()
+        else:
+            min_amount = int(Web3.to_wei(0.0001, 'ether'))  # 打赏最低 0.0001 BNB
 
     # Check format
     if not re.match(r"^0x[a-fA-F0-9]{64}$", tx_hash):
@@ -836,11 +902,10 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
     if UsedTransaction.query.filter_by(tx_hash=tx_hash).first():
         return False, 'Transaction hash already used (history)'
 
-    print(f"Verifying tx: {tx_hash} for user {user_address}")
+    print(f"Verifying tx: {tx_hash} for user {user_address} (type={payment_type})")
 
     tx = None
     receipt = None
-    # 主网免费 RPC 同步慢：15 轮 × 3 秒；每轮内多节点兜底，某节点超时/异常即换下一个
     for attempt in range(15):
         for rpc in BSC_RPC_LIST:
             try:
@@ -849,20 +914,16 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
                 tx = provider.eth.get_transaction(tx_hash)
                 receipt = provider.eth.get_transaction_receipt(tx_hash)
                 if tx and receipt:
-                    print(f"Tx found after attempt {attempt + 1} via {rpc[:50]}...")
                     break
             except Exception as e:
-                print(f"RPC {rpc[:50]}... attempt {attempt + 1}: {e}")
                 continue
         if tx and receipt:
             break
         time.sleep(3)
 
     if not tx or not receipt:
-        print(f"Timeout verifying tx: {tx_hash}")
         return False, 'Transaction not found on chain (timeout)'
 
-    # 防回滚：要求交易所在区块已被至少 1 个新区块确认（避免链重组导致假充值）
     current_block = receipt.get('blockNumber')
     if current_block is not None:
         latest = None
@@ -880,22 +941,59 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
             return False, f'Transaction needs at least {TX_CONFIRMATIONS_NEEDED} block confirmations'
 
     try:
-        # 1. Check Status (1 = Success)
         if receipt['status'] != 1:
             return False, 'Transaction failed on chain'
 
-        # 必须校验（防白嫖、防少付、防冒用）：
-        # 2. 发起人 from == 当前登录用户（否则 A 付钱 B 可盗用哈希发帖）
         if tx['from'].lower() != user_address.lower():
             return False, f'Sender mismatch. Tx: {tx["from"]}, User: {user_address}'
-        # 3. 收款人 to == 平台地址 RECEIVE_ADDRESS（否则用户给自己转 0.000001 也能过）
-        if not tx['to'] or tx['to'].lower() != expected_recipient.lower():
-            return False, f'Incorrect recipient. Expected: {expected_recipient}, Got: {tx["to"]}'
-        # 4. 金额 value >= 发帖费 POST_FEE（否则付 0.000001 BNB 也能过）
-        if tx['value'] < min_amount:
-            return False, f'Insufficient fee. Paid: {tx["value"]}, Expected: {min_amount}'
 
-        return True, tx['value'] # Return amount on success
+        if payment_type == 'usdt':
+            # BEP-20 USDT：tx.to 为合约地址，从 logs 解析 Transfer(to=平台, from=用户, value>=min)
+            usdt_contract = (app.config['BSC'].get('USDT_CONTRACT_ADDRESS') or '').lower()
+            if not usdt_contract or tx['to'].lower() != usdt_contract:
+                return False, f'Not a USDT transfer to platform. Expected contract: {usdt_contract}'
+            want_from = _addr_to_topic(user_address)
+            want_to = _addr_to_topic(expected_recipient)
+            amount_found = 0
+            for log in receipt.get('logs', []):
+                log_addr = log.get('address')
+                log_addr = ('0x' + log_addr.hex()) if hasattr(log_addr, 'hex') else str(log_addr or '')
+                if not log_addr.startswith('0x'):
+                    log_addr = '0x' + log_addr
+                if log_addr.lower() != usdt_contract.lower():
+                    continue
+                topics = log.get('topics') or []
+                if len(topics) < 3:
+                    continue
+                t0 = topics[0].hex() if hasattr(topics[0], 'hex') else str(topics[0])
+                if (t0 if t0.startswith('0x') else '0x' + t0).lower() != _TRANSFER_TOPIC:
+                    continue
+                t1 = (topics[1].hex() if hasattr(topics[1], 'hex') else str(topics[1])).lower()
+                if not t1.startswith('0x'): t1 = '0x' + t1
+                t2 = (topics[2].hex() if hasattr(topics[2], 'hex') else str(topics[2])).lower()
+                if not t2.startswith('0x'): t2 = '0x' + t2
+                if t1 != want_from or t2 != want_to:
+                    continue
+                data = log.get('data') or b''
+                if hasattr(data, 'hex'):
+                    data = data.hex()
+                if isinstance(data, bytes):
+                    data = data.hex()
+                if data.startswith('0x'):
+                    data = data[2:]
+                if len(data) >= 64:
+                    amount_found = int(data[:64], 16)
+                    break
+            if amount_found < min_amount:
+                return False, f'Insufficient USDT. Paid: {amount_found}, Expected: {min_amount}'
+            return True, amount_found
+        else:
+            # 原生 BNB
+            if not tx['to'] or tx['to'].lower() != expected_recipient.lower():
+                return False, f'Incorrect recipient. Expected: {expected_recipient}, Got: {tx["to"]}'
+            if tx['value'] < min_amount:
+                return False, f'Insufficient fee. Paid: {tx["value"]}, Expected: {min_amount}'
+            return True, tx['value']
     except Exception as e:
         print(f"Verify Tx Error: {e}")
         return False, 'Verification process failed'
@@ -1197,14 +1295,25 @@ def get_fees():
     receive_address = app.config['BSC']['RECEIVE_ADDRESS']
     if not receive_address:
         return jsonify({'error': 'Platform receive address not configured'}), 503
-    fee_wei = get_post_fee_wei()
-    bnb_price_usd = get_bnb_price_usd()
+    fee_raw = get_post_fee_usdt_raw()
+    decimals = app.config['BSC']['USDT_DECIMALS']
+    fee_usdt = round(fee_raw / (10 ** decimals), 4)
     return jsonify({
-        'fee': str(fee_wei),
+        'fee': str(fee_raw),
+        'fee_currency': 'USDT',
+        'fee_usdt': fee_usdt,
+        'fee_cny': app.config['BSC']['POST_FEE_CNY'],
         'chain_id': app.config['BSC']['CHAIN_ID'],
         'receive_address': receive_address,
-        'fee_usd': 1,
-        'bnb_price_usd': round(bnb_price_usd, 4) if bnb_price_usd else None
+        'usdt_contract': app.config['BSC']['USDT_CONTRACT_ADDRESS'],
+    })
+
+
+@app.route('/api/config/public', methods=['GET'])
+def get_public_config():
+    """前端用：扫码登录等需 WalletConnect Project ID（从 https://cloud.walletconnect.com 申请）"""
+    return jsonify({
+        'walletconnect_project_id': os.environ.get('WALLETCONNECT_PROJECT_ID') or ''
     })
 
 @app.route('/api/gas/price', methods=['GET'])
@@ -1264,14 +1373,11 @@ def admin_stats():
     web3_posts = Post.query.filter(Post.post_type == 1).count() # Or filter by tx_hash
     web2_posts = total_posts - web3_posts
     
-    fee_wei = app.config['BSC']['POST_FEE']
-    total_revenue_wei = web3_posts * fee_wei
-    try:
-        total_revenue_bnb = float(w3.from_wei(total_revenue_wei, 'ether'))
-        fee_per_post_bnb = float(w3.from_wei(fee_wei, 'ether'))
-    except Exception:
-        total_revenue_bnb = 0.0
-        fee_per_post_bnb = 0.0
+    fee_usdt_raw = get_post_fee_usdt_raw()
+    decimals = app.config['BSC']['USDT_DECIMALS']
+    fee_usdt = round(fee_usdt_raw / (10 ** decimals), 4)
+    total_revenue_raw = web3_posts * fee_usdt_raw
+    total_revenue_usdt = total_revenue_raw / (10 ** decimals)
 
     return jsonify({
         'users': {
@@ -1286,8 +1392,8 @@ def admin_stats():
             'web2': web2_posts
         },
         'revenue': {
-            'total_bnb': total_revenue_bnb,
-            'fee_per_post': fee_per_post_bnb
+            'total_usdt': round(total_revenue_usdt, 2),
+            'fee_per_post_usdt': fee_usdt
         }
     })
 
@@ -1534,7 +1640,7 @@ def get_posts():
 
     try:
         from sqlalchemy.orm import joinedload
-        query = Post.query.options(joinedload(Post.author), joinedload(Post.votes))
+        query = Post.query.options(joinedload(Post.author))
         if sort_by == 'bookmarks':
             if current_user_id:
                 query = query.join(Bookmark, Post.id == Bookmark.post_id).filter(Bookmark.user_id == current_user_id).order_by(Post.created_at.desc())
@@ -1608,9 +1714,9 @@ def create_post():
         # 封面可选：有上传文件则走 ImgBB，否则用表单里的 cover_image URL 或留空
         cover_url = None
         if image_file and getattr(image_file, 'filename', None) and image_file.filename.strip():
-            cover_url = upload_to_imgbb(image_file)
+            cover_url, img_err = upload_to_imgbb(image_file)
             if not cover_url:
-                return jsonify({'error': 'Image upload failed'}), 500
+                return jsonify({'error': img_err or '封面上传失败'}), 500
         else:
             cover_url = (request.form.get('cover_image') or '').strip() or None
         data = {
@@ -1649,7 +1755,7 @@ def create_post():
         # Regular User: 必须带 tx_hash，且经 verify_transaction 校验 to/from/value 与唯一性（min_amount = 1 USD 等值 BNB）
         if not tx_hash:
             return jsonify({'error': 'Transaction hash required'}), 400
-        is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address, min_amount=get_post_fee_wei())
+        is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address, min_amount=get_post_fee_usdt_raw(), payment_type='usdt')
         if not is_valid:
             return jsonify({'error': error_msg}), 400
             
@@ -1996,15 +2102,14 @@ def bookmark_post(post_id):
 @token_required
 def upload():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        return jsonify({'error': '未选择文件'}), 400
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-        
-    url = upload_to_imgbb(file)
+    if not file or (getattr(file, 'filename', None) or '').strip() == '':
+        return jsonify({'error': '未选择文件'}), 400
+    url, err = upload_to_imgbb(file)
     if url:
         return jsonify({'url': url})
-    return jsonify({'error': 'Upload failed'}), 500
+    return jsonify({'error': err or '上传失败'}), 500
 
 @app.route('/api/upload/ipfs', methods=['POST'])
 @token_required
@@ -2037,10 +2142,13 @@ def upload_ipfs():
 
 # --- Admin & Debug ---
 
+# 打赏最低 1 USDT（最小单位）
+TIP_MIN_USDT_RAW = 10 ** USDT_DECIMALS
+
 @app.route('/api/tips/verify', methods=['POST'])
 @token_required
 def verify_tip():
-    """打赏必须先打到平台钱包 RECEIVE_ADDRESS，平台抽 7% 建设费，93% 归作者（后续由平台钱包转给作者）。"""
+    """打赏为 USDT：先打到平台钱包 RECEIVE_ADDRESS，平台抽 7% 建设费，93% 归作者（由平台钱包转 USDT 给作者）。"""
     data = request.get_json()
     tx_hash = data.get('tx_hash')
     post_id = data.get('post_id')
@@ -2052,23 +2160,22 @@ def verify_tip():
     platform_address = app.config['BSC']['RECEIVE_ADDRESS']
     if not platform_address:
         return jsonify({'error': 'Platform receive address not configured'}), 503
-    min_tip = Web3.to_wei(0.0001, 'ether')
-    # 校验：打赏必须打到平台钱包，不能直接打给作者
     is_valid, result = verify_transaction(
         tx_hash,
         g.current_user.address,
         expected_recipient=platform_address,
-        min_amount=min_tip
+        min_amount=TIP_MIN_USDT_RAW,
+        payment_type='usdt'
     )
     if not is_valid:
         return jsonify({'error': result}), 400
     amount_full = int(result)
     if Tip.query.filter_by(tx_hash=tx_hash).first():
         return jsonify({'error': 'Tip already recorded'}), 400
-    # 7% 平台建设费，93% 给作者（作者实得）
     fee_percent = TIP_PLATFORM_FEE_PERCENT
-    platform_fee_wei = (amount_full * fee_percent) // 100
-    author_wei = amount_full - platform_fee_wei
+    platform_fee_raw = (amount_full * fee_percent) // 100
+    author_raw = amount_full - platform_fee_raw
+    decimals = app.config['BSC']['USDT_DECIMALS']
     tip = Tip(
         tx_hash=tx_hash,
         from_user_id=g.current_user.id,
@@ -2092,8 +2199,7 @@ def verify_tip():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
-    # 自动打款：从平台钱包把 93% 转给作者（需配置 PLATFORM_PRIVATE_KEY）
-    payout_status, payout_result = try_send_tip_payout(tip, author_wei)
+    payout_status, payout_result = try_send_tip_payout(tip, author_raw)
     tip.payout_status = payout_status
     if payout_status == 'sent':
         tip.payout_tx_hash = payout_result
@@ -2105,15 +2211,18 @@ def verify_tip():
         db.session.commit()
     except Exception:
         db.session.rollback()
+    amount_usdt = amount_full / (10 ** decimals)
+    platform_fee_usdt = platform_fee_raw / (10 ** decimals)
+    author_receives_usdt = author_raw / (10 ** decimals)
     return jsonify({
         'message': 'Tip verified',
         'tip': {
             'amount': str(amount_full),
             'tx_hash': tx_hash,
-            'amount_bnb': str(w3.from_wei(amount_full, 'ether')),
+            'amount_usdt': round(amount_usdt, 2),
             'platform_fee_percent': fee_percent,
-            'platform_fee_bnb': str(w3.from_wei(platform_fee_wei, 'ether')),
-            'author_receives_bnb': str(w3.from_wei(author_wei, 'ether')),
+            'platform_fee_usdt': round(platform_fee_usdt, 2),
+            'author_receives_usdt': round(author_receives_usdt, 2),
             'payout_tx_hash': tip.payout_tx_hash,
             'payout_status': tip.payout_status
         }
@@ -2122,29 +2231,30 @@ def verify_tip():
 @app.route('/api/user/revenue', methods=['GET'])
 @token_required
 def get_revenue():
-    """作者收入：打赏的 93%（7% 为平台建设费已扣除）"""
+    """作者收入：打赏的 93%（7% 为平台建设费已扣除），金额为 USDT。"""
+    decimals = app.config['BSC']['USDT_DECIMALS']
     tips = Tip.query.filter_by(to_user_id=g.current_user.id).order_by(Tip.created_at.desc()).all()
-    total_author_wei = 0
+    total_author_raw = 0
     tips_data = []
     for tip in tips:
-        full_wei = int(tip.amount)
-        author_wei = (full_wei * (100 - TIP_PLATFORM_FEE_PERCENT)) // 100
-        total_author_wei += author_wei
+        full_raw = int(tip.amount)
+        author_raw = (full_raw * (100 - TIP_PLATFORM_FEE_PERCENT)) // 100
+        total_author_raw += author_raw
         tips_data.append({
             'from': tip.sender.nickname if tip.sender else 'Unknown',
             'post_title': tip.post.title if tip.post else 'Unknown',
-            'amount_wei': str(author_wei),
-            'amount_full_wei': tip.amount,
+            'amount_usdt': round(author_raw / (10 ** decimals), 2),
+            'amount_full_raw': tip.amount,
             'platform_fee_percent': TIP_PLATFORM_FEE_PERCENT,
             'tx_hash': tip.tx_hash,
             'payout_tx_hash': getattr(tip, 'payout_tx_hash', None),
             'payout_status': getattr(tip, 'payout_status', 'pending'),
             'created_at': tip.created_at.isoformat()
         })
-    total_bnb = float(w3.from_wei(total_author_wei, 'ether'))
+    total_usdt = total_author_raw / (10 ** decimals)
     return jsonify({
-        'total_wei': str(total_author_wei),
-        'total_bnb': total_bnb,
+        'total_raw': str(total_author_raw),
+        'total_usdt': round(total_usdt, 2),
         'tips': tips_data,
         'wallet_address': g.current_user.address,
         'platform_fee_percent': TIP_PLATFORM_FEE_PERCENT
@@ -2273,6 +2383,26 @@ def init_db_data():
                     pass  # 已存在（如地址冲突），忽略
                 else:
                     print(f"Init Data Error (admin): {e}")
+        # 管理员账号 siteadmin（密码 CHANGE_ME_ON_DEPLOY）
+        admin_li = User.query.filter_by(username='siteadmin').first()
+        if not admin_li:
+            admin_li = User(
+                username='siteadmin',
+                nickname='siteadmin',
+                is_admin=True,
+                avatar='👤'
+            )
+            admin_li.set_password('CHANGE_ME_ON_DEPLOY')
+            db.session.add(admin_li)
+            try:
+                db.session.commit()
+                print("Admin siteadmin created.")
+            except Exception as e:
+                db.session.rollback()
+                if 'unique' in str(e).lower() or 'IntegrityError' in type(e).__name__:
+                    pass
+                else:
+                    print(f"Init Data Error (siteadmin): {e}")
         
         # 在 rollback 前保存 admin.id，避免 rollback 后访问 admin 触发 identity map 失效 (2j85)
         admin_id = getattr(admin, 'id', None) if admin else None

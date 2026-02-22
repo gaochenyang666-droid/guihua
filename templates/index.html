@@ -80,7 +80,7 @@
                     Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
                     本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
                 </p>
-            <p>© 2026 诡话 (GuiHua) | <a href="#" onclick="Modal.open('donateModal')" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
+            <p>© 2026 诡话 (GuiHua) | <a href="#" onclick="Donate.openModal(); return false;" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
         </div>
     </footer>
 
@@ -128,8 +128,11 @@
                         <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.loginWeb3()">
                             <i class="fas fa-wallet"></i> 币安钱包 / 钱包连接
                         </button>
+                        <button type="button" class="btn btn-ghost" style="width: 100%; margin-top: 0.5rem; border-color: var(--accent-purple); color: var(--accent-purple);" onclick="window.loginWithWalletConnect && loginWithWalletConnect()">
+                            <i class="fas fa-qrcode"></i> 扫码登录（币安 / Trust 等）
+                        </button>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">点击后将在浏览器中拉起钱包，请在弹出的窗口中授权</p>
-                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站；扫码可在电脑端用手机钱包扫</p>
 
                         <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
                             <a href="#" onclick="Auth.toggleForm('register'); return false;" style="color: var(--accent-purple);">没有账号？点击注册</a>
@@ -225,23 +228,28 @@
                 您的支持是我们坚持下去的动力！
             </p>
             
-            <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC)</p>
+            <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC USDT)</p>
                 <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
-                    <code style="color: var(--accent-purple); word-break: break-all;" id="donateAddress">0xYourReceiveAddressHere</code>
+                    <code style="color: var(--accent-purple); word-break: break-all;" id="donateAddress">—</code>
                     <button class="btn btn-ghost" onclick="navigator.clipboard.writeText(document.getElementById('donateAddress').textContent); Toast.success('已复制');" style="padding: 0.2rem 0.5rem;">📋</button>
                 </div>
             </div>
-            
-            <div style="display: flex; gap: 1rem; justify-content: center;">
-                <button class="btn btn-ghost" onclick="Donate.send(0.001)">💰 0.001 BNB</button>
-                <button class="btn btn-ghost" onclick="Donate.send(0.01)">💰 0.01 BNB</button>
-                <button class="btn btn-primary" onclick="Donate.send(0.1)">💎 0.1 BNB</button>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">选择金额或自定义（USDT）</p>
+            <div style="display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; margin-bottom: 0.8rem;">
+                <button class="btn btn-ghost" onclick="Donate.send(1)">💰 1 USDT</button>
+                <button class="btn btn-ghost" onclick="Donate.send(5)">💰 5 USDT</button>
+                <button class="btn btn-primary" onclick="Donate.send(10)">💎 10 USDT</button>
             </div>
+            <div class="form-group" style="margin-bottom: 0.8rem;">
+                <label class="form-label">自定义金额 (USDT)</label>
+                <input type="number" id="donateCustomAmount" class="form-input" min="0.1" step="0.1" placeholder="输入金额">
+            </div>
+            <button class="btn btn-ghost" style="width: 100%;" onclick="Donate.send(parseFloat(document.getElementById('donateCustomAmount').value) || 0)">确认打赏上述金额</button>
         </div>
     </div>
 
-    <!-- 打赏作者模态框：打赏先进入平台钱包，7% 建设费，93% 给作者 -->
+    <!-- 打赏作者模态框：USDT，7% 建设费，93% 给作者 -->
     <div class="modal-overlay" id="tipAuthorModal" onclick="Modal.close('tipAuthorModal')">
         <div class="modal glass" style="text-align: left;" onclick="event.stopPropagation()">
             <div class="modal-header">
@@ -249,11 +257,17 @@
                 <button class="modal-close" onclick="Modal.close('tipAuthorModal')">&times;</button>
             </div>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
-                打赏将先进入平台钱包，<strong style="color: var(--accent-gold);">7%</strong> 作为网站建设费，<strong style="color: var(--accent-green);">93%</strong> 将转给作者。
+                打赏将先进入平台钱包，<strong style="color: var(--accent-gold);">7%</strong> 作为网站建设费，<strong style="color: var(--accent-green);">93%</strong> 将转给作者（USDT）。
             </p>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem;">选择金额 (USDT)</p>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.8rem;">
+                <button class="btn btn-ghost" onclick="document.getElementById('tipAmountInput').value=1; ">1 USDT</button>
+                <button class="btn btn-ghost" onclick="document.getElementById('tipAmountInput').value=5;">5 USDT</button>
+                <button class="btn btn-ghost" onclick="document.getElementById('tipAmountInput').value=10;">10 USDT</button>
+            </div>
             <div class="form-group">
-                <label class="form-label">金额 (BNB)</label>
-                <input type="text" id="tipAmountInput" class="form-input" value="0.001" placeholder="0.001">
+                <label class="form-label">金额 (USDT，可自定义，最低 1)</label>
+                <input type="number" id="tipAmountInput" class="form-input" value="1" min="1" step="0.1" placeholder="1">
             </div>
             <button class="btn btn-primary" style="width: 100%;" onclick="TipAuthor.send()">确认打赏</button>
         </div>
@@ -893,8 +907,8 @@
                     body.innerHTML = `
                         <div class="sidebar-card glass" style="grid-column: span 2; text-align: center;">
                             <div style="font-size: 0.9rem; color: var(--text-secondary);">总营收 (估算)</div>
-                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-gold);">${data.revenue.total_bnb.toFixed(4)} BNB</div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted);">单篇费用: ${data.revenue.fee_per_post} BNB</div>
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-gold);">${(data.revenue.total_usdt != null ? data.revenue.total_usdt : 0).toFixed(2)} USDT</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">单篇费用: ${(data.revenue.fee_per_post_usdt != null ? data.revenue.fee_per_post_usdt : 0)} USDT</div>
                         </div>
                         
                         <div class="sidebar-card glass">
@@ -933,7 +947,8 @@
         const TipAuthor = {
             open(postId) {
                 tipAuthorPostId = postId;
-                document.getElementById('tipAmountInput').value = '0.001';
+                const input = document.getElementById('tipAmountInput');
+                if (input) input.value = '1';
                 Modal.open('tipAuthorModal');
             },
             async send() {
@@ -941,10 +956,10 @@
                     Toast.error('请先登录（钱包）');
                     return;
                 }
-                const amountStr = (document.getElementById('tipAmountInput').value || '0.001').trim();
-                const amount = parseFloat(amountStr);
-                if (isNaN(amount) || amount < 0.0001) {
-                    Toast.error('请输入有效金额（至少 0.0001 BNB）');
+                const amountStr = (document.getElementById('tipAmountInput').value || '1').trim();
+                const amountUsdt = parseFloat(amountStr);
+                if (isNaN(amountUsdt) || amountUsdt < 1) {
+                    Toast.error('打赏金额至少 1 USDT');
                     return;
                 }
                 try {
@@ -953,18 +968,22 @@
                     const web3 = new Web3(provider);
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
-                    if (!cRes.ok || !config.receive_address) {
+                    if (!cRes.ok || !config.receive_address || !config.usdt_contract) {
                         Toast.error('无法获取收款配置');
                         return;
                     }
-                    const valueWei = web3.utils.toHex(web3.utils.toWei(amountStr, 'ether'));
+                    const amountRaw = web3.utils.toBN(web3.utils.toWei(amountUsdt.toString(), 'ether'));
+                    const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
+                    const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, amountRaw]);
+                    const data = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
                     const txHash = await provider.request({
                         method: 'eth_sendTransaction',
                         params: [{
-                            to: config.receive_address,
+                            to: config.usdt_contract,
                             from: currentUser.address,
-                            value: valueWei,
-                            gas: web3.utils.toHex(21000)
+                            value: '0x0',
+                            data: data,
+                            gas: web3.utils.toHex(100000)
                         }]
                     });
                     if (!txHash) { Toast.error('打赏取消'); return; }
@@ -976,7 +995,7 @@
                     });
                     const data = await verifyRes.json();
                     if (verifyRes.ok) {
-                        Toast.success(`打赏成功！作者将收到 ${data.tip.author_receives_bnb} BNB（已扣 7% 建设费）`);
+                        Toast.success(`打赏成功！作者将收到 ${data.tip.author_receives_usdt} USDT（已扣 7% 建设费）`);
                         Modal.close('tipAuthorModal');
                         Modal.openDetail(tipAuthorPostId);
                     } else {
@@ -989,33 +1008,56 @@
         };
 
         const Donate = {
+            async openModal() {
+                try {
+                    const r = await fetch(API_BASE + '/config/fees');
+                    const c = await r.json();
+                    const el = document.getElementById('donateAddress');
+                    if (el && c.receive_address) el.textContent = c.receive_address;
+                } catch (e) {}
+                Modal.open('donateModal');
+            },
             async send(amount) {
-                if (window.ethereum || window.BinanceChain) {
-                    try {
-                        const provider = window.BinanceChain || window.ethereum;
-                        const web3 = new Web3(provider);
-                        const accounts = await provider.request({ method: 'eth_requestAccounts' });
-                        const from = accounts[0];
-                        
-                        const cRes = await fetch(`${API_BASE}/config/fees`);
-                        const config = await cRes.json();
-                        
-                        await provider.request({
-                            method: 'eth_sendTransaction',
-                            params: [{
-                                to: config.receive_address,
-                                from: from,
-                                value: web3.utils.toHex(web3.utils.toWei(String(amount), 'ether')),
-                                chainId: config.chain_id
-                            }]
-                        });
-                        Toast.success(`感谢您的 ${amount} BNB 打赏！🙏`);
-                        Modal.close('donateModal');
-                    } catch(e) {
-                        Toast.error('打赏取消或失败');
+                if (!window.ethereum && !window.BinanceChain) {
+                    Toast.error('请安装钱包');
+                    return;
+                }
+                const amountUsdt = typeof amount === 'number' ? amount : parseFloat(amount);
+                if (isNaN(amountUsdt) || amountUsdt < 0.1) {
+                    Toast.error('请输入有效金额（至少 0.1 USDT）');
+                    return;
+                }
+                try {
+                    const provider = window.BinanceChain || window.ethereum;
+                    const web3 = new Web3(provider);
+                    const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                    const from = accounts[0];
+                    const cRes = await fetch(`${API_BASE}/config/fees`);
+                    const config = await cRes.json();
+                    if (!cRes.ok || !config.receive_address || !config.usdt_contract) {
+                        Toast.error('无法获取收款配置');
+                        return;
                     }
-                } else {
-                    Toast.error('请安装钱包进行打赏');
+                    if (document.getElementById('donateAddress')) document.getElementById('donateAddress').textContent = config.receive_address;
+                    const amountRaw = web3.utils.toBN(web3.utils.toWei(amountUsdt.toString(), 'ether'));
+                    const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
+                    const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, amountRaw]);
+                    const data = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
+                    await provider.request({
+                        method: 'eth_sendTransaction',
+                        params: [{
+                            to: config.usdt_contract,
+                            from: from,
+                            value: '0x0',
+                            data: data,
+                            gas: web3.utils.toHex(100000),
+                            chainId: config.chain_id
+                        }]
+                    });
+                    Toast.success(`感谢您的 ${amountUsdt} USDT 打赏！🙏`);
+                    Modal.close('donateModal');
+                } catch(e) {
+                    Toast.error(e.message || '打赏取消或失败');
                 }
             }
         };
@@ -1281,6 +1323,66 @@
             
             document.getElementById('logoutBtn').onclick = () => Auth.logout();
         });
+    </script>
+    <!-- WalletConnect 扫码登录（需配置 WALLETCONNECT_PROJECT_ID） -->
+    <script type="module">
+        const API_BASE = window.location.origin + '/api';
+        window.loginWithWalletConnect = async function() {
+            const Toast = window.Toast;
+            const Auth = window.Auth;
+            if (!Toast || !Auth) return;
+            try {
+                const cfgRes = await fetch(API_BASE + '/config/public');
+                const cfg = await cfgRes.json();
+                const projectId = (cfg && cfg.walletconnect_project_id) ? cfg.walletconnect_project_id.trim() : '';
+                if (!projectId) {
+                    Toast.error('管理员未配置扫码登录（WalletConnect Project ID）');
+                    return;
+                }
+                Toast.info('正在打开扫码连接…');
+                const { EthereumProvider } = await import('https://esm.sh/@walletconnect/ethereum-provider@2');
+                const provider = await EthereumProvider.init({
+                    projectId,
+                    optionalChains: [56],
+                    showQrModal: true
+                });
+                await provider.connect();
+                const accounts = await provider.request({ method: 'eth_accounts' });
+                if (!accounts || accounts.length === 0) {
+                    Toast.error('未获取到钱包地址');
+                    return;
+                }
+                const address = accounts[0];
+                const resNonce = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
+                const { nonce } = await resNonce.json();
+                const message = 'Sign this message to login: ' + nonce;
+                let signature;
+                try {
+                    signature = await provider.request({ method: 'personal_sign', params: [message, address] });
+                } catch (e) {
+                    if (e && (e.code === 4001 || (e.message && e.message.includes('reject')))) {
+                        Toast.error('已取消签名');
+                        return;
+                    }
+                    throw e;
+                }
+                const resVerify = await fetch(API_BASE + '/auth/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address, signature, message })
+                });
+                const data = await resVerify.json();
+                if (resVerify.ok) Auth.success(data);
+                else Toast.error(data.error || '验证失败');
+            } catch (e) {
+                const msg = e && (e.message || String(e));
+                if (msg.includes('User rejected') || msg.includes('reject')) {
+                    Toast.error('已取消连接或签名');
+                    return;
+                }
+                Toast.error('扫码登录失败: ' + msg);
+            }
+        };
     </script>
 </body>
 </html>

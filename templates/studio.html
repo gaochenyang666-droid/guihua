@@ -29,7 +29,7 @@
             </div>
 
             <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
-                <p style="font-size:0.8rem; color:var(--accent-green); margin-bottom:0.8rem;">您仅需支付 BNB，永存档案由平台负责。</p>
+                <p style="font-size:0.8rem; color:var(--accent-green); margin-bottom:0.8rem;">您仅需支付 USDT（BSC），永存档案由平台负责。</p>
                 <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem;">
                     <span style="color:var(--text-secondary);">支付网络</span>
                     <span style="display:flex; align-items:center; gap:0.4rem;">
@@ -45,7 +45,7 @@
                     <span style="color:var(--text-secondary);">您需支付</span>
                     <div style="text-align:right;">
                         <div style="font-size:1.2rem; font-weight:bold; color:var(--accent-gold);" id="previewAmount">Loading...</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">BNB 转至平台，永存由平台承担</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">USDT 转至平台，永存由平台承担</div>
                     </div>
                 </div>
             </div>
@@ -70,7 +70,7 @@
             </div>
 
             <div id="txHashDisplay" style="display:none; margin-bottom:1rem; background:rgba(255,255,255,0.05); padding:0.8rem; border-radius:8px;">
-                <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.3rem;">BSC 支付交易哈希（您的付款凭证）:</div>
+                <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.3rem;">BSC USDT 支付交易哈希（您的付款凭证）:</div>
                 <div style="display:flex; align-items:center; gap:0.5rem;">
                     <code id="realTxHash" style="color:var(--accent-gold); font-size:0.8rem; word-break:break-all;">Loading...</code>
                     <button class="btn btn-ghost btn-sm" onclick="Studio.copyHash()">📋</button>
@@ -174,7 +174,7 @@
                 <!-- Step 3: Payment Preview -->
                 <div class="step-content" id="step3">
                     <h2 style="margin-bottom: 1.5rem; text-align: center;">Web3 永存确认</h2>
-                    <p style="font-size:0.85rem; color:var(--text-muted); text-align:center; margin-bottom:1rem;">您仅需支付 BNB，永存档案由平台负责。</p>
+                    <p style="font-size:0.85rem; color:var(--text-muted); text-align:center; margin-bottom:1rem;">您仅需支付 USDT（BSC），永存档案由平台负责。</p>
                     <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 16px; margin-bottom: 2rem; border: 1px solid var(--border-color);">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
                             <span style="color: var(--text-secondary);">支付网络</span>
@@ -258,34 +258,34 @@
                 const file = input.files[0];
                 if (!file) return;
                 const formData = new FormData();
-                formData.append('file', file);
+                formData.append('file', file, file.name || 'image.png');
                 try {
-                    const res = await fetch(`${API_BASE}/upload`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                        body: formData
-                    });
-                    const data = await res.json();
-                    if (data.url) document.execCommand('insertImage', false, data.url);
-                } catch(e) { console.error(e); Toast.error('上传出错'); }
+                    const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok && data.url) {
+                        document.execCommand('insertImage', false, data.url);
+                        Toast.success('图片已插入');
+                    } else {
+                        Toast.error(data.error || '上传失败');
+                    }
+                } catch(e) { Toast.error('网络错误'); }
             },
             async uploadCover(input) {
                 const file = input.files[0];
                 if (!file) return;
                 const formData = new FormData();
-                formData.append('file', file);
+                formData.append('file', file, file.name || 'cover.png');
                 try {
-                    const res = await fetch(`${API_BASE}/upload`, {
-                        method: 'POST',
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                        body: formData
-                    });
-                    const data = await res.json();
-                    if (data.url) {
+                    const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok && data.url) {
                         document.getElementById('studioPostImage').value = data.url;
                         this.previewCover(data.url);
+                        Toast.success('封面已上传');
+                    } else {
+                        Toast.error(data.error || '封面上传失败');
                     }
-                } catch(e) { console.error(e); Toast.error('上传出错'); }
+                } catch(e) { Toast.error('网络错误'); }
             },
             previewCover(url) {
                 const p = document.getElementById('coverPreview');
@@ -418,12 +418,8 @@
                     const r = await fetch(`${API_BASE}/config/fees`);
                     if (r.ok) {
                         const cfg = await r.json();
-                        const fromWei = (val) => {
-                            if (typeof Web3 !== 'undefined') return Web3.utils.fromWei(String(val), 'ether');
-                            return (Number(val) / 1e18).toFixed(6);
-                        };
-                        const bnb = fromWei(cfg.fee);
-                        el.textContent = (cfg.fee_usd === 1 ? `${bnb} BNB (约 1 USD)` : `${bnb} BNB`);
+                        const usdt = (cfg.fee_usdt != null ? cfg.fee_usdt : (Number(cfg.fee) / 1e18)).toFixed(2);
+                        el.textContent = cfg.fee_currency === 'USDT' ? `${usdt} USDT` : `${usdt} USDT`;
                     } else {
                         el.textContent = '以支付时为准';
                     }
@@ -572,14 +568,8 @@
                         return;
                     }
                     
-                    const fromWei = (val) => {
-                        if (window.web3) return window.web3.utils.fromWei(val, 'ether');
-                        if (typeof Web3 !== 'undefined') return Web3.utils.fromWei(val, 'ether');
-                        return '0.001';  /* 与后端 POST_FEE 默认一致，仅作展示兜底 */
-                    };
-                    
-                    const feeInBNB = fromWei(config.fee.toString());
-                    const feeLabel = config.fee_usd === 1 ? `${feeInBNB} BNB (约 1 USD)` : `${feeInBNB} BNB`;
+                    const feeUsdt = (config.fee_usdt != null ? config.fee_usdt : (Number(config.fee) / 1e18)).toFixed(2);
+                    const feeLabel = config.fee_currency === 'USDT' ? `${feeUsdt} USDT` : `${feeUsdt} USDT`;
                     document.getElementById('previewAmount').textContent = feeLabel;
                     const addrEl = document.getElementById('previewReceiveAddress');
                     if (addrEl && config.receive_address) addrEl.textContent = config.receive_address;
@@ -710,21 +700,24 @@
                         }
                     }
 
-                    // 3. Payment (Skip if already paid)
-                    // 支付前把当前内容写入 localStorage，付完钱但发帖失败时可断点续传、无需再付
+                    // 3. Payment: USDT (BEP-20) transfer（若已付过则跳过）
                     this.savePendingPost(null);
-                    // 注意：config.fee 来自后端，已是 Wei 字符串；用 toBN 转 hex 避免 JS Number 精度丢失
                     if (!txHash) {
-                        this.addLog("等待钱包确认...");
+                        if (!config.usdt_contract) throw new Error('未配置 USDT 合约地址');
+                        this.addLog("等待钱包确认 USDT 转账...");
                         const provider = window.BinanceChain || window.ethereum;
-                        const valueHex = web3.utils.toHex(web3.utils.toBN(config.fee.toString()));
+                        const feeRaw = web3.utils.toBN(config.fee.toString());
+                        const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
+                        const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, feeRaw]);
+                        const data = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
                         txHash = await provider.request({
                             method: 'eth_sendTransaction',
                             params: [{
-                                to: config.receive_address,
+                                to: config.usdt_contract,
                                 from: currentUser.address,
-                                value: valueHex,
-                                gas: web3.utils.toHex(21000)
+                                value: '0x0',
+                                data: data,
+                                gas: web3.utils.toHex(100000)
                             }]
                         });
                         this.pendingTxHash = txHash;

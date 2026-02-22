@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""用本文件夹内的 BSC 私钥发一帖（支付 0.001 BNB 后调用发帖接口）。
+"""用本文件夹内的 BSC 私钥发一帖（支付 USDT 后调用发帖接口）。
 私钥来源（按顺序）：环境变量 WALLET_PRIVATE_KEY、wallet_key.txt、bsc_key.txt。
-用法：在项目根目录执行（确保已配置 RECEIVE_ADDRESS 与 POST_FEE）：
+用法：在项目根目录执行（确保已配置 RECEIVE_ADDRESS、POST_FEE_USDT、USDT 合约）：
   python3 scripts/post_with_key.py
   API_BASE=http://127.0.0.1:5001 python3 scripts/post_with_key.py
 """
@@ -83,15 +83,20 @@ def main():
         return 1
     cfg = r.json()
     receive_addr = cfg.get("receive_address")
-    fee_wei_str = cfg.get("fee")
+    fee_raw_str = cfg.get("fee")
+    usdt_contract = cfg.get("usdt_contract")
     chain_id = cfg.get("chain_id", 56)
-    if not receive_addr or fee_wei_str is None:
+    if not receive_addr or fee_raw_str is None:
         print("fees 缺少 receive_address 或 fee:", cfg)
         return 1
-    fee_wei = int(fee_wei_str)
-    print("发帖费:", fee_wei, "Wei, 收款:", receive_addr[:20], "...")
+    if not usdt_contract:
+        print("fees 缺少 usdt_contract（发帖费为 USDT）:", cfg)
+        return 1
+    fee_raw = int(fee_raw_str)
+    fee_usdt = cfg.get("fee_usdt", fee_raw / 1e18)
+    print("发帖费:", fee_usdt, "USDT (raw:", fee_raw, "), 收款:", receive_addr[:20], "...")
 
-    # 4. 发送支付交易（使用当前 RPC 的 chain_id，与 API 返回可能不同，如测试网 97 vs 主网 56）
+    # 4. 发送 USDT (BEP-20) 转账
     from app import app, get_working_web3
     with app.app_context():
         w3 = get_working_web3()
@@ -101,19 +106,36 @@ def main():
     chain_id_actual = w3.eth.chain_id
     print("当前 RPC chain_id:", chain_id_actual)
 
+    # 编码 transfer(address to, uint256 value)
+    try:
+        from eth_abi import encode
+        selector = bytes.fromhex('a9059cbb')
+        encoded = encode(['address', 'uint256'], [Web3.to_checksum_address(receive_addr), fee_raw])
+        data_hex = '0x' + (selector + encoded).hex()
+    except ImportError:
+        # 无 eth_abi 时用 web3 的 encode (web3 5+ 有)
+        if hasattr(w3.eth, 'contract'):
+            abi = [{"inputs":[{"name":"to","type":"address"},{"name":"value","type":"uint256"}],"name":"transfer","outputs":[{"type":"bool"}],"stateMutability":"nonpayable","type":"function"}]
+            c = w3.eth.contract(address=Web3.to_checksum_address(usdt_contract), abi=abi)
+            data_hex = c.functions.transfer(Web3.to_checksum_address(receive_addr), fee_raw).build_transaction()['data']
+        else:
+            print("请安装 eth_abi: pip install eth-abi")
+            return 1
+
     nonce_tx = w3.eth.get_transaction_count(address)
     gas_price = w3.eth.gas_price
     tx = {
         "nonce": nonce_tx,
         "chainId": chain_id_actual,
-        "to": Web3.to_checksum_address(receive_addr),
-        "value": fee_wei,
-        "gas": 21000,
+        "to": Web3.to_checksum_address(usdt_contract),
+        "value": 0,
+        "data": data_hex,
+        "gas": 100000,
         "gasPrice": gas_price,
     }
     signed_tx = account.sign_transaction(tx)
     tx_hash_hex = w3.eth.send_raw_transaction(signed_tx.rawTransaction).hex()
-    print("支付交易已发送:", tx_hash_hex[:20], "...")
+    print("USDT 支付交易已发送:", tx_hash_hex[:20], "...")
 
     # 5. 等待确认（主网出块约 3s，捕获 TransactionNotFound 后重试）
     import time

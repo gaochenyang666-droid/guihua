@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""处理未打款的打赏：从平台钱包将 93% BNB 转给作者。可被 cron 定期执行。
+"""处理未打款的打赏：从平台钱包将 93% USDT 转给作者。可被 cron 定期执行。
 用法：在项目根目录执行
   python scripts/process_tip_payouts.py
 或
   python -c "from scripts.process_tip_payouts import run; run()"
-需配置 .env 中的 PLATFORM_PRIVATE_KEY（平台热钱包私钥）、RECEIVE_ADDRESS、DATABASE_URL 等。
+需配置 .env 中的 PLATFORM_PRIVATE_KEY（平台热钱包需有 USDT）、RECEIVE_ADDRESS、DATABASE_URL 等。
 """
 import os
 import sys
