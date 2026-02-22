@@ -1606,6 +1606,8 @@ def _get_posts_fallback(page, per_page, current_user_id):
             except Exception:
                 pass
 
+            if cover_image and str(cover_image).strip() == '/static/images/hua_cover.jpg':
+                cover_image = None
             posts_data.append({
                 'id': pid,
                 'title': title,
@@ -1890,6 +1892,8 @@ def get_post_detail(post_id):
                 pass
 
         post_data = post.to_dict(current_user_id)
+        if post_data.get('cover_image') and str(post_data['cover_image']).strip() == '/static/images/hua_cover.jpg':
+            post_data['cover_image'] = None
 
         from sqlalchemy.orm import joinedload
         all_comments = Comment.query.filter_by(post_id=post_id).options(
@@ -2202,7 +2206,9 @@ def verify_tip():
         from_user_id=g.current_user.id,
         to_user_id=post.author.id,
         post_id=post.id,
-        amount=str(amount_full)
+        amount=str(amount_full),
+        payout_status='credited',
+        payout_tx_hash='0xcredited'
     )
     used_tx = UsedTransaction(tx_hash=tx_hash, user_id=g.current_user.id)
     author = post.author
