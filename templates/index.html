@@ -975,14 +975,14 @@
                     const amountRaw = web3.utils.toBN(web3.utils.toWei(amountUsdt.toString(), 'ether'));
                     const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
                     const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, amountRaw]);
-                    const data = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
+                    const txData = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
                     const txHash = await provider.request({
                         method: 'eth_sendTransaction',
                         params: [{
                             to: config.usdt_contract,
                             from: currentUser.address,
                             value: '0x0',
-                            data: data,
+                            data: txData,
                             gas: web3.utils.toHex(100000)
                         }]
                     });
