@@ -257,7 +257,7 @@
                 <button class="modal-close" onclick="Modal.close('tipAuthorModal')">&times;</button>
             </div>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
-                打赏将先进入平台钱包，<strong style="color: var(--accent-gold);">7%</strong> 作为网站建设费，<strong style="color: var(--accent-green);">93%</strong> 将转给作者（USDT）。
+                打赏进入平台钱包，<strong style="color: var(--accent-gold);">7%</strong> 为建设费，<strong style="color: var(--accent-green);">93%</strong> 计入作者可提现余额，作者可在「我的主页」提现。
             </p>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem;">选择金额 (USDT)</p>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.8rem;">
@@ -995,7 +995,7 @@
                     });
                     const data = await verifyRes.json();
                     if (verifyRes.ok) {
-                        Toast.success(`打赏成功！作者将收到 ${data.tip.author_receives_usdt} USDT（已扣 7% 建设费）`);
+                        Toast.success(`打赏成功！${data.tip.author_receives_usdt} USDT 已计入作者可提现余额`);
                         Modal.close('tipAuthorModal');
                         Modal.openDetail(tipAuthorPostId);
                     } else {
