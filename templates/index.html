@@ -310,16 +310,13 @@
                 const token = localStorage.getItem('token');
                 if (token) {
                     await this.fetchMe();
-                    // Validate token validity
+                    this.checkLoginExpiry();
+                    setInterval(() => this.checkLoginExpiry(), 5 * 60 * 1000); // 每 5 分钟检查一次
                     fetch(`${API_BASE}/user/me`, { headers: {'Authorization': `Bearer ${token}`} })
                     .then(res => {
-                        if (res.status === 401) { localStorage.removeItem('token'); currentUser = null; window.location.href = '/'; }
-                    }).catch(() => {
-                        // Network error or server down, maybe keep login state?
-                        // For safety, let's not force logout on network error unless we are sure
-                    });
+                        if (res.status === 401) { localStorage.removeItem('token'); localStorage.removeItem('login_at'); currentUser = null; window.location.href = '/'; }
+                    }).catch(() => {});
                 } else {
-                    // Check if there is a 'undefined' string in storage which is bad
                     if(localStorage.getItem('token') === 'undefined') localStorage.removeItem('token');
                 }
                 UI.updateAuth();
@@ -333,7 +330,7 @@
                     if (handle401(res)) return;
                     if (res.ok) currentUser = await res.json();
                     else this.logout();
-                } catch(e) { console.error(e); }
+                } catch(_) { /* 静默处理，避免生产环境泄露 */ }
             },
 
             toggleForm(mode) {
@@ -398,7 +395,6 @@
                              signature = await window.web3.eth.personal.sign(message, address, '');
                         }
                     } catch (err) {
-                        console.error("Sign error:", err);
                         try {
                              signature = await window.web3.eth.personal.sign(message, address);
                         } catch (e2) {
@@ -480,6 +476,8 @@
 
             success(data) {
                 localStorage.setItem('token', data.token);
+                localStorage.setItem('login_at', String(Date.now()));
+                sessionStorage.removeItem('login_expiry_warned');
                 currentUser = data.user;
                 UI.updateAuth();
                 Modal.close('loginModal');
@@ -488,9 +486,25 @@
 
             logout() {
                 localStorage.removeItem('token');
+                localStorage.removeItem('login_at');
+                sessionStorage.removeItem('login_expiry_warned');
                 currentUser = null;
                 UI.updateAuth();
                 Toast.info('已退出');
+            },
+
+            /** 登录即将过期提醒（无 Refresh Token 时的替代）：接近 24h 弹一次提醒 */
+            checkLoginExpiry() {
+                const token = localStorage.getItem('token');
+                const loginAt = localStorage.getItem('login_at');
+                if (!token || !loginAt) return;
+                const elapsed = Date.now() - parseInt(loginAt, 10);
+                const twentyThreeHours = 23 * 60 * 60 * 1000;
+                if (elapsed >= twentyThreeHours && !sessionStorage.getItem('login_expiry_warned')) {
+                    sessionStorage.setItem('login_expiry_warned', '1');
+                    if (typeof Toast !== 'undefined' && Toast.warning) Toast.warning('登录即将过期，请重新登录');
+                    else if (typeof Toast !== 'undefined' && Toast.info) Toast.info('登录即将过期，请重新登录');
+                }
             },
 
             async bindWallet() {
@@ -634,11 +648,22 @@
                     if(this.currentPage === 1) {
                         document.getElementById('postGrid').innerHTML = '';
                         if (data.posts.length === 0) {
+                            let emptyMsg = '这里一片荒芜，什么也没有...';
+                            let emptyBtn = this.currentQuery ? '<button class="btn btn-ghost" onclick="Post.load()" style="margin-top:1rem;">返回全部</button>' : '';
+                            if (this.currentSort === 'bookmarks') {
+                                if (!token) {
+                                    emptyMsg = '请先登录后查看收藏';
+                                    emptyBtn = '<button class="btn btn-primary" onclick="Modal.open(\'loginModal\')" style="margin-top:1rem;">去登录</button>';
+                                } else {
+                                    emptyMsg = '暂无收藏，去首页逛逛吧';
+                                    emptyBtn = '<button class="btn btn-ghost" onclick="UI.handleNav(document.querySelector(\'[data-sort=new]\'), \'new\')" style="margin-top:1rem;">看最新</button>';
+                                }
+                            }
                             document.getElementById('postGrid').innerHTML = `
                                 <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
-                                    <div style="font-size: 3rem; margin-bottom: 1rem;">👻</div>
-                                    <p>这里一片荒芜，什么也没有...</p>
-                                    ${this.currentQuery ? '<button class="btn btn-ghost" onclick="Post.load()" style="margin-top:1rem;">返回全部</button>' : ''}
+                                    <div style="font-size: 3rem; margin-bottom: 1rem;">${this.currentSort === 'bookmarks' ? '⭐' : '👻'}</div>
+                                    <p>${emptyMsg}</p>
+                                    ${emptyBtn}
                                 </div>
                             `;
                         }
@@ -987,10 +1012,16 @@
                 this.open('postDetailModal');
                 const body = document.getElementById('postDetailBody');
                 body.innerHTML = '加载中...';
-                
-                const res = await fetch(`${API_BASE}/posts/${id}`);
+                const headers = {};
+                const token = localStorage.getItem('token');
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+                const res = await fetch(`${API_BASE}/posts/${id}`, { headers });
                 if (handle401(res)) return;
-                const p = await res.json();
+                const p = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${p.error || '加载失败'}</div>`;
+                    return;
+                }
                 
                 let contentHtml = p.content;
                 let repostHtml = '';
@@ -1004,17 +1035,17 @@
                     `;
                 }
 
+                const escapeAttr = (s) => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const renderComments = (comments, depth=0) => {
                     if (!comments || comments.length === 0) return '';
-                    
                     return comments.map(c => `
                         <div class="comment-item" style="margin-left: ${depth * 20}px; border-left: ${depth > 0 ? '2px solid var(--border-color)' : 'none'}; padding-left: ${depth > 0 ? '1rem' : '0'};">
                             <div class="comment-header">
-                                <span>${c.author.nickname}</span>
+                                <span>${(c.author && c.author.nickname) || '匿名'}</span>
                                 <span>${new Date(c.created_at).toLocaleDateString()}</span>
                             </div>
-                            <div style="margin-bottom: 0.5rem;">${c.content}</div>
-                            <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, '${c.author.nickname}')">↩ 回复</button>
+                            <div style="margin-bottom: 0.5rem;">${(c.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                            <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, this.getAttribute('data-nickname'))" data-nickname="${escapeAttr((c.author && c.author.nickname) || '')}">↩ 回复</button>
                             ${c.replies ? renderComments(c.replies, depth + 1) : ''}
                         </div>
                     `).join('');
@@ -1046,13 +1077,17 @@
                         ${repostHtml}
                     </div>
                     
-                    <div style="font-size:0.8rem; color:var(--text-secondary); margin-top:1rem;">
-                        ⛓ TX: <a href="https://bscscan.com/tx/${p.tx_hash}" target="_blank" style="color:var(--accent-purple);">${p.tx_hash ? p.tx_hash.substring(0,10)+'...'+p.tx_hash.substring(56) : 'N/A'}</a>
-                        ${p.ipfs_cid ? (
-                            (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ? 
-                            `<span style="margin-left:10px;">💾 <a href="https://arweave.net/${p.ipfs_cid}" target="_blank" style="color:var(--accent-gold);">永存档案</a></span>` :
-                            `<span style="margin-left:10px;">💾 <a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" style="color:var(--accent-green);">永存档案</a></span>`
-                        ) : ''}
+                    <div class="on-chain-evidence" style="margin-top:1rem; padding:0.75rem; background:var(--bg-secondary); border-radius:8px; font-size:0.85rem;">
+                        <div style="color:var(--text-muted); margin-bottom:0.5rem;">🔗 链上证据（可在链上查询）</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">
+                            ${p.tx_hash ? `<a href="https://bscscan.com/tx/${p.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证 BSCScan</a>` : '<span style="color:var(--text-muted);">无支付凭证</span>'}
+                            ${p.ipfs_cid ? (
+                                (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ?
+                                `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案 Arweave</a>` :
+                                `<a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-green);">💾 永存档案 IPFS</a>`
+                            ) : ''}
+                            ${p.nft_tx_hash ? `<a href="https://bscscan.com/tx/${p.nft_tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-cyan, #0ea5e9);">🖼 NFT 铸造 BSCScan</a>` : ''}
+                        </div>
                     </div>
                     
                     <div style="display:flex; gap:1rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem; flex-wrap:wrap;">
@@ -1060,6 +1095,7 @@
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id})">💰 打赏作者</button>` : ''}
+                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && (p.tx_hash || p.ipfs_cid) && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-cyan, #0ea5e9);" onclick="Interact.mintNft(${p.id})">🖼 制作 NFT</button>` : ''}
                     </div>
 
                     ${adminControls}
@@ -1086,10 +1122,11 @@
             
             replyTo(postId, commentId, username) {
                 this.currentReplyParentId = commentId;
+                const name = (username != null && username !== '') ? username : '匿名';
                 document.getElementById('replyTarget').style.display = 'block';
-                document.getElementById('replyTargetName').textContent = username;
+                document.getElementById('replyTargetName').textContent = name;
                 document.getElementById('commentInput').focus();
-                document.getElementById('commentInput').placeholder = `回复 @${username}...`;
+                document.getElementById('commentInput').placeholder = `回复 @${name}...`;
             },
             
             cancelReply() {
@@ -1100,6 +1137,15 @@
 
             async like(id) { await this.do(`${API_BASE}/posts/${id}/like`); Modal.openDetail(id); },
             async bookmark(id) { await this.do(`${API_BASE}/posts/${id}/bookmark`); Modal.openDetail(id); },
+            async mintNft(id) {
+                if (!currentUser) return Modal.open('loginModal');
+                try {
+                    const res = await fetch(`${API_BASE}/posts/${id}/mint-nft`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) { Toast.success(data.message || 'NFT 铸造已提交'); Modal.openDetail(id); }
+                    else Toast.error(data.error || '提交失败');
+                } catch (e) { Toast.error('网络错误'); }
+            },
             async comment(id) {
                 const c = document.getElementById('commentInput').value;
                 if(!c) return;

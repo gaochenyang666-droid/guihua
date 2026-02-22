@@ -15,6 +15,7 @@ from functools import wraps
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, g, render_template
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
@@ -85,8 +86,12 @@ BSC_RPC_LIST = [
     'https://bsc.publicnode.com'
 ]
 
+# JWT 过期时间（小时）；上线后可按需改为 24
+JWT_EXPIRY_HOURS = 24
+# 支付校验：要求交易已被至少 N 个区块确认，防链重组假充值。BSC 约 3 秒/块，2 约 6 秒；若追求极致安全可改为 3（约 9–10 秒）
+TX_CONFIRMATIONS_NEEDED = 2
 # 发帖费：动态为 1 USD 等值 BNB；取价失败则用 .env POST_FEE（BNB 单位）兜底
-# 打赏平台抽成比例（7% 平台建设费，93% 给作者；打赏必须先打到平台钱包，再由平台转给作者）
+# 打赏平台抽成比例（7% 平台建设费，93% 给作者）
 TIP_PLATFORM_FEE_PERCENT = 7
 POST_FEE_FALLBACK_BNB = os.environ.get('POST_FEE', '0.001')
 app.config['BSC'] = {
@@ -286,7 +291,7 @@ class Post(db.Model):
     votes = db.relationship('Vote', backref='post', lazy='dynamic') # Votes relationship
     original_post = db.relationship('Post', remote_side=[id], backref='reposts')
     
-    def to_dict(self, current_user_id=None):
+    def to_dict(self, current_user_id=None, likes_count=None, comments_count=None):
         try:
             images_list = json.loads(self.images) if self.images else []
         except (TypeError, ValueError):
@@ -296,7 +301,7 @@ class Post(db.Model):
         if current_user_id:
             is_liked = Like.query.filter_by(user_id=current_user_id, post_id=self.id).first() is not None
             is_bookmarked = Bookmark.query.filter_by(user_id=current_user_id, post_id=self.id).first() is not None
-            
+
         original_post_data = None
         if self.original_post:
             op_author = self.original_post.author.to_dict() if self.original_post.author else {'id': self.original_post.author_id, 'nickname': '已注销', 'avatar': '👻'}
@@ -306,7 +311,9 @@ class Post(db.Model):
                 'content': self.original_post.content,
                 'author': op_author
             }
-            
+
+        lc = likes_count if likes_count is not None else self.likes.count()
+        cc = comments_count if comments_count is not None else self.comments.count()
         return {
             'id': self.id,
             'title': self.title,
@@ -315,8 +322,8 @@ class Post(db.Model):
             'images': images_list,
             'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻'},
             'view_count': self.view_count,
-            'likes_count': self.likes.count(),
-            'comments_count': self.comments.count(),
+            'likes_count': lc,
+            'comments_count': cc,
             'votes': [v.to_dict() for v in self.votes], # Return votes
             'is_liked': is_liked,
             'is_bookmarked': is_bookmarked,
@@ -820,8 +827,8 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
                 continue
         if latest is None:
             return False, 'Could not get latest block for confirmation'
-        if latest - current_block < 1:
-            return False, 'Transaction needs at least 1 block confirmation'
+        if latest - current_block < TX_CONFIRMATIONS_NEEDED:
+            return False, f'Transaction needs at least {TX_CONFIRMATIONS_NEEDED} block confirmations'
 
     try:
         # 1. Check Status (1 = Success)
@@ -968,7 +975,7 @@ def verify_signature():
     
     token = jwt.encode({
         'user_id': user.id,
-        'exp': datetime.utcnow() + timedelta(days=7)
+        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, app.config['SECRET_KEY'], algorithm='HS256')
     
     return jsonify({'token': token, 'user': user.to_dict()})
@@ -1001,7 +1008,7 @@ def register():
         
         token = jwt.encode({
             'user_id': user.id,
-            'exp': datetime.utcnow() + timedelta(days=7)
+            'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
         }, app.config['SECRET_KEY'], algorithm='HS256')
         
         return jsonify({'token': token, 'user': user.to_dict()}), 201
@@ -1019,7 +1026,7 @@ def login():
     if user and user.check_password(password):
         token = jwt.encode({
             'user_id': user.id,
-            'exp': datetime.utcnow() + timedelta(days=7)
+            'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
         }, app.config['SECRET_KEY'], algorithm='HS256')
         return jsonify({'token': token, 'user': user.to_dict()})
     
@@ -1208,18 +1215,21 @@ def admin_stats():
     web3_posts = Post.query.filter(Post.post_type == 1).count() # Or filter by tx_hash
     web2_posts = total_posts - web3_posts
     
-    # Calculate revenue (Approximation: web3_posts * POST_FEE)
-    # Note: fee is in Wei (int), convert to Ether for display
     fee_wei = app.config['BSC']['POST_FEE']
     total_revenue_wei = web3_posts * fee_wei
-    total_revenue_bnb = w3.from_wei(total_revenue_wei, 'ether')
-    
+    try:
+        total_revenue_bnb = float(w3.from_wei(total_revenue_wei, 'ether'))
+        fee_per_post_bnb = float(w3.from_wei(fee_wei, 'ether'))
+    except Exception:
+        total_revenue_bnb = 0.0
+        fee_per_post_bnb = 0.0
+
     return jsonify({
         'users': {
             'total': total_users,
             'web3': web3_users,
             'web2': web2_users,
-            'retention_rate': 'N/A' # Requires login history tracking
+            'retention_rate': 'N/A'
         },
         'posts': {
             'total': total_posts,
@@ -1227,8 +1237,8 @@ def admin_stats():
             'web2': web2_posts
         },
         'revenue': {
-            'total_bnb': float(total_revenue_bnb),
-            'fee_per_post': float(w3.from_wei(fee_wei, 'ether'))
+            'total_bnb': total_revenue_bnb,
+            'fee_per_post': fee_per_post_bnb
         }
     })
 
@@ -1236,20 +1246,51 @@ def admin_stats():
 def get_user_profile(username):
     user = User.query.filter_by(username=username).first()
     if not user:
-        # Try finding by address
         if username.startswith('0x'):
             user = User.query.filter_by(address=username).first()
-            
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
+    current_user_id = None
+    if 'Authorization' in request.headers:
+        try:
+            token = request.headers['Authorization'].split(" ")[1]
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user_id = data['user_id']
+        except Exception:
+            pass
+
     posts = Post.query.filter_by(author_id=user.id, is_hidden=False).order_by(Post.created_at.desc()).all()
+    post_ids = [p.id for p in posts]
+    user_likes = set()
+    user_bookmarks = set()
+    like_counts = {}
+    comment_counts = {}
+    if post_ids:
+        if current_user_id:
+            user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
+            user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
+        like_rows = db.session.query(Like.post_id, func.count(Like.id)).filter(Like.post_id.in_(post_ids)).group_by(Like.post_id).all()
+        like_counts = {r[0]: r[1] for r in like_rows}
+        comment_rows = db.session.query(Comment.post_id, func.count(Comment.id)).filter(Comment.post_id.in_(post_ids)).group_by(Comment.post_id).all()
+        comment_counts = {r[0]: r[1] for r in comment_rows}
+
     user_data = user.to_dict()
     user_data['posts_count'] = len(posts)
+    posts_data = []
+    for p in posts:
+        p_dict = p.to_dict(
+            current_user_id,
+            likes_count=like_counts.get(p.id, 0),
+            comments_count=comment_counts.get(p.id, 0)
+        )
+        p_dict['is_liked'] = p.id in user_likes
+        p_dict['is_bookmarked'] = p.id in user_bookmarks
+        posts_data.append(p_dict)
 
     return jsonify({
         'user': user_data,
-        'posts': [p.to_dict() for p in posts]
+        'posts': posts_data
     })
 
 @app.route('/api/notifications', methods=['GET'])
@@ -1447,7 +1488,7 @@ def get_posts():
         query = Post.query.options(joinedload(Post.author), joinedload(Post.votes))
         if sort_by == 'bookmarks':
             if current_user_id:
-                query = query.join(Bookmark).filter(Bookmark.user_id == current_user_id)
+                query = query.join(Bookmark, Post.id == Bookmark.post_id).filter(Bookmark.user_id == current_user_id).order_by(Post.created_at.desc())
             else:
                 return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
         else:
@@ -1459,16 +1500,27 @@ def get_posts():
             query = query.filter_by(is_hidden=False)
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         posts = pagination.items
+        post_ids = [p.id for p in posts]
         user_likes = set()
         user_bookmarks = set()
-        if current_user_id and posts:
-            post_ids = [p.id for p in posts]
-            user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
-            user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
+        like_counts = {}
+        comment_counts = {}
+        if post_ids:
+            if current_user_id:
+                user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
+                user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
+            like_rows = db.session.query(Like.post_id, func.count(Like.id)).filter(Like.post_id.in_(post_ids)).group_by(Like.post_id).all()
+            like_counts = {r[0]: r[1] for r in like_rows}
+            comment_rows = db.session.query(Comment.post_id, func.count(Comment.id)).filter(Comment.post_id.in_(post_ids)).group_by(Comment.post_id).all()
+            comment_counts = {r[0]: r[1] for r in comment_rows}
         posts_data = []
         for p in posts:
             try:
-                p_dict = p.to_dict()
+                p_dict = p.to_dict(
+                    current_user_id,
+                    likes_count=like_counts.get(p.id, 0),
+                    comments_count=comment_counts.get(p.id, 0)
+                )
                 p_dict['is_liked'] = p.id in user_likes
                 p_dict['is_bookmarked'] = p.id in user_bookmarks
                 posts_data.append(p_dict)
@@ -1478,6 +1530,8 @@ def get_posts():
     except Exception as e:
         traceback.print_exc()
         print(f"[get_posts] ERROR (using fallback): {e}")
+        if sort_by == 'bookmarks':
+            return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
         try:
             posts_data, total, pages = _get_posts_fallback(page, per_page, current_user_id)
             return jsonify({'posts': posts_data, 'total': total, 'pages': pages, 'current_page': page})
@@ -1675,6 +1729,25 @@ def get_post_detail(post_id):
     except Exception as e:
         print(f"Post Detail Error: {e}")
         return jsonify({'error': 'Failed to load post'}), 500
+
+@app.route('/api/posts/<int:post_id>/mint-nft', methods=['POST'])
+@token_required
+def trigger_mint_nft(post_id):
+    """手动触发为帖子铸造 NFT（仅作者或管理员；帖子需有永存档案且尚未铸造）。"""
+    post = Post.query.get_or_404(post_id)
+    if post.author_id != g.current_user.id and not getattr(g.current_user, 'is_admin', False):
+        return jsonify({'error': '仅作者或管理员可操作'}), 403
+    if not post.ipfs_cid:
+        return jsonify({'error': '该帖子暂无永存档案，无法铸造 NFT'}), 400
+    if getattr(post, 'nft_token_id', None) is not None or getattr(post, 'nft_tx_hash', None):
+        return jsonify({'error': '该帖子已铸造过 NFT'}), 400
+    if not ADMIN_PRIVATE_KEY or not NFT_CONTRACT_ADDRESS:
+        return jsonify({'error': 'NFT 铸造未配置'}), 503
+    to_address = (post.author.wallet_address or post.author.address or '').strip()
+    if not to_address or not Web3.is_address(to_address):
+        return jsonify({'error': '作者未绑定钱包，无法铸造 NFT'}), 400
+    threading.Thread(target=async_mint_nft_for_post, args=(post.id,), daemon=True).start()
+    return jsonify({'message': 'NFT 铸造已提交，请稍后在帖子详情查看'}), 202
 
 @app.route('/api/posts/<int:post_id>/repost', methods=['POST'])
 @token_required
