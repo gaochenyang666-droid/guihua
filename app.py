@@ -157,14 +157,15 @@ def try_send_tip_payout(tip, author_wei):
         if platform_address.lower() != (app.config['BSC']['RECEIVE_ADDRESS'] or '').lower():
             return ('failed', 'Platform key does not match RECEIVE_ADDRESS')
         nonce = w3_conn.eth.get_transaction_count(platform_address)
-        gas_price = w3_conn.eth.gas_price
+        base_gas = w3_conn.eth.gas_price
+        gas_price = min(int(base_gas * 1.1), Web3.to_wei(20, 'gwei'))
         tx = {
             'nonce': nonce,
             'chainId': app.config['BSC']['CHAIN_ID'],
             'to': Web3.to_checksum_address(author_address),
             'value': author_wei,
             'gas': 21000,
-            'gasPrice': gas_price
+            'gasPrice': gas_price  # 1.1x 实时 gas，上限 20 gwei
         }
         signed = account.sign_transaction(tx)
         tx_hash = w3_conn.eth.send_raw_transaction(signed.raw_transaction)
@@ -692,10 +693,13 @@ def mint_nft(to_address, token_uri):
             address=Web3.to_checksum_address(NFT_CONTRACT_ADDRESS),
             abi=NFT_MINT_ABI
         )
+        gas_price = w3_conn.eth.gas_price
+        gas_price = min(int(gas_price * 1.1), Web3.to_wei(20, 'gwei'))
         tx = contract.functions.mint(Web3.to_checksum_address(to_address), token_uri).build_transaction({
             'from': account.address,
             'nonce': w3_conn.eth.get_transaction_count(account.address),
             'gas': 200000,
+            'gasPrice': gas_price,
             'chainId': app.config['BSC']['CHAIN_ID']
         })
         signed = account.sign_transaction(tx)
@@ -801,6 +805,23 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
     if not tx or not receipt:
         print(f"Timeout verifying tx: {tx_hash}")
         return False, 'Transaction not found on chain (timeout)'
+
+    # 防回滚：要求交易所在区块已被至少 1 个新区块确认（避免链重组导致假充值）
+    current_block = receipt.get('blockNumber')
+    if current_block is not None:
+        latest = None
+        for rpc in BSC_RPC_LIST:
+            try:
+                provider = Web3(Web3.HTTPProvider(rpc))
+                provider.middleware_onion.inject(geth_poa_middleware, layer=0)
+                latest = provider.eth.block_number
+                break
+            except Exception:
+                continue
+        if latest is None:
+            return False, 'Could not get latest block for confirmation'
+        if latest - current_block < 1:
+            return False, 'Transaction needs at least 1 block confirmation'
 
     try:
         # 1. Check Status (1 = Success)

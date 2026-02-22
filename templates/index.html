@@ -619,9 +619,16 @@
                     if (this.currentQuery) endpoint = `${API_BASE}/search`;
                     
                     const res = await fetch(`${endpoint}?${qParams.toString()}`, { headers });
-                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-                
-                const data = await res.json();
+                let data;
+                try {
+                    data = await res.json();
+                } catch (_) {
+                    data = {};
+                }
+                if (!res.ok) {
+                    const msg = (data && data.error) || (res.status >= 500 ? '服务暂时不可用，请稍后重试' : `请求失败(${res.status})`);
+                    throw new Error(msg);
+                }
                 
                 if (data.posts) {
                     if(this.currentPage === 1) {
@@ -646,10 +653,10 @@
                     }
                 }
                 } catch (e) {
-                    console.error("Failed to load posts:", e);
-                    if(this.currentPage === 1) {
-                        document.getElementById('loadingArea').innerHTML = 
-                            `<div style="color:var(--accent-red)">加载失败: ${e.message}<br><button class="btn btn-ghost" onclick="Post.load()">重试</button></div>`;
+                    if (this.currentPage === 1) {
+                        const loadingEl = document.getElementById('loadingArea');
+                        const msg = (e && e.message) || '网络异常或服务暂时不可用';
+                        loadingEl.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${msg}</div><button class="btn btn-ghost" onclick="Post.load()" style="margin-top:0.5rem;">重试</button>`;
                     }
                 } finally {
                     this.isLoading = false;
