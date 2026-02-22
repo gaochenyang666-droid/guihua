@@ -2690,46 +2690,60 @@ def init_db_data():
 # 数据库变更请使用 Flask-Migrate (alembic)，勿用 drop_all
 
 def _ensure_users_wallet_address():
-    """启动时确保 users 表存在 wallet_address 列（Render 等可能为旧 schema）。"""
+    """启动时确保 users 表存在 wallet_address 列（Render 等可能为旧 schema）。仅在实际变更时打日志。"""
     from sqlalchemy import text
     if db.engine.dialect.name != 'postgresql':
         return
     try:
-        db.session.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address VARCHAR(42)'))
+        r = db.session.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='wallet_address'"
+        ))
+        if r.scalar() is not None:
+            return
+        db.session.execute(text('ALTER TABLE users ADD COLUMN wallet_address VARCHAR(42)'))
         db.session.commit()
-        print('[Startup] users.wallet_address ensured.')
+        print('[Startup] users.wallet_address added.')
     except Exception as e:
         db.session.rollback()
         if 'already exists' not in str(e).lower():
             print(f'[Startup] users.wallet_address skip: {e}')
 
 def _ensure_posts_nft_columns():
-    """启动时确保 posts 表存在 nft_token_id、nft_tx_hash 列（Render 等可能未跑过迁移）。"""
+    """启动时确保 posts 表存在 nft_token_id、nft_tx_hash 列。仅在实际变更时打日志。"""
     from sqlalchemy import text
     if db.engine.dialect.name != 'postgresql':
         return
     for col, sql in (
-        ('nft_token_id', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS nft_token_id BIGINT'),
-        ('nft_tx_hash', 'ALTER TABLE posts ADD COLUMN IF NOT EXISTS nft_tx_hash VARCHAR(66)'),
+        ('nft_token_id', 'ALTER TABLE posts ADD COLUMN nft_token_id BIGINT'),
+        ('nft_tx_hash', 'ALTER TABLE posts ADD COLUMN nft_tx_hash VARCHAR(66)'),
     ):
         try:
+            r = db.session.execute(text(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name=:col"
+            ), {'col': col})
+            if r.scalar() is not None:
+                continue
             db.session.execute(text(sql))
             db.session.commit()
-            print(f'[Startup] posts.{col} ensured.')
+            print(f'[Startup] posts.{col} added.')
         except Exception as e:
             db.session.rollback()
-            if 'already exists' in str(e).lower():
-                pass
-            else:
+            if 'already exists' not in str(e).lower():
                 print(f'[Startup] posts.{col} skip: {e}')
 
 def _ensure_posts_tx_nullable():
-    """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL，便于管理员直接发帖（Render 等可能曾用旧 schema）。"""
+    """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
     from sqlalchemy import text
     if db.engine.dialect.name != 'postgresql':
         return
     for col in ('tx_hash', 'ipfs_cid'):
         try:
+            r = db.session.execute(text(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_name='posts' AND column_name=:col"
+            ), {'col': col})
+            row = r.fetchone()
+            if not row or row[0] == 'YES':
+                continue
             db.session.execute(text(f'ALTER TABLE posts ALTER COLUMN {col} DROP NOT NULL'))
             db.session.commit()
             print(f'[Startup] posts.{col} set nullable.')
