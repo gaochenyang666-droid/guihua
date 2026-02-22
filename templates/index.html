@@ -1106,7 +1106,6 @@
                                 `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>` :
                                 `<a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-green);">💾 永存档案 IPFS</a>`
                             ) : ''}
-                            ${p.nft_tx_hash ? `<a href="https://bscscan.com/tx/${p.nft_tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-cyan, #0ea5e9);">🖼 NFT 铸造 BSCScan</a>` : ''}
                         </div>
                     </div>
                     
@@ -1116,7 +1115,6 @@
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id})">💰 打赏作者</button>` : ''}
                         ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
-                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-cyan, #0ea5e9);" onclick="Interact.mintNft(${p.id})">🖼 制作 NFT</button>` : ''}
                     </div>
 
                     ${adminControls}

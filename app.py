@@ -613,58 +613,86 @@ def get_arweave_wallet():
 
 def upload_to_arweave_native(data):
     """
-    Upload JSON data to Arweave Permanent Storage
-    Returns: Transaction ID (TXID)
+    Upload JSON data to Arweave Permanent Storage.
+    Returns: (tx_id, error_msg). tx_id 成功时为字符串，失败时为 None；error_msg 失败时简短原因。
     """
     wallet = get_arweave_wallet()
-    
     if not wallet:
-        print("Arweave wallet not found (Check AR_KEY_DATA or ar_key.json)")
-        # In dev mode, generate a mock Arweave TXID
+        msg = "Arweave 钱包未配置（请设置 AR_KEY_DATA 或 AR_KEY_FILE 或放置 ar_key.json）"
+        print(msg)
         if app.config.get('DEBUG'):
-            return 'ArMock_' + secrets.token_hex(20)
-        return None
-        
+            return ('ArMock_' + secrets.token_hex(20), None)
+        return (None, msg)
     try:
-        # Prepare data
         json_str = json.dumps(data)
-        
-        # Create and sign transaction
         transaction = Transaction(wallet, data=json_str)
         transaction.add_tag('Content-Type', 'application/json')
         transaction.add_tag('App-Name', 'GuiHua-Web3')
         transaction.add_tag('App-Version', '1.0.0')
         transaction.add_tag('Unix-Time', str(int(time.time())))
-        
         transaction.sign()
         transaction.send()
-        
         print(f"Arweave Upload Success: {transaction.id}")
-        return transaction.id
+        return (transaction.id, None)
     except Exception as e:
+        msg = str(e)[:200]
         print(f"Arweave Upload Error: {e}")
-        return None
+        return (None, f"Arweave 上传异常: {msg}")
+
+
+def upload_to_pinata_with_reason(json_data):
+    """Pinata 上传，返回 (cid, error_msg)。"""
+    if not PINATA_API_KEY or not PINATA_SECRET_API_KEY:
+        msg = "Pinata 未配置（需设置 PINATA_API_KEY 与 PINATA_SECRET_API_KEY）"
+        print(msg)
+        if app.config.get('DEBUG'):
+            return ('Qm' + secrets.token_hex(22) + '(Mock)', None)
+        return (None, msg)
+    url = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
+    headers = {
+        "pinata_api_key": PINATA_API_KEY,
+        "pinata_secret_api_key": PINATA_SECRET_API_KEY,
+        "Content-Type": "application/json"
+    }
+    try:
+        response = requests.post(url, json=json_data, headers=headers, timeout=_REQUESTS_TIMEOUT)
+        if response.status_code == 200:
+            cid = response.json().get('IpfsHash')
+            if cid:
+                return (cid, None)
+            return (None, "Pinata 返回无 IpfsHash")
+        return (None, f"Pinata HTTP {response.status_code}: {response.text[:150]}")
+    except requests.Timeout:
+        return (None, "Pinata 请求超时")
+    except Exception as e:
+        return (None, f"Pinata 异常: {str(e)[:150]}")
 
 
 def upload_to_arweave_with_retry(data, retries=3):
     """
     支付发帖流程专用：必须写入永存档案。先尝试 Arweave（可重试），失败则尝试 Pinata。
-    返回 (storage_id, 'arweave'|'ipfs'|None), 若为 None 表示都失败。
+    返回 (storage_id, 'arweave'|'ipfs', last_error)。storage_id 为 None 时 last_error 为最后失败原因。
     """
+    last_error = None
     for attempt in range(max(1, retries + 1)):
-        tx_id = upload_to_arweave_native(data)
+        tx_id, err = upload_to_arweave_native(data)
         if tx_id:
-            return (tx_id, 'arweave')
+            return (tx_id, 'arweave', None)
+        last_error = err
         if attempt < retries:
             time.sleep(3)
     if PINATA_API_KEY and PINATA_SECRET_API_KEY:
         for attempt in range(2):
-            cid = upload_to_pinata(data)
+            cid, err = upload_to_pinata_with_reason(data)
             if cid:
-                return (cid, 'ipfs')
+                return (cid, 'ipfs', None)
+            last_error = err
             if attempt < 1:
                 time.sleep(2)
-    return (None, None)
+    else:
+        if not last_error:
+            last_error = "Pinata 未配置，无法兜底"
+    return (None, None, last_error)
 
 
 def build_and_upload_nft_metadata(post):
@@ -686,7 +714,7 @@ def build_and_upload_nft_metadata(post):
             "post_id": post.id,
             "created_at": post.created_at.isoformat() if post.created_at else ""
         }
-        tx_id = upload_to_arweave_native(metadata)
+        tx_id, _ = upload_to_arweave_native(metadata)
         return tx_id
     except Exception as e:
         print(f"NFT metadata upload error: {e}")
@@ -1640,12 +1668,13 @@ def create_post():
             'region': region,
             'platform': 'GuiHua Web3 (Arweave)'
         }
-        storage_id, storage_type = upload_to_arweave_with_retry(payload, retries=3)
+        storage_id, storage_type, last_error = upload_to_arweave_with_retry(payload, retries=3)
         if not storage_id:
-            return jsonify({
-                'error': '永存档案写入失败（Arweave/Pinata 暂时不可用）。您的支付已确认，无需再次支付，请稍后点击「重试发布」再试；若多次失败请检查服务端 Arweave 钱包余额或 Pinata 配置。',
-                'code': 'ARWEAVE_FAIL'
-            }), 503
+            print(f"[create_post] 永存档案写入失败: {last_error}")
+            err_msg = '永存档案写入失败。您的支付已确认，无需再次支付，请稍后点击「重试发布」再试。'
+            if last_error:
+                err_msg += f' 原因: {last_error}'
+            return jsonify({'error': err_msg, 'code': 'ARWEAVE_FAIL'}), 503
         ipfs_cid = storage_id
 
     # 防重复：保存前再次确认该交易哈希未被任何帖子使用（与 verify_transaction + unique 约束三重保险，防并发）
@@ -1772,8 +1801,8 @@ def sync_post_to_arweave(post_id):
         'region': getattr(post, 'region', '其他') or '其他',
         'platform': 'GuiHua Web3 (Arweave)'
     }
-    ar_tx_id = upload_to_arweave_native(payload)
-    if not ar_tx_id and PINATA_API_KEY:
+    ar_tx_id, _ = upload_to_arweave_native(payload)
+    if not ar_tx_id and PINATA_API_KEY and PINATA_SECRET_API_KEY:
         ar_tx_id = upload_to_pinata(payload)
     if not ar_tx_id:
         return jsonify({'error': 'Arweave 与备用存储均失败，请稍后重试'}), 503
@@ -1989,7 +2018,7 @@ def upload_ipfs():
     data['pinned_at'] = datetime.utcnow().isoformat()
     
     # Try Arweave first
-    ar_id = upload_to_arweave_native(data)
+    ar_id, _ = upload_to_arweave_native(data)
     if ar_id:
         return jsonify({'cid': ar_id, 'storage': 'arweave'})
     

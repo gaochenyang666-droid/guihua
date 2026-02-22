@@ -158,7 +158,6 @@
                         const url = isAr ? 'https://arweave.net/' + p.ipfs_cid : 'https://ipfs.io/ipfs/' + p.ipfs_cid;
                         parts.push('<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>');
                     }
-                    if (p.nft_tx_hash) parts.push('<a href="https://bscscan.com/tx/' + p.nft_tx_hash + '" target="_blank" rel="noopener" style="color:#0ea5e9;">🖼 NFT 铸造</a>');
                     return parts.length ? '<div style="margin-top:0.4rem; font-size:0.75rem;">链上证据: ' + parts.join(' · ') + '</div>' : '';
                 };
                 document.getElementById('postsArea').innerHTML = posts.map(p => `
