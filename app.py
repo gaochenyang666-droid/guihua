@@ -71,8 +71,8 @@ else:
     try:
         with open(secret_file, 'w') as f:
             f.write(app.config['SECRET_KEY'])
-    except:
-        pass # In read-only envs, fallback to memory key (will reset on restart)
+    except OSError as e:
+        print(f"Could not write secret key file: {e}")
 
 if not app.config['SECRET_KEY']:
     raise ValueError("No SECRET_KEY set for Flask application")
@@ -134,9 +134,10 @@ def get_working_web3():
             if provider.is_connected():
                 print(f"Connected to backup RPC: {rpc}")
                 return provider
-        except:
+        except Exception as e:
+            print(f"RPC {rpc[:50]}... connect failed: {e}")
             continue
-    return w3 # Return default even if failed, to let caller handle error
+    return w3
 
 # 平台热钱包私钥（用于打赏自动打款：从平台钱包把 93% 转给作者）。不配置则只记账不自动转款
 PLATFORM_PRIVATE_KEY = os.environ.get('PLATFORM_PRIVATE_KEY')
@@ -484,6 +485,7 @@ def get_random_avatar():
     return random.choice(ALLOWED_AVATARS)
 
 IMGBB_MAX_SIZE = 2 * 1024 * 1024  # 2MB
+_REQUESTS_TIMEOUT = 30  # 所有 requests 统一超时，防止第三方拖垮进程
 IMGBB_ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 # 只允许图片 MIME，防止伪扩展名（如 .php/.svg 嵌 JS）导致的安全问题
 IMGBB_ALLOWED_MIMES = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
@@ -509,11 +511,14 @@ def upload_to_imgbb(file):
             "key": IMGBB_API_KEY,
             "image": img_b64
         }
-        response = requests.post("https://api.imgbb.com/1/upload", data=payload)
+        response = requests.post("https://api.imgbb.com/1/upload", data=payload, timeout=_REQUESTS_TIMEOUT)
         if response.status_code == 200:
             json_resp = response.json()
             if 'data' in json_resp and 'url' in json_resp['data']:
                 return json_resp['data']['url']
+        return None
+    except requests.Timeout:
+        print("ImgBB Error: upload timeout")
         return None
     except Exception as e:
         print(f"ImgBB Error: {e}")
@@ -534,10 +539,13 @@ def upload_to_pinata(json_data):
         "Content-Type": "application/json"
     }
     try:
-        response = requests.post(url, json=json_data, headers=headers)
+        response = requests.post(url, json=json_data, headers=headers, timeout=_REQUESTS_TIMEOUT)
         if response.status_code == 200:
-            return response.json()['IpfsHash']
+            return response.json().get('IpfsHash')
         print(f"Pinata Error: {response.text}")
+        return None
+    except requests.Timeout:
+        print("Pinata Error: request timeout")
         return None
     except Exception as e:
         print(f"Pinata Exception: {e}")
@@ -874,10 +882,9 @@ def get_nonce():
     address = request.args.get('address')
     if not address: return jsonify({'error': 'Missing address'}), 400
     
-    # Normalize address
     try:
         address = Web3.to_checksum_address(address)
-    except:
+    except (ValueError, AttributeError):
         return jsonify({'error': 'Invalid address format'}), 400
 
     user = User.query.filter_by(address=address).first()
@@ -903,12 +910,11 @@ def verify_signature():
     signature = data.get('signature')
     message = data.get('message')
     
-    # Normalize address
     try:
         address = Web3.to_checksum_address(address)
-    except:
+    except (ValueError, AttributeError):
         return jsonify({'error': 'Invalid address format'}), 400
-    
+
     # In production, verify signature here using web3
     from eth_account.messages import encode_defunct
     from eth_account import Account
@@ -1143,6 +1149,8 @@ def search_posts():
     q = request.args.get('q', '').strip()
     if not q:
         return jsonify({'posts': []})
+    if len(q) > 200:
+        return jsonify({'error': 'Search query too long', 'posts': []}), 400
     # 转义 LIKE 通配符，防止 %/_ 导致全表扫描或注入
     escaped_q = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
     posts = Post.query.filter(
@@ -1630,8 +1638,9 @@ def get_post_detail(post_id):
                 token = request.headers['Authorization'].split(" ")[1]
                 data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
                 current_user_id = data['user_id']
-            except: pass
-            
+            except (IndexError, jwt.PyJWTError, KeyError):
+                pass
+
         post_data = post.to_dict(current_user_id)
 
         from sqlalchemy.orm import joinedload
