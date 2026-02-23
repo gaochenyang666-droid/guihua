@@ -134,11 +134,9 @@
                                 <div class="stat-label">获赞</div>
                             </div>
                         </div>
-                        ${isMe ? '<div id="revenueCard" style="margin-top:1rem; padding:0.8rem; background:rgba(255,215,0,0.08); border:1px solid var(--accent-gold); border-radius:8px;"><div style="font-size:0.85rem; color:var(--text-secondary);">打赏收入（可提现）</div><div id="revenueBalance" style="font-size:1.2rem; font-weight:bold; color:var(--accent-gold);">— USDT</div><div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">提现最低 10 USDT，将打至您绑定的钱包</div><button type="button" class="btn btn-ghost btn-sm" id="withdrawBtn" style="margin-top:0.5rem; color:var(--accent-gold); border-color:var(--accent-gold);" onclick="Withdraw.do()">💰 提现到绑定钱包</button></div>' : ''}
                     </div>
                 </div>
             `;
-            if (isMe) loadMyRevenue();
             
             if(posts && posts.length > 0) {
                 const proofLink = (p) => {
@@ -186,54 +184,6 @@
                 showProfileError('加载帖子失败', true);
             }
         }
-
-        async function loadMyRevenue() {
-            const card = document.getElementById('revenueCard');
-            const balanceEl = document.getElementById('revenueBalance');
-            const btn = document.getElementById('withdrawBtn');
-            if (!card || !balanceEl) return;
-            const token = localStorage.getItem('token');
-            if (!token) return;
-            try {
-                const res = await fetch(`${API_BASE}/user/revenue`, { headers: { 'Authorization': `Bearer ${token}` } });
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) { balanceEl.textContent = '— USDT'; return; }
-                const usdt = (data.withdrawable_balance_usdt != null ? data.withdrawable_balance_usdt : 0).toFixed(2);
-                const minUsdt = (data.min_withdraw_usdt != null ? data.min_withdraw_usdt : 10);
-                balanceEl.textContent = usdt + ' USDT';
-                if (btn) btn.disabled = parseFloat(usdt) < minUsdt;
-            } catch (e) {
-                balanceEl.textContent = '— USDT';
-            }
-        }
-
-        const Withdraw = {
-            async do() {
-                const token = localStorage.getItem('token');
-                if (!token) { if (typeof Toast !== 'undefined') Toast.error('请先登录'); return; }
-                const btn = document.getElementById('withdrawBtn');
-                if (btn) btn.disabled = true;
-                try {
-                    const res = await fetch(`${API_BASE}/user/withdraw`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({})
-                    });
-                    const data = await res.json().catch(() => ({}));
-                    if (res.ok) {
-                        if (typeof Toast !== 'undefined') Toast.success('提现成功，交易哈希: ' + (data.tx_hash || '').slice(0, 18) + '...'); else alert('提现成功');
-                        loadMyRevenue();
-                    } else {
-                        if (typeof Toast !== 'undefined') Toast.error(data.error || '提现失败'); else alert(data.error || '提现失败');
-                    }
-                } catch (e) {
-                    if (typeof Toast !== 'undefined') Toast.error(e.message || '网络错误'); else alert(e.message || '网络错误');
-                } finally {
-                    const b = document.getElementById('withdrawBtn');
-                    if (b) b.disabled = false;
-                }
-            }
-        };
 
         const EditProfile = {
             open() {

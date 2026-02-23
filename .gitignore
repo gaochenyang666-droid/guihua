@@ -14,4 +14,5 @@ requirements_dev.txt
 ar_key.json
 arweave-key.json
 .secret_key
+static/uploads/
 # *.json # Do not ignore all json files, we need manifest.json
