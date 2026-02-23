@@ -292,13 +292,13 @@
                 formData.append('file', file, file.name || 'cover.png');
                 try {
                     const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData });
-                    const data = await res.json().catch(() => ({}));
-                    if (res.ok && data.url) {
-                        document.getElementById('studioPostImage').value = data.url;
-                        this.previewCover(data.url);
+                    const resp = await res.json().catch(() => ({}));
+                    if (res.ok && resp.url) {
+                        document.getElementById('studioPostImage').value = resp.url;
+                        this.previewCover(resp.url);
                         Toast.success('封面已上传');
                     } else {
-                        Toast.error(data.error || '封面上传失败');
+                        Toast.error(resp.error || '封面上传失败');
                     }
                 } catch(e) { Toast.error('网络错误'); }
             },
@@ -645,9 +645,9 @@
                     
                     try {
                         const res = await fetch(`${API_BASE}/posts/check_tx?tx_hash=${txHash}`);
-                        const data = await res.json();
+                        const resp = await res.json();
                         
-                        if (data.status === 'success') {
+                        if (resp.status === 'success') {
                             this.addLog("✅ 服务器确认成功!");
                             Draft.clear();
                             Toast.success('发布成功');
@@ -862,13 +862,13 @@
                         })
                     });
                     if (handle401(res)) return;
-                    const data = await res.json().catch(() => ({}));
+                    const resp = await res.json().catch(() => ({}));
                     if (res.ok) {
                         Draft.clear();
                         Toast.success('已发布（普通帖，未上链）');
                         setTimeout(() => { window.location.href = '/'; }, 1500);
                     } else {
-                        Toast.error(data.error || '发布失败');
+                        Toast.error(resp.error || '发布失败');
                     }
                 } catch (e) {
                     Toast.error('发布失败: ' + (e.message || '网络错误'));
@@ -944,22 +944,22 @@
                         return;
                     }
                     try {
-                        let data = await compressImage(file, 1000, 0.7).catch(() => file);
+                        const compressedFile = await compressImage(file, 1000, 0.7).catch(() => file);
                         const formData = new FormData();
-                        formData.append('file', data, (file.name || 'image.jpg').replace(/\.[^.]+$/, '.jpg'));
+                        formData.append('file', compressedFile, (file.name || 'image.jpg').replace(/\.[^.]+$/, '.jpg'));
                         const res = await fetch(API_BASE + '/upload', {
                             method: 'POST',
                             headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
                             body: formData
                         });
-                        const data = await res.json().catch(() => ({}));
-                        if (res.ok && data.url) {
+                        const resp = await res.json().catch(() => ({}));
+                        if (res.ok && resp.url) {
                             const range = studioQuill.getSelection(true) || { index: studioQuill.getLength() };
-                            studioQuill.insertEmbed(range.index, 'image', data.url);
+                            studioQuill.insertEmbed(range.index, 'image', resp.url);
                             studioQuill.setSelection(range.index + 1);
                             if (typeof Toast !== 'undefined') Toast.success('图片已插入');
                         } else {
-                            if (typeof Toast !== 'undefined') Toast.error(data.error || '上传失败');
+                            if (typeof Toast !== 'undefined') Toast.error(resp.error || '上传失败');
                         }
                     } catch (e) {
                         if (typeof Toast !== 'undefined') Toast.error('上传失败: ' + (e.message || '网络错误'));

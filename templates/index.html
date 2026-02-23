@@ -249,7 +249,7 @@
         </div>
     </div>
 
-    <!-- 打赏作者模态框：USDT，7% 建设费，93% 给作者 -->
+    <!-- 打赏作者模态框：USDT 直接转入作者钱包，不经过平台、无抽成 -->
     <div class="modal-overlay" id="tipAuthorModal" onclick="Modal.close('tipAuthorModal')">
         <div class="modal glass" style="text-align: left;" onclick="event.stopPropagation()">
             <div class="modal-header">
@@ -257,7 +257,7 @@
                 <button class="modal-close" onclick="Modal.close('tipAuthorModal')">&times;</button>
             </div>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
-                打赏进入平台钱包，<strong style="color: var(--accent-gold);">7%</strong> 为建设费，<strong style="color: var(--accent-green);">93%</strong> 计入作者可提现余额，作者可在「我的主页」提现。
+                打赏将<strong style="color: var(--accent-green);">直接转入作者登录/绑定的钱包</strong>，不经过平台、无抽成。
             </p>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem;">选择金额 (USDT)</p>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.8rem;">
@@ -949,9 +949,11 @@
         };
 
         let tipAuthorPostId = null;
+        let tipAuthorWallet = '';
         const TipAuthor = {
-            open(postId) {
+            open(postId, authorWallet) {
                 tipAuthorPostId = postId;
+                tipAuthorWallet = (authorWallet || '').trim();
                 const input = document.getElementById('tipAmountInput');
                 if (input) input.value = '1';
                 Modal.open('tipAuthorModal');
@@ -959,6 +961,10 @@
             async send() {
                 if (!tipAuthorPostId || !currentUser || !currentUser.address) {
                     Toast.error('请先登录（钱包）');
+                    return;
+                }
+                if (!tipAuthorWallet) {
+                    Toast.error('作者未绑定钱包，暂无法打赏');
                     return;
                 }
                 const amountStr = (document.getElementById('tipAmountInput').value || '1').trim();
@@ -973,13 +979,13 @@
                     const web3 = new Web3(provider);
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
-                    if (!cRes.ok || !config.receive_address || !config.usdt_contract) {
-                        Toast.error('无法获取收款配置');
+                    if (!cRes.ok || !config.usdt_contract) {
+                        Toast.error('无法获取 USDT 合约配置');
                         return;
                     }
                     const amountRaw = web3.utils.toBN(web3.utils.toWei(amountUsdt.toString(), 'ether'));
                     const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
-                    const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, amountRaw]);
+                    const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [tipAuthorWallet, amountRaw]);
                     const txData = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
                     const txHash = await provider.request({
                         method: 'eth_sendTransaction',
@@ -998,13 +1004,13 @@
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
                         body: JSON.stringify({ tx_hash: txHash, post_id: tipAuthorPostId })
                     });
-                    const data = await verifyRes.json();
+                    const resp = await verifyRes.json();
                     if (verifyRes.ok) {
-                        Toast.success(`打赏成功！${data.tip.author_receives_usdt} USDT 已计入作者可提现余额`);
+                        Toast.success(`打赏成功！${resp.tip.author_receives_usdt} USDT 已直接转入作者钱包`);
                         Modal.close('tipAuthorModal');
                         Modal.openDetail(tipAuthorPostId);
                     } else {
-                        Toast.error(data.error || '验证失败');
+                        Toast.error(resp.error || '验证失败');
                     }
                 } catch (e) {
                     Toast.error(e.message || '打赏失败');
@@ -1175,7 +1181,7 @@
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.id !== p.author.id ? `<button class="btn btn-ghost" style="color:var(--text-muted); font-size:0.85rem;" onclick="Interact.report(${p.id})">🚩 举报</button>` : ''}
-                        ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id})">💰 打赏作者</button>` : ''}
+                        ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id}, ${JSON.stringify((p.author && (p.author.wallet_address || p.author.address)) || '')})">💰 打赏作者</button>` : ''}
                         ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
                     </div>
 

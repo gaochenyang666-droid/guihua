@@ -2230,7 +2230,7 @@ WITHDRAW_MIN_RAW = WITHDRAW_MIN_USDT * (10 ** USDT_DECIMALS)
 @app.route('/api/tips/verify', methods=['POST'])
 @token_required
 def verify_tip():
-    """打赏 USDT 到平台地址，仅记账：93% 计入作者可提现余额，作者可随时提现。"""
+    """打赏直接转入作者钱包：验证 USDT 转至作者地址后仅记账（展示打赏记录），不经过平台、不抽成、不写入可提现余额。"""
     data = request.get_json()
     tx_hash = data.get('tx_hash')
     post_id = data.get('post_id')
@@ -2239,13 +2239,13 @@ def verify_tip():
     post = Post.query.get_or_404(post_id)
     if not post.author:
         return jsonify({'error': 'Post author not found'}), 400
-    platform_address = app.config['BSC']['RECEIVE_ADDRESS']
-    if not platform_address:
-        return jsonify({'error': 'Platform receive address not configured'}), 503
+    author_address = (post.author.wallet_address or post.author.address or '').strip()
+    if not author_address or not Web3.is_address(author_address):
+        return jsonify({'error': '作者未绑定钱包，暂无法打赏'}), 400
     is_valid, result = verify_transaction(
         tx_hash,
         g.current_user.address,
-        expected_recipient=platform_address,
+        expected_recipient=author_address,
         min_amount=TIP_MIN_USDT_RAW,
         payment_type='usdt'
     )
@@ -2254,9 +2254,6 @@ def verify_tip():
     amount_full = int(result)
     if Tip.query.filter_by(tx_hash=tx_hash).first():
         return jsonify({'error': 'Tip already recorded'}), 400
-    fee_percent = TIP_PLATFORM_FEE_PERCENT
-    platform_fee_raw = (amount_full * fee_percent) // 100
-    author_raw = amount_full - platform_fee_raw
     decimals = app.config['BSC']['USDT_DECIMALS']
     tip = Tip(
         tx_hash=tx_hash,
@@ -2268,9 +2265,6 @@ def verify_tip():
         payout_tx_hash='0xcredited'
     )
     used_tx = UsedTransaction(tx_hash=tx_hash, user_id=g.current_user.id)
-    author = post.author
-    current_balance = int(getattr(author, 'withdrawable_balance', None) or '0')
-    author.withdrawable_balance = str(current_balance + author_raw)
     try:
         db.session.add(tip)
         db.session.add(used_tx)
@@ -2287,17 +2281,13 @@ def verify_tip():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
     amount_usdt = amount_full / (10 ** decimals)
-    platform_fee_usdt = platform_fee_raw / (10 ** decimals)
-    author_receives_usdt = author_raw / (10 ** decimals)
     return jsonify({
-        'message': '打赏成功，已计入作者可提现余额',
+        'message': '打赏成功，已直接转入作者钱包',
         'tip': {
             'amount': str(amount_full),
             'tx_hash': tx_hash,
             'amount_usdt': round(amount_usdt, 2),
-            'platform_fee_percent': fee_percent,
-            'platform_fee_usdt': round(platform_fee_usdt, 2),
-            'author_receives_usdt': round(author_receives_usdt, 2),
+            'author_receives_usdt': round(amount_usdt, 2),
         }
     })
 
@@ -2312,11 +2302,10 @@ def get_revenue():
     tips_data = []
     for tip in tips:
         full_raw = int(tip.amount)
-        author_raw = (full_raw * (100 - TIP_PLATFORM_FEE_PERCENT)) // 100
         tips_data.append({
             'from': tip.sender.nickname if tip.sender else 'Unknown',
             'post_title': tip.post.title if tip.post else 'Unknown',
-            'amount_usdt': round(author_raw / (10 ** decimals), 2),
+            'amount_usdt': round(full_raw / (10 ** decimals), 2),
             'tx_hash': tip.tx_hash,
             'created_at': tip.created_at.isoformat()
         })
@@ -2326,7 +2315,7 @@ def get_revenue():
         'min_withdraw_usdt': WITHDRAW_MIN_USDT,
         'tips': tips_data,
         'wallet_address': g.current_user.address or getattr(g.current_user, 'wallet_address', None),
-        'platform_fee_percent': TIP_PLATFORM_FEE_PERCENT
+        'platform_fee_percent': 0
     })
 
 
