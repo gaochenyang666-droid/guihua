@@ -19,6 +19,8 @@
         #quillEditorWrap .ql-toolbar .ql-fill { fill: var(--text-muted); }
         #quillEditorWrap .ql-toolbar .ql-picker { color: var(--text-secondary); }
     </style>
+    <script src="/static/common.js"></script>
+    <script src="/static/toast.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
     <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -238,23 +240,8 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script>
-        const API_BASE = '/api'; 
+        const API_BASE = window.location.origin + '/api';
         let currentUser = null;
-
-        /** 渲染带紫光特效的年份 ID，与后端年度 ID 格式一致 */
-        function formatUserId(userId) {
-            const idStr = String(userId);
-            if (idStr.length < 10) {
-                return `<span class="user-id-badge" style="color:#9ca3af;">💀 ${idStr}</span>`;
-            }
-            const year = idStr.substring(0, 4);
-            const type = idStr.substring(4, 5);
-            const yearColors = { '2025': { color: '#FF00FF', emoji: '🕯️' }, '2026': { color: '#00FFCC', emoji: '👻' } };
-            const typeConfigs = { '1': { color: '#A855F7', emoji: '🔮' }, '9': { color: '#FFD700', emoji: '👁️' } };
-            const res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
-            const glow = res.color === '#A855F7' ? '; text-shadow: 0 0 8px #A855F7, 0 0 12px #A855F7' : '';
-            return `<span class="user-id-badge" style="color:${res.color}${glow}">${res.emoji} ${idStr}</span>`;
-        }
 
         let studioQuill = null;
 
@@ -344,15 +331,6 @@
             },
             clear() { localStorage.removeItem('studio_draft'); localStorage.removeItem(PENDING_POST_KEY); }
         };
-
-        function handle401(res) {
-            if (res && res.status === 401) {
-                localStorage.removeItem('token');
-                window.location.href = '/';
-                return true;
-            }
-            return false;
-        }
 
         const Auth = {
             async init() {

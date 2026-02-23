@@ -1068,14 +1068,27 @@ def _rate_limit(key_prefix, max_per_minute=5):
     times.append(now)
     return False
 
+def _bearer_token():
+    """从 Authorization 头安全取 Bearer token，避免 split 导致 IndexError。"""
+    auth = request.headers.get('Authorization')
+    if not auth or not auth.startswith('Bearer '):
+        return None
+    return auth[7:]
+
+def _get_optional_jwt_payload():
+    """可选登录：解析 JWT，失败或缺失返回 None。"""
+    token = _bearer_token()
+    if not token:
+        return None
+    try:
+        return jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+    except Exception:
+        return None
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            parts = request.headers['Authorization'].split(" ")
-            if len(parts) == 2:
-                token = parts[1]
+        token = _bearer_token()
         
         if not token:
             return jsonify({'error': 'Token is missing'}), 401
@@ -1152,6 +1165,8 @@ def get_nonce():
 @app.route('/api/auth/verify', methods=['POST'])
 def verify_signature():
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid or empty JSON'}), 400
     address = data.get('address')
     signature = data.get('signature')
     message = data.get('message')
@@ -1239,6 +1254,8 @@ def login():
     if _rate_limit('login', 10):
         return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid or empty JSON'}), 400
     username = data.get('username')
     password = data.get('password')
     
@@ -1314,6 +1331,8 @@ def user_me():
 @token_required
 def change_password():
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
     old_password = data.get('old_password')
     new_password = data.get('new_password')
     
@@ -1333,8 +1352,10 @@ def bind_wallet():
     # Only Web2 users (without address) can bind
     if g.current_user.address:
         return jsonify({'error': 'Wallet already bound'}), 400
-        
+
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
     address = data.get('address')
     signature = data.get('signature')
     message = data.get('message')
@@ -1481,14 +1502,8 @@ def get_user_profile(username):
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    current_user_id = None
-    if 'Authorization' in request.headers:
-        try:
-            token = request.headers['Authorization'].split(" ")[1]
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user_id = data['user_id']
-        except Exception:
-            pass
+    payload = _get_optional_jwt_payload()
+    current_user_id = payload.get('user_id') if payload else None
 
     posts = Post.query.filter_by(author_id=user.id, is_hidden=False).order_by(Post.created_at.desc()).all()
     post_ids = [p.id for p in posts]
@@ -1571,7 +1586,7 @@ def _get_posts_fallback(page, per_page, current_user_id):
     except Exception as e:
         print(f"[get_posts fallback] ORM query failed, using raw SQL: {e}")
         try:
-            # 纯 SQL，只选最基础列，不依赖 ORM 与任何新增列
+            # 纯 SQL：列顺序与下方 p[0]/p[1]/... 下标一一对应；表结构变更时须同步改 SELECT 与解析逻辑
             off = (page - 1) * per_page
             rows = db.session.execute(text("""
                 SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
@@ -1700,15 +1715,8 @@ def _get_posts_fallback(page, per_page, current_user_id):
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
     """帖子列表：内容来自 DB（Post.content），不请求 Arweave，无 content_arweave_id。"""
-    token = None
-    current_user_id = None
-    if 'Authorization' in request.headers:
-        try:
-            token = request.headers['Authorization'].split(" ")[1]
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user_id = data['user_id']
-        except Exception:
-            pass
+    payload = _get_optional_jwt_payload()
+    current_user_id = payload.get('user_id') if payload else None
 
     sort_by = request.args.get('sort', 'new')
     page = request.args.get('page', 1, type=int)
@@ -1937,16 +1945,8 @@ def create_post():
 def get_post_detail(post_id):
     try:
         post = Post.query.get_or_404(post_id)
-        # Check if user can see it
-        token = None
-        current_user_id = None
-        if 'Authorization' in request.headers:
-            try:
-                token = request.headers['Authorization'].split(" ")[1]
-                data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-                current_user_id = data['user_id']
-            except (IndexError, jwt.PyJWTError, KeyError):
-                pass
+        payload = _get_optional_jwt_payload()
+        current_user_id = payload.get('user_id') if payload else None
 
         post_data = post.to_dict(current_user_id)
         if post_data.get('cover_image') and str(post_data['cover_image']).strip() == '/static/images/hua_cover.jpg':
@@ -2018,6 +2018,8 @@ def trigger_mint_nft(post_id):
 @token_required
 def repost_post(post_id):
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
     content = data.get('content', '')
     
     original_post = Post.query.get_or_404(post_id)
@@ -2044,6 +2046,8 @@ def repost_post(post_id):
 def vote_post(post_id):
     post = Post.query.get_or_404(post_id)
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
     option_id = data.get('option_id')
     
     if not option_id:
@@ -2083,6 +2087,8 @@ def add_comment(post_id):
         return jsonify({'error': 'Comments are closed for this post'}), 403
 
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
     content = data.get('content')
     parent_id = data.get('parent_id')
     
@@ -2232,6 +2238,8 @@ WITHDRAW_MIN_RAW = WITHDRAW_MIN_USDT * (10 ** USDT_DECIMALS)
 def verify_tip():
     """打赏直接转入作者钱包：验证 USDT 转至作者地址后仅记账（展示打赏记录），不经过平台、不抽成、不写入可提现余额。"""
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
     tx_hash = data.get('tx_hash')
     post_id = data.get('post_id')
     if not tx_hash or not post_id:
@@ -2394,8 +2402,10 @@ def update_post(post_id):
     # Cannot edit if on-chain (immutable)
     if post.is_on_chain:
         return jsonify({'error': 'Cannot edit on-chain content'}), 400
-        
+
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
     title = data.get('title')
     content = data.get('content')
     

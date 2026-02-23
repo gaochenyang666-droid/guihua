@@ -232,7 +232,7 @@
                 <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC USDT)</p>
                 <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
                     <code style="color: var(--accent-purple); word-break: break-all;" id="donateAddress">—</code>
-                    <button class="btn btn-ghost" onclick="navigator.clipboard.writeText(document.getElementById('donateAddress').textContent); Toast.success('已复制');" style="padding: 0.2rem 0.5rem;">📋</button>
+                    <button class="btn btn-ghost" onclick="var a=document.getElementById('donateAddress').textContent; if(!a || a==='—' || a.trim()==='') { Toast.error('请等待地址加载'); } else { navigator.clipboard.writeText(a).then(function(){ Toast.success('已复制'); }); }" style="padding: 0.2rem 0.5rem;">📋</button>
                 </div>
             </div>
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">选择金额或自定义（USDT）</p>
@@ -286,38 +286,11 @@
     
     <div class="toast-container" id="toastContainer"></div>
 
+    <script src="/static/common.js"></script>
+    <script src="/static/toast.js"></script>
     <script>
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
-
-        function handle401(res) {
-            if (res && res.status === 401) {
-                localStorage.removeItem('token');
-                currentUser = null;
-                window.location.href = '/';
-                return true;
-            }
-            return false;
-        }
-
-        function formatUserId(userId) {
-            const idStr = String(userId);
-            if (idStr.length < 10) {
-                return `<span class="user-id-badge" style="color:#9ca3af;">💀 ${idStr}</span>`;
-            }
-            const year = idStr.substring(0, 4);
-            const type = idStr.substring(4, 5);
-            const yearColors = {
-                '2025': { color: '#FF00FF', emoji: '🕯️' },
-                '2026': { color: '#00FFCC', emoji: '👻' }
-            };
-            const typeConfigs = {
-                '1': { color: '#A855F7', emoji: '🔮' },
-                '9': { color: '#FFD700', emoji: '👁️' }
-            };
-            const res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
-            return `<span class="user-id-badge" style="color:${res.color}">${res.emoji} ${idStr}</span>`;
-        }
 
         const Auth = {
             async init() {
@@ -325,11 +298,7 @@
                 if (token) {
                     await this.fetchMe();
                     this.checkLoginExpiry();
-                    setInterval(() => this.checkLoginExpiry(), 5 * 60 * 1000); // 每 5 分钟检查一次
-                    fetch(`${API_BASE}/user/me`, { headers: {'Authorization': `Bearer ${token}`} })
-                    .then(res => {
-                        if (res.status === 401) { localStorage.removeItem('token'); localStorage.removeItem('login_at'); currentUser = null; window.location.href = '/'; }
-                    }).catch(() => {});
+                    setInterval(() => this.checkLoginExpiry(), 5 * 60 * 1000);
                 } else {
                     if(localStorage.getItem('token') === 'undefined') localStorage.removeItem('token');
                 }
@@ -600,20 +569,21 @@
                 
                 const list = document.getElementById('notificationList');
                 if(data.notifications && data.notifications.length > 0) {
-                    document.getElementById('notifBadge').style.display = data.notifications.some(n => !n.is_read) ? 'block' : 'none';
-                    
+                    const badgeEl = document.getElementById('notifBadge');
+                    if (badgeEl) badgeEl.style.display = data.notifications.some(n => !n.is_read) ? 'block' : 'none';
                     list.innerHTML = data.notifications.map(n => `
-                        <div style="padding:0.8rem; border-bottom:1px solid var(--border-color); ${!n.is_read ? 'background:rgba(124,58,237,0.1);' : ''} cursor:pointer;" onclick="Notification.read(${n.id}, ${n.post_id})">
+                        <div style="padding:0.8rem; border-bottom:1px solid var(--border-color); ${!n.is_read ? 'background:rgba(124,58,237,0.1);' : ''} cursor:pointer;" onclick="Notification.read(${n.id}, ${n.post_id != null ? n.post_id : 'null'})">
                             <div style="font-size:0.9rem; margin-bottom:0.2rem;">
-                                <b>${n.sender.nickname}</b> ${n.type === 'like' ? '点赞了你的帖子' : (n.type === 'reply' ? '回复了你的评论' : '评论了你的帖子')}
+                                <b>${escapeHtml(n.sender.nickname)}</b> ${n.type === 'like' ? '点赞了你的帖子' : (n.type === 'reply' ? '回复了你的评论' : '评论了你的帖子')}
                             </div>
-                            <div style="font-size:0.8rem; color:var(--text-muted);">${n.post_title}</div>
+                            <div style="font-size:0.8rem; color:var(--text-muted);">${escapeHtml(n.post_title)}</div>
                             <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:0.3rem;">${new Date(n.created_at).toLocaleString()}</div>
                         </div>
                     `).join('');
                 } else {
                     list.innerHTML = '<div style="padding:1rem; text-align:center; color:var(--text-muted);">暂无消息</div>';
-                    document.getElementById('notifBadge').style.display = 'none';
+                    const badgeEl = document.getElementById('notifBadge');
+                    if (badgeEl) badgeEl.style.display = 'none';
                 }
             },
             
@@ -621,9 +591,9 @@
                 await fetch(`${API_BASE}/notifications/${id}/read`, {
                     method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
-                this.load(); 
+                this.load();
                 Modal.close('notificationModal');
-                Modal.openDetail(postId);
+                if (postId != null && postId !== undefined) Modal.openDetail(postId);
             },
             
             async readAll() {
@@ -845,10 +815,10 @@
                     let content = p.content;
                     if (p.original_post_id && p.original_post) {
                      const original = p.original_post;
-                     content = `<div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.5rem;">🔄 转发了 <b>${original.author.nickname}</b></div>` +
-                               `<div style="padding:0.5rem; background:var(--bg-secondary); border-radius:4px; margin-bottom:0.5rem;">` + 
-                               `<div style="font-weight:600;">${original.title}</div>` +
-                               `</div>` + 
+                     content = `<div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.5rem;">🔄 转发了 <b>${escapeHtml(original.author && original.author.nickname)}</b></div>` +
+                               `<div style="padding:0.5rem; background:var(--bg-secondary); border-radius:4px; margin-bottom:0.5rem;">` +
+                               `<div style="font-weight:600;">${escapeHtml(original.title)}</div>` +
+                               `</div>` +
                                (p.repost_comment || '');
                     }
 
@@ -862,11 +832,11 @@
                             ${badge}
                             ${img || imgPlaceholder}
                             <div class="post-content">
-                                <div class="post-title">${p.title}</div>
+                                <div class="post-title">${escapeHtml(p.title)}</div>
                                 <div class="post-meta">
                                     <div class="author-info" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                                         ${UI.renderAvatar(p.author)}
-                                        <span>${p.author.nickname}</span>
+                                        <span>${escapeHtml(p.author.nickname)}</span>
                                         ${p.author.id != null ? formatUserId(p.author.id) : ''}
                                     </div>
                                     <div style="display:flex; gap:0.5rem; align-items:center;">
@@ -1091,6 +1061,7 @@
             },
             
             async openDetail(id) {
+                if (id == null || id === undefined) return;
                 currentDetailPostId = id;
                 this.open('postDetailModal');
                 const body = document.getElementById('postDetailBody');
@@ -1128,10 +1099,10 @@
                     return comments.map(c => `
                         <div class="comment-item" style="margin-left: ${depth * 20}px; border-left: ${depth > 0 ? '2px solid var(--border-color)' : 'none'}; padding-left: ${depth > 0 ? '1rem' : '0'};">
                             <div class="comment-header">
-                                <span>${(c.author && c.author.nickname) || '匿名'}</span>
+                                <span>${escapeHtml((c.author && c.author.nickname) || '匿名')}</span>
                                 <span>${new Date(c.created_at).toLocaleDateString()}</span>
                             </div>
-                            <div style="margin-bottom: 0.5rem;">${(c.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                            <div style="margin-bottom: 0.5rem;">${escapeHtml(c.content || '')}</div>
                             <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, this.getAttribute('data-nickname'))" data-nickname="${escapeAttr((c.author && c.author.nickname) || '')}">↩ 回复</button>
                             ${c.replies ? renderComments(c.replies, depth + 1) : ''}
                         </div>
@@ -1155,9 +1126,9 @@
                 }
 
                 body.innerHTML = `
-                    <h2 style="margin-bottom:0.5rem;">${p.title}</h2>
+                    <h2 style="margin-bottom:0.5rem;">${escapeHtml(p.title)}</h2>
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-                        发布者: ${p.author.nickname} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
+                        发布者: ${escapeHtml(p.author.nickname)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
                     </div>
                     <div class="post-detail-content">
                         ${contentHtml}
@@ -1285,18 +1256,15 @@
             async comment(id) {
                 const c = document.getElementById('commentInput').value;
                 if(!c) return;
-                
                 const body = { content: c };
-                if (this.currentReplyParentId) {
-                    body.parent_id = this.currentReplyParentId;
-                }
-                
-                await fetch(`${API_BASE}/posts/${id}/comments`, {
+                if (this.currentReplyParentId) body.parent_id = this.currentReplyParentId;
+                const res = await fetch(`${API_BASE}/posts/${id}/comments`, {
                     method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}`},
                     body: JSON.stringify(body)
                 });
-                
-                this.cancelReply(); // Reset
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { Toast.error(data.error || '评论失败'); return; }
+                this.cancelReply();
                 Modal.openDetail(id);
             },
             async do(url) {
