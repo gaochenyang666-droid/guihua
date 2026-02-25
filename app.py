@@ -178,8 +178,16 @@ def verify_signature():
         return jsonify({'error': 'Nonce expired, please sign again'}), 401
 
     # 严格全文本匹配，防止假站用同一 nonce 骗用户签名后到本站登录
-    expected_message = f"Sign this message to login: {user.nonce}"
-    if not message or message.strip() != expected_message:
+    # 支持两种格式：旧版 "Sign this message to login: {nonce}"，新版 "Sign this message to login to {host}: {nonce}"
+    msg_stripped = (message or '').strip()
+    expected_old = f"Sign this message to login: {user.nonce}"
+    expected_new_prefix = "Sign this message to login to "
+    expected_new_suffix = f": {user.nonce}"
+    valid = (
+        msg_stripped == expected_old
+        or (msg_stripped.startswith(expected_new_prefix) and msg_stripped.endswith(expected_new_suffix))
+    )
+    if not valid:
         return jsonify({'error': 'Message does not match expected format'}), 400
 
     try:

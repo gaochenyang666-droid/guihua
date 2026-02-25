@@ -14,6 +14,8 @@
     <!-- 引入 FontAwesome 和 Web3.js -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+    <script src="https://unpkg.com/@walletconnect/universal-provider@2.10.1/dist/index.umd.js"></script>
+    <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
     <div class="ghost-fire-container" id="ghostFireContainer"></div>
@@ -23,7 +25,7 @@
             <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
             <span>诡话</span>
         </a>
-        
+
         <div class="search-container">
             <span class="search-icon">🔍</span>
             <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
@@ -106,7 +108,7 @@
                 <h3>🚪 入境方式 </h3>
                 <button class="modal-close" onclick="Modal.close('loginModal')">&times;</button>
             </div>
-            
+
             <div id="authForms">
                 <!-- Login Form -->
                 <div id="loginFormContainer">
@@ -120,19 +122,16 @@
                             <input type="password" class="form-input" id="loginPassword" required />
                         </div>
                         <button type="submit" class="btn btn-primary" style="width: 100%;">登录</button>
-                        
+
                         <div style="margin: 1.5rem 0; border-top: 1px solid var(--border-color); position: relative; text-align: center;">
                             <span style="background: var(--bg-card); padding: 0 0.5rem; color: var(--text-muted); position: relative; top: -0.8rem; font-size: 0.8rem;">或</span>
                         </div>
-                        
-                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.loginWeb3()">
-                            <i class="fas fa-wallet"></i> 币安钱包连接
+                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.loginWithBinance()">
+                            <i class="fas fa-wallet"></i> 币安钱包 / 扫码登录
                         </button>
-                        <button type="button" class="btn btn-ghost" style="width: 100%; margin-top: 0.5rem; border-color: var(--accent-purple); color: var(--accent-purple);" onclick="window.loginWithWalletConnect && loginWithWalletConnect()">
-                            <i class="fas fa-qrcode"></i> 扫码登录
-                        </button>
-                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">点击后将在浏览器中拉起钱包，请在弹出的窗口中授权</p>
-                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站；扫码可在电脑端用手机钱包扫</p>
+                        <div id="wc-qrcode" style="display:none; text-align:center; margin-top:0.8rem;"></div>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">有插件会直接拉起钱包；无插件将显示二维码，用手机钱包扫码即可</p>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
 
                         <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
                             <a href="#" onclick="Auth.toggleForm('register'); return false;" style="color: var(--accent-purple);">没有账号？点击注册</a>
@@ -249,7 +248,7 @@
                 如果您喜欢这个平台，欢迎打赏支持服务器和开发费用。<br>
                 您的支持是我们坚持下去的动力！
             </p>
-            
+
             <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
                 <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC USDT)</p>
                 <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
@@ -310,7 +309,7 @@
             <div id="postDetailBody"></div>
         </div>
     </div>
-    
+
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="/static/common.js"></script>
@@ -384,7 +383,7 @@
                     }
                     return Toast.error('请安装 MetaMask, Binance Wallet 或其他 Web3 钱包');
                 }
-                
+
                 try {
                     let address;
                     let accounts;
@@ -401,18 +400,18 @@
                     }
                     if (!accounts || accounts.length === 0) return Toast.error('未检测到账户');
                     address = accounts[0];
-                    
+
                     const resNonce = await fetch(`${API_BASE}/auth/nonce?address=${address}`);
                     const { nonce } = await resNonce.json();
-                    
-                    const message = `Sign this message to login: ${nonce}`;
+
+                    const message = `Sign this message to login to ${location.host}: ${nonce}`;
                     let signature;
-                    
+
                     try {
                         if (window.BinanceChain) {
                              const res = await window.BinanceChain.request({
                                 method: 'personal_sign',
-                                params: [message, address] 
+                                params: [message, address]
                              });
                              signature = (typeof res === 'object' && res.result) ? res.result : res;
                         } else {
@@ -425,23 +424,134 @@
                              return Toast.error('签名被拒绝');
                         }
                     }
-                    
+
                     const resVerify = await fetch(`${API_BASE}/auth/verify`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ address, signature, message })
                     });
-                    
+
                     const data = await resVerify.json();
                     if (resVerify.ok) this.success(data);
                     else Toast.error(data.error);
                 } catch(e) { Toast.error('登录失败: ' + e.message); }
             },
 
+            async handleWeb3Verify(address, provider, isWalletConnect = false) {
+                try {
+                    const nonceRes = await fetch(`${API_BASE}/auth/nonce?address=${encodeURIComponent(address)}`);
+                    const nonceData = await nonceRes.json();
+                    if (!nonceRes.ok || nonceData.nonce == null) {
+                        throw new Error(nonceData.error || '获取签名消息失败');
+                    }
+                    const message = `Sign this message to login to ${location.host}: ${nonceData.nonce}`;
+
+                    let signature;
+                    try {
+                        signature = await provider.request({
+                            method: 'personal_sign',
+                            params: [message, address]
+                        });
+                    } catch (e) {
+                        signature = await provider.request({
+                            method: 'personal_sign',
+                            params: [address, message]
+                        });
+                    }
+
+                    const verifyRes = await fetch(`${API_BASE}/auth/verify`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ address, signature, message })
+                    });
+                    const verifyData = await verifyRes.json();
+                    if (!verifyRes.ok) {
+                        throw new Error(verifyData.error || '验证失败');
+                    }
+
+                    Auth.success(verifyData);
+                    if (isWalletConnect) Auth.wcProvider = provider;
+                } catch (e) {
+                    console.error(e);
+                    Toast.error(e.message || 'Web3 登录失败');
+                    throw e;
+                }
+            },
+
+            async loginWithBinance() {
+                try {
+                    if (window.ethereum || window.BinanceChain) {
+                        const provider = window.ethereum || window.BinanceChain;
+                        const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                        if (accounts && accounts.length) {
+                            return await this.handleWeb3Verify(accounts[0], provider, false);
+                        }
+                    }
+
+                    const cfgRes = await fetch(`${API_BASE}/config/public`);
+                    const cfg = await cfgRes.json();
+                    const projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
+                    if (!projectId) throw new Error('WalletConnect 未配置');
+
+                    const UC = window.UniversalProvider && (window.UniversalProvider.UniversalProvider || window.UniversalProvider);
+                    if (!UC) throw new Error('UniversalProvider 未加载');
+
+                    const provider = await UC.init({
+                        projectId,
+                        metadata: {
+                            name: '诡话',
+                            description: 'Web3 灵异文学社区',
+                            url: location.origin,
+                            icons: [location.origin + '/static/logo.svg']
+                        }
+                    });
+
+                    const accountsInSession = provider.session && provider.session.namespaces && provider.session.namespaces.eip155 && provider.session.namespaces.eip155.accounts;
+                    if (accountsInSession && accountsInSession.length) {
+                        const address = accountsInSession[0].split(':')[2];
+                        return await this.handleWeb3Verify(address, provider, true);
+                    }
+
+                    const qrWrap = document.getElementById('wc-qrcode');
+                    if (qrWrap) { qrWrap.style.display = 'block'; qrWrap.innerHTML = ''; }
+                    let qrInstance = null;
+
+                    provider.on('display_uri', (uri) => {
+                        if (qrWrap) {
+                            qrWrap.innerHTML = '<p style="margin-bottom:8px;">请使用币安钱包或其他钱包扫码</p>';
+                            qrInstance = new QRCode(qrWrap, { text: uri, width: 220, height: 220 });
+                        }
+                    });
+
+                    await provider.connect({
+                        namespaces: {
+                            eip155: {
+                                methods: ['personal_sign'],
+                                chains: ['eip155:56'],
+                                events: ['accountsChanged', 'chainChanged']
+                            }
+                        }
+                    });
+
+                    const accounts = provider.session && provider.session.namespaces && provider.session.namespaces.eip155 && provider.session.namespaces.eip155.accounts;
+                    if (!accounts || !accounts.length) throw new Error('未获取到钱包地址');
+
+                    const address = accounts[0].split(':')[2];
+                    if (qrWrap) qrWrap.style.display = 'none';
+
+                    await this.handleWeb3Verify(address, provider, true);
+                } catch (e) {
+                    console.error(e);
+                    const msg = String(e.message || e);
+                    if (msg.includes('reject')) Toast.info('用户取消了扫码');
+                    else Toast.error(msg || '连接失败，请重试');
+                }
+            },
+
             async loginWeb2(username, password) {
                 const btn = document.querySelector('#loginForm button[type="submit"]');
                 if(btn) { btn.disabled = true; btn.textContent = '登录中...'; }
-                
+
                 try {
                     const res = await fetch(`${API_BASE}/auth/web2/login`, {
                         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -512,19 +622,18 @@
                 Post.load({ sort: Post.currentSort || 'new' });
             },
 
-            logout() {
+            async logout() {
+                if (this.wcProvider) {
+                    try { await this.wcProvider.disconnect(); } catch (e) {}
+                    this.wcProvider = null;
+                }
                 localStorage.removeItem('token');
                 localStorage.removeItem('login_at');
                 sessionStorage.removeItem('login_expiry_warned');
                 currentUser = null;
                 UI.updateAuth();
                 Toast.info('已退出');
-                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-                const newNav = document.querySelector('.nav-item[data-sort="new"]');
-                if (newNav) newNav.classList.add('active');
-                Post.currentSort = 'new';
-                Post.currentPage = 1;
-                Post.load();
+                location.href = '/';
             },
 
             /** 登录即将过期提醒（无 Refresh Token 时的替代）：接近 24h 弹一次提醒 */
@@ -546,28 +655,28 @@
                 try {
                     const accounts = await (window.ethereum || window.BinanceChain).request({ method: 'eth_requestAccounts' });
                     const address = accounts[0];
-                    
+
                     const resNonce = await fetch(`${API_BASE}/auth/nonce?address=${address}`);
                     const { nonce } = await resNonce.json();
-                    
+
                     const message = `Bind wallet ${address} to user ${currentUser.username}. Nonce: ${nonce}`;
                     let signature;
-                    
+
                     try {
                          signature = await (window.web3 || new Web3(window.ethereum || window.BinanceChain)).eth.personal.sign(message, address, '');
                     } catch (e) {
                          return Toast.error('签名被拒绝');
                     }
-                    
+
                     const res = await fetch(`${API_BASE}/user/bind_wallet`, {
                         method: 'POST',
-                        headers: { 
+                        headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${localStorage.getItem('token')}`
                         },
                         body: JSON.stringify({ address, signature, message })
                     });
-                    
+
                     const data = await res.json();
                     if(res.ok) {
                         Toast.success('绑定成功');
@@ -596,7 +705,7 @@
                 });
                 if (handle401(res)) return;
                 const data = await res.json();
-                
+
                 const list = document.getElementById('notificationList');
                 if(data.notifications && data.notifications.length > 0) {
                     const badgeEl = document.getElementById('notifBadge');
@@ -616,7 +725,7 @@
                     if (badgeEl) badgeEl.style.display = 'none';
                 }
             },
-            
+
             async read(id, postId) {
                 await fetch(`${API_BASE}/notifications/${id}/read`, {
                     method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -625,7 +734,7 @@
                 Modal.close('notificationModal');
                 if (postId != null && postId !== undefined) Modal.openDetail(postId);
             },
-            
+
             async readAll() {
                 await fetch(`${API_BASE}/notifications/read_all`, {
                     method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -646,7 +755,7 @@
                 if(this.isLoading || this.isFetching) return;
                 this.isLoading = true;
                 this.isFetching = true;
-                
+
                 try {
                     if(params.sort || params.q !== undefined) {
                         this.currentPage = 1;
@@ -666,7 +775,7 @@
 
                     let endpoint = `${API_BASE}/posts`;
                     if (this.currentQuery) endpoint = `${API_BASE}/search`;
-                    
+
                     const res = await fetch(`${endpoint}?${qParams.toString()}`, { headers });
                 let data;
                 try {
@@ -678,7 +787,7 @@
                     const msg = (data && data.error) || (res.status >= 500 ? '服务暂时不可用，请稍后重试' : `请求失败(${res.status})`);
                     throw new Error(msg);
                 }
-                
+
                 if (data.posts) {
                     if(this.currentPage === 1) {
                         document.getElementById('postGrid').innerHTML = '';
@@ -724,14 +833,14 @@
                     document.getElementById('loadingArea').style.display = 'none';
                 }
             },
-            
+
             loadMore() {
                 if(this.currentPage < this.totalPages) {
                     this.currentPage++;
                     this.load();
                 }
             },
-            
+
             async repost(id) {
                 if (!currentUser) return Modal.open('loginModal');
                 const content = prompt("转发附言:");
@@ -739,7 +848,7 @@
 
                 const res = await fetch(`${API_BASE}/posts/${id}/repost`, {
                     method: 'POST',
-                    headers: { 
+                    headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${localStorage.getItem('token')}`
                     },
@@ -754,12 +863,12 @@
             updateAuth() {
                 const authBtns = document.getElementById('authButtons');
                 const userMenu = document.getElementById('userMenu');
-                
+
                 if (currentUser) {
                     authBtns.style.display = 'none';
                     userMenu.style.display = 'flex';
                     document.getElementById('userDisplayName').textContent = currentUser.nickname;
-                    
+
                     let notifBtn = document.getElementById('notifBtn');
                     if(!notifBtn) {
                         notifBtn = document.createElement('div');
@@ -773,7 +882,7 @@
                         avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
                     }
                     Notification.load();
-                    
+
                     let profileLink = document.getElementById('profileLink');
                     if(!profileLink) {
                         profileLink = document.createElement('a');
@@ -801,7 +910,7 @@
                         const logoutBtn = document.getElementById('logoutBtn');
                         logoutBtn.parentNode.insertBefore(bindBtn, logoutBtn);
                     }
-                    
+
                     if(currentUser.address) {
                         bindBtn.style.display = 'none';
                     } else {
@@ -857,7 +966,7 @@
                         ? `<div class="post-image-wrap" style="position:relative;min-height:120px;background:var(--bg-secondary);"><img src="${imgUrl}" class="post-image" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';var n=this.nextElementSibling;if(n)n.style.display=\'flex\'"><div class="post-image-placeholder" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:var(--text-muted);font-size:2rem;">📝</div></div>`
                         : '';
                     const imgPlaceholder = '<div class="post-image post-image-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:120px;background:var(--bg-secondary);color:var(--text-muted);font-size:2rem;">📝</div>';
-                    
+
                     let content = p.content;
                     if (p.original_post_id && p.original_post) {
                      const original = p.original_post;
@@ -893,17 +1002,17 @@
                         </div>
                     </div>`;
                 }).join('');
-                
+
                 if(append) grid.insertAdjacentHTML('beforeend', html);
                 else grid.innerHTML = html;
-                
+
                 document.getElementById('loadingArea').style.display = 'none';
             },
 
             renderAvatar(user) {
                 return `<div class="user-avatar-emoji" style="width:24px;height:24px;font-size:1rem;">${user.avatar || '👻'}</div>`;
             },
-            
+
             handleNav(el, sort) {
                 document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
                 el.classList.add('active');
@@ -916,22 +1025,22 @@
                 Modal.open('adminStatsModal');
                 const body = document.getElementById('adminStatsBody');
                 body.innerHTML = '加载中...';
-                
+
                 try {
                     const res = await fetch(`${API_BASE}/admin/stats`, {
                         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                     });
                     const data = await res.json();
-                    
+
                     if(data.error) throw new Error(data.error);
-                    
+
                     body.innerHTML = `
                         <div class="sidebar-card glass" style="grid-column: span 2; text-align: center;">
                             <div style="font-size: 0.9rem; color: var(--text-secondary);">总营收 (估算)</div>
                             <div style="font-size: 2rem; font-weight: bold; color: var(--accent-gold);">${(data.revenue.total_usdt != null ? data.revenue.total_usdt : 0).toFixed(2)} USDT</div>
                             <div style="font-size: 0.8rem; color: var(--text-muted);">单篇费用: ${(data.revenue.fee_per_post_usdt != null ? data.revenue.fee_per_post_usdt : 0)} USDT</div>
                         </div>
-                        
+
                         <div class="sidebar-card glass">
                             <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">用户统计</div>
                             <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
@@ -944,7 +1053,7 @@
                                 <span>Web2 (仅注册):</span> <span>${data.users.web2}</span>
                             </div>
                         </div>
-                        
+
                         <div class="sidebar-card glass">
                             <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem;">帖子统计</div>
                             <div style="display: flex; justify-content: space-between; margin-bottom: 0.3rem;">
@@ -1214,7 +1323,7 @@
                 if (id === 'postDetailModal') currentDetailPostId = null;
                 document.getElementById(id).classList.remove('active');
             },
-            
+
             async openDetail(id) {
                 if (id == null || id === undefined) return;
                 currentDetailPostId = id;
@@ -1235,7 +1344,7 @@
                     body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${p.error || '加载失败'}</div>`;
                     return;
                 }
-                
+
                 let contentHtml = p.content;
                 let repostHtml = '';
                 if (p.original_post_id && p.original_post) {
@@ -1289,7 +1398,7 @@
                         ${contentHtml}
                         ${repostHtml}
                     </div>
-                    
+
                     <div class="on-chain-evidence" style="margin-top:1rem; padding:0.75rem; background:var(--bg-secondary); border-radius:8px; font-size:0.85rem;">
                         <div style="color:var(--text-muted); margin-bottom:0.5rem;">🔗 链上证据（可在链上查询）</div>
                         <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">
@@ -1297,7 +1406,7 @@
                             ${p.ipfs_cid ? `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>` : ''}
                         </div>
                     </div>
-                    
+
                     <div style="display:flex; gap:1rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem; flex-wrap:wrap;">
                         <button class="btn btn-ghost" onclick="Interact.like(${p.id})">😰 恐惧 (${p.likes_count})</button>
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
@@ -1351,7 +1460,7 @@
 
         const Interact = {
             currentReplyParentId: null,
-            
+
             replyTo(postId, commentId, username) {
                 this.currentReplyParentId = commentId;
                 const name = (username != null && username !== '') ? username : '匿名';
@@ -1360,7 +1469,7 @@
                 document.getElementById('commentInput').focus();
                 document.getElementById('commentInput').placeholder = `回复 @${name}...`;
             },
-            
+
             cancelReply() {
                 this.currentReplyParentId = null;
                 document.getElementById('replyTarget').style.display = 'none';
@@ -1413,7 +1522,7 @@
                 if(!currentUser) return Modal.open('loginModal');
                 await fetch(url, { method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`} });
             },
-            
+
             async adminDelete(id) {
                 if(!confirm('确定要删除这个帖子吗？此操作不可逆！')) return;
                 const res = await fetch(`${API_BASE}/posts/${id}`, {
@@ -1456,7 +1565,7 @@
             // Optimize for mobile: fewer particles
             const isMobile = window.innerWidth < 768;
             const count = isMobile ? 6 : 10;
-            
+
             for(let i=0; i<count; i++) {
                 const d = document.createElement('div'); d.className='ghost-fire';
                 d.style.left=Math.random()*100+'%'; d.style.animationDelay=Math.random()*5+'s';
@@ -1472,7 +1581,7 @@
                 e.preventDefault();
                 Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
             };
-            
+
             let searchTimeout;
             document.getElementById('searchInput').addEventListener('input', (e) => {
                 clearTimeout(searchTimeout);
@@ -1482,7 +1591,7 @@
                     else Post.load();
                 }, 300);
             });
-            
+
             // Mobile: Close keyboard on 'Enter' or 'Search'
             document.getElementById('searchInput').addEventListener('keyup', (e) => {
                 if(e.key === 'Enter') document.getElementById('searchInput').blur();
@@ -1490,127 +1599,16 @@
             document.getElementById('searchInput').addEventListener('search', () => {
                 document.getElementById('searchInput').blur();
             });
-            
+
             // Mobile: Close keyboard on scroll
             window.addEventListener('scroll', () => {
                 if(document.activeElement === document.getElementById('searchInput')) {
                     document.getElementById('searchInput').blur();
                 }
             });
-            
+
             document.getElementById('logoutBtn').onclick = () => Auth.logout();
         });
-    </script>
-    <!-- WalletConnect 扫码登录：Web3Modal 展示二维码 + SignClient 连接与签名 -->
-    <script type="module">
-        const API_BASE = window.location.origin + '/api';
-        const CHAINS = ['eip155:56']; // BSC
-
-        async function handleLoginVerify(address, signClient, topic) {
-            const Toast = window.Toast;
-            const Auth = window.Auth;
-            if (!Toast || !Auth) return;
-            const resNonce = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
-            const nonceData = await resNonce.json();
-            if (!resNonce.ok) {
-                Toast.error(nonceData.error || '获取 nonce 失败');
-                return;
-            }
-            const nonce = nonceData.nonce;
-            const message = 'Sign this message to login: ' + nonce;
-            let signature;
-            try {
-                signature = await signClient.request({
-                    topic,
-                    chainId: 'eip155:56',
-                    request: { method: 'personal_sign', params: [message, address] }
-                });
-            } catch (e) {
-                if (e && (e.code === 4001 || (e.message && String(e.message).includes('reject')))) {
-                    Toast.error('已取消签名');
-                    return;
-                }
-                throw e;
-            }
-            const resVerify = await fetch(API_BASE + '/auth/verify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address, signature, message })
-            });
-            const data = await resVerify.json();
-            if (resVerify.ok) Auth.success(data);
-            else Toast.error(data.error || '验证失败');
-        }
-
-        window.loginWithWalletConnect = async function() {
-            const Toast = window.Toast;
-            const Auth = window.Auth;
-            if (!Toast || !Auth) return;
-            try {
-                const cfgRes = await fetch(API_BASE + '/config/public');
-                const cfg = await cfgRes.json();
-                const projectId = (cfg && cfg.walletconnect_project_id) ? cfg.walletconnect_project_id.trim() : '';
-                if (!projectId) {
-                    Toast.error('管理员未配置扫码登录（WalletConnect Project ID）');
-                    return;
-                }
-                Toast.info('正在打开扫码连接…');
-
-                const { Web3Modal } = await import('https://esm.sh/@web3modal/standalone@2');
-                const { SignClient } = await import('https://esm.sh/@walletconnect/sign-client@2');
-
-                const web3Modal = new Web3Modal({
-                    projectId,
-                    standaloneChains: CHAINS,
-                    walletConnectVersion: 2
-                });
-
-                const signClient = await SignClient.init({
-                    projectId,
-                    metadata: {
-                        name: '诡话',
-                        description: 'Web3 灵异文学社区',
-                        url: 'https://guihua.fun',
-                        icons: ['https://guihua.fun/static/logo.svg']
-                    }
-                });
-
-                const { uri, approval } = await signClient.connect({
-                    requiredNamespaces: {
-                        eip155: {
-                            methods: ['personal_sign', 'eth_sendTransaction'],
-                            chains: CHAINS,
-                            events: ['accountsChanged', 'chainChanged']
-                        }
-                    }
-                });
-
-                if (uri) web3Modal.openModal({ uri });
-
-                let session;
-                try {
-                    session = await approval();
-                } finally {
-                    try { web3Modal.closeModal(); } catch (_) {}
-                }
-
-                const account = session.namespaces.eip155.accounts[0];
-                const address = account ? account.split(':')[2] : '';
-                if (!address) {
-                    Toast.error('未获取到钱包地址');
-                    return;
-                }
-
-                await handleLoginVerify(address, signClient, session.topic);
-            } catch (e) {
-                const msg = e && (e.message || String(e));
-                if (msg.includes('User rejected') || msg.includes('reject') || msg.includes('Session rejected')) {
-                    Toast.error('已取消连接或签名');
-                    return;
-                }
-                Toast.error('扫码登录失败: ' + msg);
-            }
-        };
     </script>
 </body>
 </html>
