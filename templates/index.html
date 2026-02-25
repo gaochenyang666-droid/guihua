@@ -278,9 +278,14 @@
                 <h3>💰 打赏作者</h3>
                 <button class="modal-close" onclick="Modal.close('tipAuthorModal')">&times;</button>
             </div>
-            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
-                打赏将<strong style="color: var(--accent-green);">直接转入作者登录/绑定的钱包</strong>，不经过平台、无抽成。
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.6rem;">
+                打赏将<strong style="color: var(--accent-green);">直接转入作者绑定的钱包</strong>，不经过平台、无抽成。
             </p>
+            <div style="margin-bottom: 1rem; padding: 0.6rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.85rem;">
+                <strong style="color: var(--text-secondary);">收款地址：</strong>
+                <span id="tipAuthorAddressDisplay" style="word-break: break-all; color: var(--accent-green);">-</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="tipAuthorCopyBtn" style="margin-left: 0.5rem; display: none;" onclick="TipAuthor.copyAddress()">复制</button>
+            </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem;">选择金额 (USDT)</p>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.8rem;">
                 <button class="btn btn-ghost" onclick="document.getElementById('tipAmountInput').value=1; ">1 USDT</button>
@@ -1051,9 +1056,32 @@
             open(postId, authorWallet) {
                 tipAuthorPostId = postId;
                 tipAuthorWallet = (authorWallet || '').trim();
+                const displayEl = document.getElementById('tipAuthorAddressDisplay');
+                const copyBtn = document.getElementById('tipAuthorCopyBtn');
+                const sendBtn = document.querySelector('#tipAuthorModal .btn-primary');
+                if (displayEl) {
+                    displayEl.textContent = tipAuthorWallet ? tipAuthorWallet : '作者未绑定钱包，暂无法打赏';
+                    displayEl.style.color = tipAuthorWallet ? 'var(--accent-green)' : 'var(--text-muted)';
+                }
+                if (copyBtn) {
+                    copyBtn.style.display = tipAuthorWallet ? 'inline-block' : 'none';
+                }
+                if (sendBtn) {
+                    sendBtn.disabled = !tipAuthorWallet;
+                    sendBtn.style.opacity = tipAuthorWallet ? '1' : '0.5';
+                }
                 const input = document.getElementById('tipAmountInput');
                 if (input) input.value = '1';
                 Modal.open('tipAuthorModal');
+            },
+            copyAddress() {
+                if (!tipAuthorWallet) return;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(tipAuthorWallet).then(function() { if (typeof Toast !== 'undefined') Toast.success('已复制收款地址'); });
+                } else {
+                    const ta = document.createElement('textarea'); ta.value = tipAuthorWallet; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+                    if (typeof Toast !== 'undefined') Toast.success('已复制收款地址');
+                }
             },
             async send() {
                 if (!tipAuthorPostId || !currentUser || !currentUser.address) {
@@ -1473,9 +1501,47 @@
             document.getElementById('logoutBtn').onclick = () => Auth.logout();
         });
     </script>
-    <!-- WalletConnect 扫码登录（需配置 WALLETCONNECT_PROJECT_ID） -->
+    <!-- WalletConnect 扫码登录：Web3Modal 展示二维码 + SignClient 连接与签名 -->
     <script type="module">
         const API_BASE = window.location.origin + '/api';
+        const CHAINS = ['eip155:56']; // BSC
+
+        async function handleLoginVerify(address, signClient, topic) {
+            const Toast = window.Toast;
+            const Auth = window.Auth;
+            if (!Toast || !Auth) return;
+            const resNonce = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
+            const nonceData = await resNonce.json();
+            if (!resNonce.ok) {
+                Toast.error(nonceData.error || '获取 nonce 失败');
+                return;
+            }
+            const nonce = nonceData.nonce;
+            const message = 'Sign this message to login: ' + nonce;
+            let signature;
+            try {
+                signature = await signClient.request({
+                    topic,
+                    chainId: 'eip155:56',
+                    request: { method: 'personal_sign', params: [message, address] }
+                });
+            } catch (e) {
+                if (e && (e.code === 4001 || (e.message && String(e.message).includes('reject')))) {
+                    Toast.error('已取消签名');
+                    return;
+                }
+                throw e;
+            }
+            const resVerify = await fetch(API_BASE + '/auth/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address, signature, message })
+            });
+            const data = await resVerify.json();
+            if (resVerify.ok) Auth.success(data);
+            else Toast.error(data.error || '验证失败');
+        }
+
         window.loginWithWalletConnect = async function() {
             const Toast = window.Toast;
             const Auth = window.Auth;
@@ -1489,43 +1555,56 @@
                     return;
                 }
                 Toast.info('正在打开扫码连接…');
-                const { EthereumProvider } = await import('https://esm.sh/@walletconnect/ethereum-provider@2');
-                const provider = await EthereumProvider.init({
+
+                const { Web3Modal } = await import('https://esm.sh/@web3modal/standalone@2');
+                const { SignClient } = await import('https://esm.sh/@walletconnect/sign-client@2');
+
+                const web3Modal = new Web3Modal({
                     projectId,
-                    optionalChains: [56],
-                    showQrModal: true
+                    standaloneChains: CHAINS,
+                    walletConnectVersion: 2
                 });
-                await provider.connect();
-                const accounts = await provider.request({ method: 'eth_accounts' });
-                if (!accounts || accounts.length === 0) {
+
+                const signClient = await SignClient.init({
+                    projectId,
+                    metadata: {
+                        name: '诡话',
+                        description: 'Web3 灵异文学社区',
+                        url: 'https://guihua.fun',
+                        icons: ['https://guihua.fun/static/logo.svg']
+                    }
+                });
+
+                const { uri, approval } = await signClient.connect({
+                    requiredNamespaces: {
+                        eip155: {
+                            methods: ['personal_sign', 'eth_sendTransaction'],
+                            chains: CHAINS,
+                            events: ['accountsChanged', 'chainChanged']
+                        }
+                    }
+                });
+
+                if (uri) web3Modal.openModal({ uri });
+
+                let session;
+                try {
+                    session = await approval();
+                } finally {
+                    try { web3Modal.closeModal(); } catch (_) {}
+                }
+
+                const account = session.namespaces.eip155.accounts[0];
+                const address = account ? account.split(':')[2] : '';
+                if (!address) {
                     Toast.error('未获取到钱包地址');
                     return;
                 }
-                const address = accounts[0];
-                const resNonce = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
-                const { nonce } = await resNonce.json();
-                const message = 'Sign this message to login: ' + nonce;
-                let signature;
-                try {
-                    signature = await provider.request({ method: 'personal_sign', params: [message, address] });
-                } catch (e) {
-                    if (e && (e.code === 4001 || (e.message && e.message.includes('reject')))) {
-                        Toast.error('已取消签名');
-                        return;
-                    }
-                    throw e;
-                }
-                const resVerify = await fetch(API_BASE + '/auth/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address, signature, message })
-                });
-                const data = await resVerify.json();
-                if (resVerify.ok) Auth.success(data);
-                else Toast.error(data.error || '验证失败');
+
+                await handleLoginVerify(address, signClient, session.topic);
             } catch (e) {
                 const msg = e && (e.message || String(e));
-                if (msg.includes('User rejected') || msg.includes('reject')) {
+                if (msg.includes('User rejected') || msg.includes('reject') || msg.includes('Session rejected')) {
                     Toast.error('已取消连接或签名');
                     return;
                 }
