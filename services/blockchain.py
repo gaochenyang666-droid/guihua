@@ -1,4 +1,4 @@
-# 区块链服务层：BSC 交易校验、USDT 打款、NFT 铸造
+# 区块链服务层：BSC 交易校验、USDT 打款
 import os
 import re
 import time
@@ -287,79 +287,3 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
         return False, 'Verification process failed'
 
 
-def mint_nft(to_address, token_uri):
-    import os
-    pk = os.environ.get('ADMIN_PRIVATE_KEY')
-    nft_contract = os.environ.get('NFT_CONTRACT_ADDRESS')
-    if not pk or not nft_contract or not Web3.is_address(to_address):
-        return None, "NFT mint not configured or invalid to_address"
-    NFT_MINT_ABI = [{
-        "inputs": [{"name": "to", "type": "address"}, {"name": "tokenURI", "type": "string"}],
-        "name": "mint",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    }]
-    try:
-        from eth_account import Account
-        w3_conn = get_working_web3()
-        account = Account.from_key(pk)
-        contract = w3_conn.eth.contract(
-            address=Web3.to_checksum_address(nft_contract),
-            abi=NFT_MINT_ABI
-        )
-        gas_price = min(int(w3_conn.eth.gas_price * 1.1), Web3.to_wei(20, 'gwei'))
-        tx = contract.functions.mint(Web3.to_checksum_address(to_address), token_uri).build_transaction({
-            'from': account.address,
-            'nonce': w3_conn.eth.get_transaction_count(account.address),
-            'gas': 200000,
-            'gasPrice': gas_price,
-            'chainId': current_app.config['BSC']['CHAIN_ID']
-        })
-        signed = account.sign_transaction(tx)
-        tx_hash = w3_conn.eth.send_raw_transaction(signed.raw_transaction)
-        for _ in range(30):
-            time.sleep(2)
-            receipt = w3_conn.eth.get_transaction_receipt(tx_hash)
-            if receipt is not None:
-                break
-        if not receipt or receipt['status'] != 1:
-            return None, "Mint tx failed or timeout"
-        token_id = None
-        for log in receipt.get('logs', []):
-            topics = log.get('topics', [])
-            if len(topics) >= 4:
-                try:
-                    token_id = int(topics[3].hex(), 16)
-                    break
-                except (IndexError, ValueError, AttributeError):
-                    pass
-        return token_id, tx_hash.hex()
-    except Exception as e:
-        return None, str(e)[:300]
-
-
-def async_mint_nft_for_post(post_id):
-    from services.storage import build_and_upload_nft_metadata
-    app = current_app._get_current_object()
-    def _run():
-        with app.app_context():
-            try:
-                post = Post.query.get(post_id)
-                if not post or not post.ipfs_cid or not post.author:
-                    return
-                to_address = (post.author.wallet_address or post.author.address or '').strip()
-                if not to_address or not Web3.is_address(to_address):
-                    return
-                metadata_tx_id = build_and_upload_nft_metadata(post)
-                if not metadata_tx_id:
-                    return
-                token_uri = f"https://arweave.net/{metadata_tx_id}"
-                token_id, tx_hash_or_err = mint_nft(to_address, token_uri)
-                if token_id is not None and tx_hash_or_err:
-                    post.nft_token_id = token_id
-                    post.nft_tx_hash = tx_hash_or_err
-                    db.session.commit()
-            except Exception as e:
-                print(f"async_mint_nft_for_post error: {e}")
-    threading.Thread(target=_run, daemon=True).start()

@@ -40,10 +40,6 @@ if not IMGBB_API_KEY:
 # Arweave Configuration
 ARWEAVE_GATEWAY = 'https://arweave.net'
 
-# Pinata (IPFS) Configuration (Legacy/Backup)
-PINATA_API_KEY = os.environ.get('PINATA_API_KEY')
-PINATA_SECRET_API_KEY = os.environ.get('PINATA_SECRET_API_KEY')
-
 # Database Configuration（SQLite 建议用绝对路径，避免重启后工作目录变化导致数据“丢失”）
 basedir = os.path.abspath(os.path.dirname(__file__))
 _db_url = os.environ.get('DATABASE_URL', '').strip() or None
@@ -99,8 +95,6 @@ app.config['BSC_RPC_LIST'] = BSC_RPC_LIST
 app.config['TX_CONFIRMATIONS_NEEDED'] = TX_CONFIRMATIONS_NEEDED
 app.config['TIP_PLATFORM_FEE_PERCENT'] = TIP_PLATFORM_FEE_PERCENT
 app.config['IMGBB_API_KEY'] = IMGBB_API_KEY
-app.config['PINATA_API_KEY'] = PINATA_API_KEY
-app.config['PINATA_SECRET_API_KEY'] = PINATA_SECRET_API_KEY
 app.config['ARWEAVE_GATEWAY'] = ARWEAVE_GATEWAY
 
 from extensions import db
@@ -111,14 +105,8 @@ from models import (User, Post, Vote, Comment, Like, Bookmark, Notification, Use
     UserVote, Tip, Report, build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
     token_required, admin_required, bleach_clean_post_content as _bleach_clean_post_content)
-from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_pinata,
-    upload_to_pinata_with_reason, upload_to_arweave_with_retry, build_and_upload_nft_metadata)
-from services.blockchain import (get_working_web3, get_bnb_price_usd, get_usdt_per_cny, get_post_fee_usdt_raw,
-    try_send_tip_payout_raw, try_send_tip_payout, process_pending_tip_payouts, verify_transaction,
-    mint_nft, async_mint_nft_for_post)
-
-# 保留 PLATFORM_PRIVATE_KEY 供 process_auto_withdrawals 等引用（blockchain 内用 os.environ）
-PLATFORM_PRIVATE_KEY = os.environ.get('PLATFORM_PRIVATE_KEY')
+from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
+from services.blockchain import (get_working_web3, get_usdt_per_cny, get_post_fee_usdt_raw, verify_transaction)
 
 # ============== Routes ==============
 
@@ -225,8 +213,8 @@ def register():
         password = (data.get('password') or '')
         if not username or not password:
             return jsonify({'error': '请填写用户名和密码'}), 400
-        if len(username) > 64:
-            return jsonify({'error': '用户名过长'}), 400
+        if len(username) > 50:
+            return jsonify({'error': '用户名过长（最多50字）'}), 400
         if User.query.filter_by(username=username).first():
             return jsonify({'error': 'Username already exists'}), 400
 
@@ -412,18 +400,6 @@ def get_public_config():
     return jsonify({
         'walletconnect_project_id': os.environ.get('WALLETCONNECT_PROJECT_ID') or ''
     })
-
-@app.route('/api/gas/price', methods=['GET'])
-def get_gas_price():
-    try:
-        w3 = get_working_web3()
-        gas_price = w3.eth.gas_price
-        return jsonify({
-            'gas_price_wei': gas_price,
-            'gas_price_gwei': float(Web3.from_wei(gas_price, 'gwei'))
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 # --- Posts ---
 
@@ -696,8 +672,6 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 'is_bookmarked': pid in user_bookmarks,
                 'tx_hash': tx_hash,
                 'ipfs_cid': ipfs_cid,
-                'nft_token_id': None,
-                'nft_tx_hash': None,
                 'post_type': post_type,
                 'created_at': created_at,
                 'is_repost': is_repost,
@@ -937,15 +911,35 @@ def create_post():
         traceback.print_exc()
         return jsonify({'error': 'Database error'}), 500
 
-    if post.ipfs_cid and ADMIN_PRIVATE_KEY and NFT_CONTRACT_ADDRESS:
-        threading.Thread(target=async_mint_nft_for_post, args=(post.id,), daemon=True).start()
-    
     return jsonify({'message': 'Post created', 'post': post.to_dict()}), 201
+
+# 浏览量防刷：同一 IP 对同一帖子 60 秒内只计一次
+_view_count_key = {}
+_view_count_ttl = 60
+
+def _prune_view_count_keys(now):
+    global _view_count_key
+    expired = [k for k, t in _view_count_key.items() if now - t >= _view_count_ttl]
+    for k in expired:
+        _view_count_key.pop(k, None)
 
 @app.route('/api/posts/<int:post_id>', methods=['GET'])
 def get_post_detail(post_id):
     try:
         post = Post.query.get_or_404(post_id)
+        # 浏览量 +1（同 IP 60 秒内仅计一次）
+        try:
+            ip = (request.remote_addr or 'unknown').strip()
+            key = f"{post_id}:{ip}"
+            now = time.time()
+            _prune_view_count_keys(now)
+            if key not in _view_count_key or now - _view_count_key[key] >= _view_count_ttl:
+                _view_count_key[key] = now
+                post.view_count = getattr(post, 'view_count', 0) or 0
+                post.view_count += 1
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
         payload = _get_optional_jwt_payload()
         current_user_id = payload.get('user_id') if payload else None
 
@@ -988,32 +982,11 @@ def sync_post_to_arweave(post_id):
         'platform': 'GuiHua Web3 (Arweave)'
     }
     ar_tx_id, _ = upload_to_arweave_native(payload)
-    if not ar_tx_id and PINATA_API_KEY and PINATA_SECRET_API_KEY:
-        ar_tx_id = upload_to_pinata(payload)
     if not ar_tx_id:
-        return jsonify({'error': 'Arweave 与备用存储均失败，请稍后重试'}), 503
+        return jsonify({'error': 'Arweave 上传失败，请稍后重试'}), 503
     post.ipfs_cid = ar_tx_id
     db.session.commit()
     return jsonify({'message': '已同步到 Arweave', 'ipfs_cid': ar_tx_id, 'arweave_url': f'https://arweave.net/{ar_tx_id}'})
-
-@app.route('/api/posts/<int:post_id>/mint-nft', methods=['POST'])
-@token_required
-def trigger_mint_nft(post_id):
-    """手动触发为帖子铸造 NFT（仅作者或管理员；帖子需有永存档案且尚未铸造）。"""
-    post = Post.query.get_or_404(post_id)
-    if post.author_id != g.current_user.id and not getattr(g.current_user, 'is_admin', False):
-        return jsonify({'error': '仅作者或管理员可操作'}), 403
-    if not post.ipfs_cid:
-        return jsonify({'error': '该帖子暂无永存档案，无法铸造 NFT'}), 400
-    if getattr(post, 'nft_token_id', None) is not None or getattr(post, 'nft_tx_hash', None):
-        return jsonify({'error': '该帖子已铸造过 NFT'}), 400
-    if not ADMIN_PRIVATE_KEY or not NFT_CONTRACT_ADDRESS:
-        return jsonify({'error': 'NFT 铸造未配置'}), 503
-    to_address = (post.author.wallet_address or post.author.address or '').strip()
-    if not to_address or not Web3.is_address(to_address):
-        return jsonify({'error': '作者未绑定钱包，无法铸造 NFT'}), 400
-    threading.Thread(target=async_mint_nft_for_post, args=(post.id,), daemon=True).start()
-    return jsonify({'message': 'NFT 铸造已提交，请稍后在帖子详情查看'}), 202
 
 @app.route('/api/posts/<int:post_id>/repost', methods=['POST'])
 @token_required
@@ -1197,42 +1170,10 @@ def upload():
         return jsonify({'url': url})
     return jsonify({'error': err or '上传失败'}), 500
 
-@app.route('/api/upload/ipfs', methods=['POST'])
-@token_required
-def upload_ipfs():
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'No data provided'}), 400
-        
-    # Add metadata
-    data['pinned_by'] = g.current_user.username or g.current_user.address
-    data['pinned_at'] = datetime.utcnow().isoformat()
-    
-    # Try Arweave first
-    ar_id, _ = upload_to_arweave_native(data)
-    if ar_id:
-        return jsonify({'cid': ar_id, 'storage': 'arweave'})
-    
-    # Fallback to Pinata
-    cid = upload_to_pinata(data)
-    if cid:
-        return jsonify({'cid': cid, 'storage': 'ipfs'})
-    
-    # Fallback for dev if no keys
-    if app.config.get('DEBUG'):
-         # Generate mock Arweave ID
-         mock_id = 'ArMock_' + secrets.token_hex(20)
-         return jsonify({'cid': mock_id, 'mock': True})
-         
-    return jsonify({'error': 'Storage upload failed'}), 500
-
 # --- Admin & Debug ---
 
 # 打赏最低 1 USDT（最小单位）
 TIP_MIN_USDT_RAW = 10 ** USDT_DECIMALS
-# 提现最低 10 USDT（作者手动提现或自动打款均需 >= 此值）
-WITHDRAW_MIN_USDT = 10
-WITHDRAW_MIN_RAW = WITHDRAW_MIN_USDT * (10 ** USDT_DECIMALS)
 
 @app.route('/api/tips/verify', methods=['POST'])
 @token_required
@@ -1298,78 +1239,6 @@ def verify_tip():
             'amount_usdt': round(amount_usdt, 2),
             'author_receives_usdt': round(amount_usdt, 2),
         }
-    })
-
-@app.route('/api/user/revenue', methods=['GET'])
-@token_required
-def get_revenue():
-    """作者收入：打赏记录 + 可提现余额（USDT）。"""
-    decimals = app.config['BSC']['USDT_DECIMALS']
-    balance_raw = int(getattr(g.current_user, 'withdrawable_balance', None) or '0')
-    balance_usdt = round(balance_raw / (10 ** decimals), 2)
-    tips = Tip.query.filter_by(to_user_id=g.current_user.id).order_by(Tip.created_at.desc()).all()
-    tips_data = []
-    for tip in tips:
-        full_raw = int(tip.amount)
-        tips_data.append({
-            'from': tip.sender.nickname if tip.sender else 'Unknown',
-            'post_title': tip.post.title if tip.post else 'Unknown',
-            'amount_usdt': round(full_raw / (10 ** decimals), 2),
-            'tx_hash': tip.tx_hash,
-            'created_at': tip.created_at.isoformat()
-        })
-    return jsonify({
-        'withdrawable_balance_raw': str(balance_raw),
-        'withdrawable_balance_usdt': balance_usdt,
-        'min_withdraw_usdt': WITHDRAW_MIN_USDT,
-        'tips': tips_data,
-        'wallet_address': g.current_user.address or getattr(g.current_user, 'wallet_address', None),
-        'platform_fee_percent': 0
-    })
-
-
-@app.route('/api/user/withdraw', methods=['POST'])
-@token_required
-def withdraw():
-    """作者提现：将可提现余额 USDT 从平台钱包转到当前用户绑定钱包。最低 10 USDT。"""
-    data = request.get_json() or {}
-    decimals = app.config['BSC']['USDT_DECIMALS']
-    balance_raw = int(getattr(g.current_user, 'withdrawable_balance', None) or '0')
-    if balance_raw < WITHDRAW_MIN_RAW:
-        return jsonify({'error': f'可提现余额不足，提现最低 {WITHDRAW_MIN_USDT} USDT'}), 400
-    to_address = (g.current_user.wallet_address or g.current_user.address or '').strip()
-    if not to_address or not Web3.is_address(to_address):
-        return jsonify({'error': '请先绑定钱包地址后再提现'}), 400
-    amount_usdt = data.get('amount_usdt')
-    if amount_usdt is not None:
-        amount_usdt = float(amount_usdt)
-        if amount_usdt < WITHDRAW_MIN_USDT:
-            return jsonify({'error': f'单笔提现最低 {WITHDRAW_MIN_USDT} USDT'}), 400
-        withdraw_raw = int(amount_usdt * (10 ** decimals))
-        if withdraw_raw > balance_raw:
-            return jsonify({'error': '可提现余额不足'}), 400
-    else:
-        withdraw_raw = balance_raw
-    if not PLATFORM_PRIVATE_KEY:
-        return jsonify({'error': '平台未开启提现功能'}), 503
-    usdt_contract = app.config['BSC'].get('USDT_CONTRACT_ADDRESS')
-    if not usdt_contract:
-        return jsonify({'error': '未配置 USDT 合约'}), 503
-    status, result = try_send_tip_payout_raw(to_address, withdraw_raw)
-    if status != 'sent':
-        return jsonify({'error': result or '打款失败'}), 500
-    new_balance_raw = balance_raw - withdraw_raw
-    g.current_user.withdrawable_balance = str(new_balance_raw)
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-        return jsonify({'error': '扣减余额失败'}), 500
-    return jsonify({
-        'message': '提现成功',
-        'tx_hash': result,
-        'withdrawn_usdt': round(withdraw_raw / (10 ** decimals), 2),
-        'withdrawable_balance_usdt': round(new_balance_raw / (10 ** decimals), 2)
     })
 
 @app.route('/api/posts/<int:post_id>', methods=['DELETE'])
@@ -1509,63 +1378,6 @@ def update_report(report_id):
         r.admin_notes = (data['admin_notes'] or '')[:500]
     db.session.commit()
     return jsonify({'message': '已更新', 'report': r.to_dict()})
-
-@app.route('/api/admin/process-tip-payouts', methods=['POST'])
-@token_required
-@admin_required
-def admin_process_tip_payouts():
-    """手动触发：处理所有未打款的打赏（需配置 PLATFORM_PRIVATE_KEY）。"""
-    total, sent, failed = process_pending_tip_payouts()
-    return jsonify({
-        'message': 'Processed pending tip payouts',
-        'processed': total,
-        'sent': sent,
-        'failed': failed
-    })
-
-
-def process_auto_withdrawals():
-    """自动打款：对可提现余额 >= 10 USDT 且已绑定钱包的用户，从平台钱包转 USDT 到其绑定钱包并扣减余额。返回 (处理数, 成功数, 失败数)。"""
-    if not PLATFORM_PRIVATE_KEY:
-        return (0, 0, 0)
-    users = User.query.filter(User.id.isnot(None)).all()
-    processed, sent, failed = 0, 0, 0
-    for user in users:
-        balance_raw = int(getattr(user, 'withdrawable_balance', None) or '0')
-        if balance_raw < WITHDRAW_MIN_RAW:
-            continue
-        to_address = (user.wallet_address or user.address or '').strip()
-        if not to_address or not Web3.is_address(to_address):
-            failed += 1
-            continue
-        processed += 1
-        status, result = try_send_tip_payout_raw(to_address, balance_raw)
-        if status == 'sent':
-            user.withdrawable_balance = '0'
-            sent += 1
-            try:
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-        else:
-            failed += 1
-    return (processed, sent, failed)
-
-
-@app.route('/api/admin/process-withdrawals', methods=['POST'])
-@token_required
-@admin_required
-def admin_process_withdrawals():
-    """手动触发自动打款：对可提现余额 >= 10 USDT 的作者，转至其绑定钱包。可配合 cron 定时调用。"""
-    processed, sent, failed = process_auto_withdrawals()
-    return jsonify({
-        'message': '自动打款已执行',
-        'processed': processed,
-        'sent': sent,
-        'failed': failed,
-        'min_usdt': WITHDRAW_MIN_USDT
-    })
-
 
 # /api/debug/seed 已移除，生产环境不可暴露造数接口；造数请用 Flask shell 或独立脚本
 
@@ -1941,29 +1753,6 @@ def _ensure_users_withdrawable_balance():
         if 'already exists' not in str(e).lower():
             print(f'[Startup] users.withdrawable_balance skip: {e}')
 
-def _ensure_posts_nft_columns():
-    """启动时确保 posts 表存在 nft_token_id、nft_tx_hash 列。仅在实际变更时打日志。"""
-    from sqlalchemy import text
-    if db.engine.dialect.name != 'postgresql':
-        return
-    for col, sql in (
-        ('nft_token_id', 'ALTER TABLE posts ADD COLUMN nft_token_id BIGINT'),
-        ('nft_tx_hash', 'ALTER TABLE posts ADD COLUMN nft_tx_hash VARCHAR(66)'),
-    ):
-        try:
-            r = db.session.execute(text(
-                "SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name=:col"
-            ), {'col': col})
-            if r.scalar() is not None:
-                continue
-            db.session.execute(text(sql))
-            db.session.commit()
-            print(f'[Startup] posts.{col} added.')
-        except Exception as e:
-            db.session.rollback()
-            if 'already exists' not in str(e).lower():
-                print(f'[Startup] posts.{col} skip: {e}')
-
 def _ensure_posts_tx_nullable():
     """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
     from sqlalchemy import text
@@ -2008,7 +1797,6 @@ if __name__ == '__main__':
         db.create_all()
         _ensure_users_wallet_address()
         _ensure_users_withdrawable_balance()
-        _ensure_posts_nft_columns()
         _ensure_posts_tx_nullable()
         if _should_run_init_db():
             init_db_data()
@@ -2019,7 +1807,6 @@ else:
         db.create_all()
         _ensure_users_wallet_address()
         _ensure_users_withdrawable_balance()
-        _ensure_posts_nft_columns()
         _ensure_posts_tx_nullable()
         if _should_run_init_db():
             init_db_data()

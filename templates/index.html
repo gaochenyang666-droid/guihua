@@ -198,6 +198,28 @@
         </div>
     </div>
 
+    <!-- Admin Reports Modal -->
+    <div class="modal-overlay" id="adminReportsModal" onclick="Modal.close('adminReportsModal')">
+        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>🚩 举报列表</h3>
+                <button class="modal-close" onclick="Modal.close('adminReportsModal')">&times;</button>
+            </div>
+            <div id="adminReportsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+        </div>
+    </div>
+
+    <!-- Admin Users Modal -->
+    <div class="modal-overlay" id="adminUsersModal" onclick="Modal.close('adminUsersModal')">
+        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>👥 用户列表</h3>
+                <button class="modal-close" onclick="Modal.close('adminUsersModal')">&times;</button>
+            </div>
+            <div id="adminUsersBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+        </div>
+    </div>
+
     <!-- Notifications Modal -->
     <div class="modal-overlay" id="notificationModal" onclick="Modal.close('notificationModal')">
         <div class="modal glass" onclick="event.stopPropagation()">
@@ -788,7 +810,23 @@
                             statsBtn.style.borderColor = 'var(--accent-gold)';
                             statsBtn.textContent = '📊 看板';
                             statsBtn.onclick = Admin.openStats;
+                            const reportsBtn = document.createElement('button');
+                            reportsBtn.id = 'adminReportsBtn';
+                            reportsBtn.className = 'btn btn-ghost';
+                            reportsBtn.style.color = 'var(--accent-red)';
+                            reportsBtn.style.borderColor = 'var(--accent-red)';
+                            reportsBtn.textContent = '🚩 举报';
+                            reportsBtn.onclick = Admin.openReports;
+                            const usersBtn = document.createElement('button');
+                            usersBtn.id = 'adminUsersBtn';
+                            usersBtn.className = 'btn btn-ghost';
+                            usersBtn.style.color = 'var(--accent-purple)';
+                            usersBtn.style.borderColor = 'var(--accent-purple)';
+                            usersBtn.textContent = '👥 用户';
+                            usersBtn.onclick = Admin.openUsers;
                             const logoutBtn = document.getElementById('logoutBtn');
+                            logoutBtn.parentNode.insertBefore(usersBtn, logoutBtn);
+                            logoutBtn.parentNode.insertBefore(reportsBtn, logoutBtn);
                             logoutBtn.parentNode.insertBefore(statsBtn, logoutBtn);
                         }
                     }
@@ -915,6 +953,92 @@
                 } catch(e) {
                     body.innerHTML = `<div style="color: var(--accent-red);">加载失败: ${e.message}</div>`;
                 }
+            },
+            async openReports() {
+                Modal.open('adminReportsModal');
+                const body = document.getElementById('adminReportsBody');
+                body.innerHTML = '加载中...';
+                try {
+                    const res = await fetch(`${API_BASE}/admin/reports`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+                    const list = await res.json().catch(() => []);
+                    if (res.status !== 200 || !Array.isArray(list)) {
+                        body.innerHTML = `<div style="color: var(--accent-red);">${list.error || '加载失败'}</div>`;
+                        return;
+                    }
+                    if (list.length === 0) {
+                        body.innerHTML = '<div style="text-align:center; color: var(--text-muted); padding: 2rem;">暂无举报</div>';
+                        return;
+                    }
+                    body.innerHTML = list.map(r => `
+                        <div class="glass" style="padding: 0.75rem; margin-bottom: 0.75rem; border-radius: 8px;">
+                            <div style="font-size: 0.85rem; margin-bottom: 0.4rem;">
+                                <span style="color: var(--text-muted);">#${r.id}</span> ${r.status === 'pending' ? '<span style="color: var(--accent-red);">待处理</span>' : r.status === 'resolved' ? '<span style="color: var(--accent-green);">已处理</span>' : '<span style="color: var(--text-muted);">已忽略</span>'}
+                            </div>
+                            <div style="margin-bottom: 0.4rem;">举报人: ${escapeHtml(r.reporter_nickname || '')} · 被举报: ${escapeHtml(r.reported_nickname || '')} ${r.post_title ? '· 帖子: ' + escapeHtml(r.post_title) : ''}</div>
+                            <div style="font-size: 0.9rem; color: var(--text-primary); margin-bottom: 0.5rem;">${escapeHtml(r.reason || '')}</div>
+                            ${r.admin_notes ? `<div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">备注: ${escapeHtml(r.admin_notes)}</div>` : ''}
+                            ${r.status === 'pending' ? `
+                                <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                                    <button class="btn btn-primary btn-sm" onclick="Admin.resolveReport(${r.id}, 'resolved')">已处理</button>
+                                    <button class="btn btn-ghost btn-sm" onclick="Admin.resolveReport(${r.id}, 'dismissed')">忽略</button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('');
+                } catch (e) {
+                    body.innerHTML = `<div style="color: var(--accent-red);">${e.message || '加载失败'}</div>`;
+                }
+            },
+            async resolveReport(reportId, status) {
+                try {
+                    const res = await fetch(`${API_BASE}/admin/reports/${reportId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: JSON.stringify({ status })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) { Toast.success(data.message || '已更新'); Admin.openReports(); }
+                    else Toast.error(data.error || '操作失败');
+                } catch (e) { Toast.error('网络错误'); }
+            },
+            async openUsers() {
+                Modal.open('adminUsersModal');
+                const body = document.getElementById('adminUsersBody');
+                body.innerHTML = '加载中...';
+                try {
+                    const res = await fetch(`${API_BASE}/admin/users`, { headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
+                    const list = await res.json().catch(() => []);
+                    if (res.status !== 200 || !Array.isArray(list)) {
+                        body.innerHTML = `<div style="color: var(--accent-red);">${list.error || '加载失败'}</div>`;
+                        return;
+                    }
+                    if (list.length === 0) {
+                        body.innerHTML = '<div style="text-align:center; color: var(--text-muted); padding: 2rem;">暂无用户</div>';
+                        return;
+                    }
+                    body.innerHTML = list.map(u => `
+                        <div class="glass" style="padding: 0.75rem; margin-bottom: 0.75rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                            <div>
+                                <div style="font-weight: 600;">${escapeHtml(u.nickname || u.username || '')}</div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted);">ID: ${u.id} · ${u.type === 'web3' ? '钱包' : 'Web2'}</div>
+                            </div>
+                            ${!u.is_admin ? `<button class="btn btn-ghost btn-sm" style="color: var(--accent-red);" onclick="Admin.toggleBan(${u.id}, ${u.is_banned})">${u.is_banned ? '解除封禁' : '封禁'}</button>` : '<span style="font-size: 0.8rem; color: var(--accent-gold);">管理员</span>'}
+                        </div>
+                    `).join('');
+                } catch (e) {
+                    body.innerHTML = `<div style="color: var(--accent-red);">${e.message || '加载失败'}</div>`;
+                }
+            },
+            async toggleBan(userId, currentlyBanned) {
+                try {
+                    const res = await fetch(`${API_BASE}/admin/users/${userId}/ban`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) { Toast.success(data.message || (currentlyBanned ? '已解除封禁' : '已封禁')); Admin.openUsers(); }
+                    else Toast.error(data.error || '操作失败');
+                } catch (e) { Toast.error('网络错误'); }
             }
         };
 
@@ -1139,11 +1263,7 @@
                         <div style="color:var(--text-muted); margin-bottom:0.5rem;">🔗 链上证据（可在链上查询）</div>
                         <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">
                             ${p.tx_hash ? `<a href="https://bscscan.com/tx/${p.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证 BSCScan</a>` : '<span style="color:var(--text-muted);">无支付凭证</span>'}
-                            ${p.ipfs_cid ? (
-                                (p.ipfs_cid.length === 43 || (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'))) ?
-                                `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>` :
-                                `<a href="https://ipfs.io/ipfs/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-green);">💾 永存档案 IPFS</a>`
-                            ) : ''}
+                            ${p.ipfs_cid ? `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>` : ''}
                         </div>
                     </div>
                     
@@ -1153,7 +1273,7 @@
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.id !== p.author.id ? `<button class="btn btn-ghost" style="color:var(--text-muted); font-size:0.85rem;" onclick="Interact.report(${p.id})">🚩 举报</button>` : ''}
                         ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id}, ${JSON.stringify((p.author && (p.author.wallet_address || p.author.address)) || '')})">💰 打赏作者</button>` : ''}
-                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid && !p.nft_tx_hash) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
+                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
                     </div>
 
                     ${adminControls}
@@ -1242,15 +1362,6 @@
                     const data = await res.json().catch(() => ({}));
                     if (res.ok) { Toast.success(data.message || '已同步永存档案'); Modal.openDetail(id); }
                     else Toast.error(data.error || '同步失败');
-                } catch (e) { Toast.error('网络错误'); }
-            },
-            async mintNft(id) {
-                if (!currentUser) return Modal.open('loginModal');
-                try {
-                    const res = await fetch(`${API_BASE}/posts/${id}/mint-nft`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
-                    const data = await res.json().catch(() => ({}));
-                    if (res.ok) { Toast.success(data.message || 'NFT 铸造已提交'); Modal.openDetail(id); }
-                    else Toast.error(data.error || '提交失败');
                 } catch (e) { Toast.error('网络错误'); }
             },
             async comment(id) {

@@ -55,6 +55,29 @@
         </div>
     </div>
 
+    <!-- Change Password Modal (logged-in, Web2 only) -->
+    <div class="modal-overlay" id="changePasswordModal" onclick="EditProfile.closeChangePassword()">
+        <div class="modal glass" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>🔒 修改密码</h3>
+                <button class="modal-close" onclick="EditProfile.closeChangePassword()">&times;</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">当前密码</label>
+                <input type="password" class="form-input" id="cpOldPasswordIn" placeholder="当前密码">
+            </div>
+            <div class="form-group">
+                <label class="form-label">新密码</label>
+                <input type="password" class="form-input" id="cpNewPasswordIn" placeholder="新密码">
+            </div>
+            <div class="form-group">
+                <label class="form-label">确认新密码</label>
+                <input type="password" class="form-input" id="cpConfirmPasswordIn" placeholder="再输入一次">
+            </div>
+            <button class="btn btn-primary" style="width: 100%;" onclick="EditProfile.submitChangePassword()">确认修改</button>
+        </div>
+    </div>
+
     <script>
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
@@ -115,12 +138,12 @@
                     <div style="flex:1;">
                         <div style="display:flex; justify-content:space-between; align-items:start;">
                             <h1 style="margin-bottom:0.5rem;">${escapeHtml(user.nickname)}</h1>
-                            ${isMe ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>` : ''}
+                            ${isMe ? `<div style="display:flex; gap:0.5rem;"><button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>${currentUser.username ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.openChangePassword()">🔒 修改密码</button>` : ''}</div>` : ''}
                         </div>
                         <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                             ${user.username ? user.username + ' · ' : ''}
                             ${typeof user.id !== 'undefined' ? formatUserId(user.id) : ''}
-                            ${user.address ? `<span style="background:rgba(16,185,129,0.1); color:#10b981; padding:2px 6px; border-radius:4px; font-size:0.7rem;">${user.address.substring(0,6)}...${user.address.substring(38)}</span>` : ''}
+                            ${(user.wallet_address || user.address) ? `<span style="background:rgba(16,185,129,0.1); color:#10b981; padding:2px 6px; border-radius:4px; font-size:0.7rem;" title="打赏请转账至该地址">打赏地址: ${(user.wallet_address || user.address).substring(0,6)}...${(user.wallet_address || user.address).slice(-4)}</span>` : ''}
                         </div>
                         ${user.bio ? `<div style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-primary); background:rgba(255,255,255,0.05); padding:0.5rem; border-radius:8px;">${escapeHtml(user.bio)}</div>` : ''}
                         
@@ -142,11 +165,7 @@
                 const proofLink = (p) => {
                     const parts = [];
                     if (p.tx_hash) parts.push('<a href="https://bscscan.com/tx/' + p.tx_hash + '" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证</a>');
-                    if (p.ipfs_cid) {
-                        const isAr = (p.ipfs_cid.length > 40 && !p.ipfs_cid.startsWith('Qm') && !p.ipfs_cid.startsWith('b'));
-                        const url = isAr ? 'https://arweave.net/' + p.ipfs_cid : 'https://ipfs.io/ipfs/' + p.ipfs_cid;
-                        parts.push('<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>');
-                    }
+                    if (p.ipfs_cid) parts.push('<a href="https://arweave.net/' + p.ipfs_cid + '" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>');
                     return parts.length ? '<div style="margin-top:0.4rem; font-size:0.75rem;">链上证据: ' + parts.join(' · ') + '</div>' : '';
                 };
                 document.getElementById('postsArea').innerHTML = posts.map(p => `
@@ -241,6 +260,48 @@
                     }
                 } catch(e) {
                     console.error(e);
+                    if (typeof Toast !== 'undefined') Toast.error('网络错误'); else alert('网络错误');
+                }
+            },
+            openChangePassword() {
+                document.getElementById('cpOldPasswordIn').value = '';
+                document.getElementById('cpNewPasswordIn').value = '';
+                document.getElementById('cpConfirmPasswordIn').value = '';
+                document.getElementById('changePasswordModal').classList.add('active');
+            },
+            closeChangePassword() {
+                document.getElementById('changePasswordModal').classList.remove('active');
+            },
+            async submitChangePassword() {
+                const oldP = document.getElementById('cpOldPasswordIn').value;
+                const newP = document.getElementById('cpNewPasswordIn').value;
+                const confirmP = document.getElementById('cpConfirmPasswordIn').value;
+                if (!oldP || !newP) {
+                    if (typeof Toast !== 'undefined') Toast.error('请填写当前密码和新密码'); else alert('请填写当前密码和新密码');
+                    return;
+                }
+                if (newP !== confirmP) {
+                    if (typeof Toast !== 'undefined') Toast.error('两次新密码不一致'); else alert('两次新密码不一致');
+                    return;
+                }
+                if (newP.length < 6) {
+                    if (typeof Toast !== 'undefined') Toast.error('新密码至少6位'); else alert('新密码至少6位');
+                    return;
+                }
+                try {
+                    const res = await fetch(`${API_BASE}/user/password`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: JSON.stringify({ old_password: oldP, new_password: newP })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) {
+                        if (typeof Toast !== 'undefined') Toast.success(data.message || '密码已修改'); else alert('密码已修改');
+                        this.closeChangePassword();
+                    } else {
+                        if (typeof Toast !== 'undefined') Toast.error(data.error || '修改失败'); else alert(data.error || '修改失败');
+                    }
+                } catch (e) {
                     if (typeof Toast !== 'undefined') Toast.error('网络错误'); else alert('网络错误');
                 }
             }

@@ -123,8 +123,6 @@ class Post(db.Model):
             'is_bookmarked': is_bookmarked,
             'tx_hash': self.tx_hash,
             'ipfs_cid': self.ipfs_cid,
-            'nft_token_id': getattr(self, 'nft_token_id', None),
-            'nft_tx_hash': getattr(self, 'nft_tx_hash', None),
             'post_type': self.post_type,
             'created_at': self.created_at.isoformat(),
             'is_repost': self.is_repost,

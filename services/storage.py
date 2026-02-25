@@ -1,8 +1,7 @@
-# 存储服务层：图片上传（ImgBB/本地）、Arweave 永存、IPFS 备份
+# 存储服务层：图片上传（ImgBB/本地）、Arweave 永存
 import os
 import json
 import time
-import hashlib
 import secrets
 import base64
 import requests
@@ -80,25 +79,6 @@ def upload_to_imgbb(file):
         return (None, str(e)[:150])
 
 
-def upload_to_pinata(json_data):
-    api_key = current_app.config.get('PINATA_API_KEY')
-    secret = current_app.config.get('PINATA_SECRET_API_KEY')
-    if not api_key or not secret:
-        if current_app.config.get('DEBUG'):
-            return 'Qm' + secrets.token_hex(22) + '(Mock)'
-        return None
-    url = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
-    headers = {"pinata_api_key": api_key, "pinata_secret_api_key": secret, "Content-Type": "application/json"}
-    try:
-        response = requests.post(url, json=json_data, headers=headers, timeout=_REQUESTS_TIMEOUT)
-        if response.status_code == 200:
-            return response.json().get('IpfsHash')
-        return None
-    except Exception as e:
-        print(f"Pinata Exception: {e}")
-        return None
-
-
 def get_arweave_wallet():
     if not Wallet or not Transaction:
         return None
@@ -164,28 +144,8 @@ def upload_to_arweave_native(data):
         return (None, f"Arweave 上传异常: {str(e)[:200]}")
 
 
-def upload_to_pinata_with_reason(json_data):
-    api_key = current_app.config.get('PINATA_API_KEY')
-    secret = current_app.config.get('PINATA_SECRET_API_KEY')
-    if not api_key or not secret:
-        if current_app.config.get('DEBUG'):
-            return ('Qm' + secrets.token_hex(22) + '(Mock)', None)
-        return (None, "Pinata 未配置")
-    url = "https://api.pinata.cloud/pinning/pinJSONToIPFS"
-    headers = {"pinata_api_key": api_key, "pinata_secret_api_key": secret, "Content-Type": "application/json"}
-    try:
-        response = requests.post(url, json=json_data, headers=headers, timeout=_REQUESTS_TIMEOUT)
-        if response.status_code == 200:
-            cid = response.json().get('IpfsHash')
-            if cid:
-                return (cid, None)
-            return (None, "Pinata 返回无 IpfsHash")
-        return (None, f"Pinata HTTP {response.status_code}: {response.text[:150]}")
-    except Exception as e:
-        return (None, str(e)[:150])
-
-
 def upload_to_arweave_with_retry(data, retries=3):
+    """仅使用 Arweave，无 IPFS 兜底。"""
     last_error = None
     for attempt in range(max(1, retries + 1)):
         tx_id, err = upload_to_arweave_native(data)
@@ -194,37 +154,4 @@ def upload_to_arweave_with_retry(data, retries=3):
         last_error = err
         if attempt < retries:
             time.sleep(3)
-    if current_app.config.get('PINATA_API_KEY') and current_app.config.get('PINATA_SECRET_API_KEY'):
-        for attempt in range(2):
-            cid, err = upload_to_pinata_with_reason(data)
-            if cid:
-                return (cid, 'ipfs', None)
-            last_error = err
-            if attempt < 1:
-                time.sleep(2)
-    else:
-        if not last_error:
-            last_error = "Pinata 未配置，无法兜底"
-    return (None, None, last_error)
-
-
-def build_and_upload_nft_metadata(post):
-    try:
-        content_hash = hashlib.sha256((post.content or '').encode('utf-8')).hexdigest()
-        external_url = f"https://arweave.net/{post.ipfs_cid}" if post.ipfs_cid else ""
-        metadata = {
-            "name": (post.title or "")[:200],
-            "description": (post.content or "").replace("<", " ").replace(">", " ")[:500],
-            "content_hash": content_hash,
-            "author_id": post.author_id,
-            "image": post.cover_image or "",
-            "external_url": external_url,
-            "platform": "GuiHua Web3",
-            "post_id": post.id,
-            "created_at": post.created_at.isoformat() if post.created_at else ""
-        }
-        tx_id, _ = upload_to_arweave_native(metadata)
-        return tx_id
-    except Exception as e:
-        print(f"NFT metadata upload error: {e}")
-        return None
+    return (None, None, last_error or 'Arweave 上传失败')
