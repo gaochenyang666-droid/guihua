@@ -149,8 +149,8 @@
                         <input type="text" class="form-input" id="regUsername" required />
                     </div>
                     <div class="form-group">
-                        <label class="form-label">密码</label>
-                        <input type="password" class="form-input" id="regPassword" required />
+                        <label class="form-label">密码（至少 6 位）</label>
+                        <input type="password" class="form-input" id="regPassword" placeholder="至少6位" minlength="6" required />
                     </div>
                     <button class="btn btn-primary" style="width: 100%;" onclick="Auth.register()">立即签约</button>
                     <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
@@ -482,15 +482,18 @@
             },
 
             async register() {
-                const username = document.getElementById('regUsername').value;
-                const password = document.getElementById('regPassword').value;
+                const username = (document.getElementById('regUsername').value || '').trim();
+                const password = (document.getElementById('regPassword').value || '');
+                if (!username) { Toast.error('请填写用户名'); return; }
+                if (!password) { Toast.error('请填写密码'); return; }
+                if (password.length < 6) { Toast.error('密码至少 6 位'); return; }
                 const res = await fetch(`${API_BASE}/auth/web2/register`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ username, password })
                 });
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
                 if (res.ok) this.success(data);
-                else Toast.error(data.error);
+                else Toast.error(data.error || '注册失败');
             },
 
             success(data) {

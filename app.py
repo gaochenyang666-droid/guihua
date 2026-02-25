@@ -205,18 +205,22 @@ def verify_signature():
 
 @app.route('/api/auth/web2/register', methods=['POST'])
 def register():
+    if _rate_limit('register', 10):
+        return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     try:
         data = request.get_json()
         if not data:
-            return jsonify({'error': 'Missing JSON data'}), 400
+            return jsonify({'error': '请使用 JSON 提交（Content-Type: application/json）'}), 400
         username = (data.get('username') or '').strip()
         password = (data.get('password') or '')
         if not username or not password:
             return jsonify({'error': '请填写用户名和密码'}), 400
         if len(username) > 50:
             return jsonify({'error': '用户名过长（最多50字）'}), 400
+        if len(password) < 6:
+            return jsonify({'error': '密码至少 6 位'}), 400
         if User.query.filter_by(username=username).first():
-            return jsonify({'error': 'Username already exists'}), 400
+            return jsonify({'error': '该用户名已被注册，请换一个或直接登录'}), 400
 
         try:
             user = User(username=username, nickname=username, avatar=get_random_avatar())
@@ -245,18 +249,32 @@ def login():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Invalid or empty JSON'}), 400
-    username = data.get('username')
+    username = (data.get('username') or '').strip()
     password = data.get('password')
-    
-    user = User.query.filter_by(username=username).first()
-    if user and user.check_password(password):
+    if not username:
+        return jsonify({'error': '请填写用户名'}), 400
+    if password is None:
+        return jsonify({'error': '请填写密码'}), 400
+    password = str(password).strip() if not isinstance(password, str) else password.strip()
+    if not password:
+        return jsonify({'error': '请填写密码'}), 400
+
+    try:
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            return jsonify({'error': '用户名或密码错误'}), 401
+        if not getattr(user, 'password_hash', None):
+            return jsonify({'error': '该账号为钱包登录，请使用钱包登录'}), 401
+        if not user.check_password(password):
+            return jsonify({'error': '用户名或密码错误'}), 401
         token = jwt.encode({
             'user_id': user.id,
             'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
         }, app.config['SECRET_KEY'], algorithm='HS256')
         return jsonify({'token': token, 'user': user.to_dict()})
-    
-    return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception as e:
+        print(f"Login Error: {e}")
+        return jsonify({'error': '用户名或密码错误'}), 401
 
 @app.route('/api/auth/web2/change-password', methods=['POST'])
 def change_password_no_login():
@@ -703,7 +721,9 @@ def get_posts():
         query = Post.query.options(joinedload(Post.author))
         if sort_by == 'bookmarks':
             if current_user_id:
-                query = query.join(Bookmark, Post.id == Bookmark.post_id).filter(Bookmark.user_id == current_user_id).order_by(Post.created_at.desc())
+                query = query.join(Bookmark, Post.id == Bookmark.post_id).filter(
+                    Bookmark.user_id == current_user_id
+                ).filter(Post.is_hidden == False).order_by(Post.created_at.desc())
             else:
                 return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
         else:
@@ -712,7 +732,8 @@ def get_posts():
             query = query.filter_by(region=region)
         current_user = User.query.get(current_user_id) if current_user_id else None
         if not current_user or not getattr(current_user, 'is_admin', False):
-            query = query.filter_by(is_hidden=False)
+            if sort_by != 'bookmarks':
+                query = query.filter_by(is_hidden=False)
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         posts = pagination.items
         post_ids = [p.id for p in posts]

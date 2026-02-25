@@ -34,7 +34,14 @@ class User(db.Model):
     def check_password(self, password):
         if not self.password_hash:
             return False
-        return check_password_hash(self.password_hash, password)
+        if password is None:
+            return False
+        if isinstance(password, str) and not password.strip():
+            return False
+        try:
+            return check_password_hash(self.password_hash, str(password))
+        except (TypeError, ValueError):
+            return False
 
     def refresh_nonce(self):
         self.nonce = secrets.token_hex(16)
@@ -108,11 +115,14 @@ class Post(db.Model):
 
         lc = likes_count if likes_count is not None else self.likes.count()
         cc = comments_count if comments_count is not None else self.comments.count()
+        cover_image = self.cover_image
+        if cover_image and str(cover_image).strip() == '/static/images/hua_cover.jpg':
+            cover_image = None  # 该占位图已移除，不再返回避免 404
         return {
             'id': self.id,
             'title': self.title,
             'content': self.content,
-            'cover_image': self.cover_image,
+            'cover_image': cover_image,
             'images': images_list,
             'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻'},
             'view_count': self.view_count,
