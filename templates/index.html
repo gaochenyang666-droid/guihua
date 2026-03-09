@@ -51,6 +51,8 @@
         </div>
     </nav>
 
+    <button class="donate-fab" type="button" onclick="Donate.openModal()">☕ 支持站长</button>
+
     <div id="siteAnnouncementBar" class="site-announcement glass" hidden>
         <div class="site-announcement-inner">
             <strong id="siteAnnouncementTitle" class="site-announcement-title">公告</strong>
@@ -1179,6 +1181,7 @@
                                     <div class="author-info">
                                         ${UI.renderAvatar(p.author)}
                                         <span>${escapeHtml(p.author.nickname)}</span>
+                                        ${UI.renderHonor(p.author)}
                                         ${p.author.id != null ? formatUserId(p.author.id) : ''}
                                     </div>
                                     <div class="post-like">
@@ -1198,6 +1201,10 @@
 
             renderAvatar(user) {
                 return `<div class="user-avatar-emoji post-avatar">${user.avatar || '👻'}</div>`;
+            },
+            renderHonor(user) {
+                if (!user || !user.honor_title) return '';
+                return `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>`;
             },
 
             handleNav(el, sort) {
@@ -1689,7 +1696,7 @@
                     <h2 style="margin-bottom:0.5rem;">${escapeHtml(p.title)}</h2>
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                         ${p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span> |' : ''}
-                        发布者: ${escapeHtml(p.author.nickname)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
+                        发布者: ${escapeHtml(p.author.nickname)} ${UI.renderHonor(p.author)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
                     </div>
                     <div class="post-detail-content">
                         ${contentHtml}
@@ -1709,7 +1716,7 @@
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.id !== p.author.id ? `<button class="btn btn-ghost" style="color:var(--text-muted); font-size:0.85rem;" onclick="Interact.report(${p.id})">🚩 举报</button>` : ''}
-                        ${currentUser && currentUser.address && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id}, ${JSON.stringify((p.author && (p.author.wallet_address || p.author.address)) || '')})">💰 打赏作者</button>` : ''}
+                        ${currentUser && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id}, ${JSON.stringify((p.author && (p.author.wallet_address || p.author.address)) || '')})">💰 打赏作者</button>` : ''}
                         ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
                     </div>
 

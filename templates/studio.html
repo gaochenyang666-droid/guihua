@@ -39,6 +39,14 @@
         #quillEditorWrap .ql-editor u,
         #quillEditorWrap .ql-editor i,
         #quillEditorWrap .ql-editor a { color: inherit; }
+        #quillEditorWrap .ql-editor img {
+            display: inline-block;
+            vertical-align: middle;
+            max-width: min(100%, 420px);
+            height: auto;
+            margin: 0.15rem 0.45rem 0.35rem 0;
+            border-radius: 8px;
+        }
         #quillEditorWrap .ql-toolbar {
             background: rgba(0,0,0,0.35);
             border-color: var(--border-color);
@@ -326,7 +334,7 @@
                 const p = document.getElementById('coverPreview');
                 if(url) {
                     const esc = (s) => (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-                    p.innerHTML = `<img src="${esc(url)}" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover; border-radius:8px;" onerror="this.style.display='none'">`;
+                    p.innerHTML = `<img src="${esc(url)}" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover; object-position:center center; border-radius:8px;" onerror="this.style.display='none'">`;
                     p.style.border = '1px solid var(--accent-purple)';
                 } else {
                     p.innerHTML = '<span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>';
@@ -428,6 +436,26 @@
                 
                 document.getElementById(`step${this.currentStep}`).classList.add('active');
                 document.getElementById(`stepIndicator${this.currentStep}`).classList.add('active');
+            },
+
+            async runPrecheck() {
+                const token = localStorage.getItem('token');
+                if (!token) return { ok: false, issues: ['登录已失效，请重新登录'], warnings: [] };
+                const title = document.getElementById('studioPostTitle').value || '';
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
+                const coverImage = document.getElementById('studioPostImage').value || '';
+                try {
+                    const res = await fetch(`${API_BASE}/posts/precheck`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ title, content, cover_image: coverImage })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) return { ok: false, issues: [data.error || '发布前检查失败'], warnings: [] };
+                    return data;
+                } catch (e) {
+                    return { ok: false, issues: ['发布前检查网络异常'], warnings: [] };
+                }
             },
 
             prevStep(step) {
@@ -580,6 +608,14 @@
 
             async initPayment() {
                 if (this.isPublishing) return;
+                const pre = await this.runPrecheck();
+                if (!pre.ok) {
+                    Toast.error((pre.issues && pre.issues[0]) || '发布前检查未通过');
+                    return;
+                }
+                if (pre.warnings && pre.warnings.length) {
+                    Toast.info(pre.warnings[0]);
+                }
                 
                 document.getElementById('drawerPreviewMode').style.display = 'block';
                 document.getElementById('drawerProgressMode').style.display = 'none';
@@ -696,6 +732,8 @@
                 let txHash = this.pendingTxHash;
 
                 try {
+                    const pre = await this.runPrecheck();
+                    if (!pre.ok) throw new Error((pre.issues && pre.issues[0]) || '发布前检查未通过');
                     // Initialize Web3 if needed
                     if (typeof window.web3 === 'undefined') {
                         if (window.ethereum || window.BinanceChain) {
@@ -1005,6 +1043,8 @@
             });
             const toolbar = studioQuill.getModule('toolbar');
             toolbar.addHandler('image', function() {
+                const selected = studioQuill.getSelection(true);
+                if (selected) lastEditorRange = selected;
                 const input = document.createElement('input');
                 input.setAttribute('type', 'file');
                 input.setAttribute('accept', 'image/png,image/jpeg,image/gif,image/webp');

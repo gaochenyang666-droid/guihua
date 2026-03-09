@@ -332,7 +332,11 @@ body {
 }
 
 /* Post Grid (Mobile: Single Column) */
-.masonry-grid { display: flex; flex-direction: column; gap: 16px; }
+.masonry-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
 .masonry-item { margin-bottom: 0; }
 
 .post-card {
@@ -342,7 +346,7 @@ body {
 .post-card:active { transform: scale(0.98); background: var(--bg-hover); }
 
 .post-image {
-    width: 100%; display: block; object-fit: cover; aspect-ratio: 16/9;
+    width: 100%; display: block; object-fit: cover; object-position: center center; aspect-ratio: 16/9;
     background: var(--bg-secondary); min-height: 180px;
 }
 .post-image-wrap {
@@ -393,6 +397,19 @@ body {
 .post-content { padding: 16px; }
 .post-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; line-height: 1.4; }
 .post-meta { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); }
+.honor-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    background: rgba(255, 215, 0, 0.08);
+    color: var(--accent-gold);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    white-space: nowrap;
+}
 .author-info {
     display: flex;
     align-items: center;
@@ -424,6 +441,29 @@ body {
 }
 .bottom-nav-item i { font-size: 20px; margin-bottom: 2px; }
 .bottom-nav-item.active { color: var(--accent-purple); }
+
+.donate-fab {
+    position: fixed;
+    right: 14px;
+    bottom: 76px;
+    z-index: 1050;
+    border: 1px solid rgba(255, 215, 0, 0.6);
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.28), rgba(124, 58, 237, 0.3));
+    color: #fff7cc;
+    border-radius: 999px;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+@media (min-width: 1024px) {
+    .donate-fab {
+        bottom: 22px;
+        right: 22px;
+        padding: 0.6rem 1rem;
+        font-size: 0.88rem;
+    }
+}
 
 /* ============== Desktop & Large Tablet Overrides ============== */
 @media (min-width: 1024px) {
@@ -569,7 +609,14 @@ textarea.form-input { min-height: 100px; resize: vertical; }
 }
 .post-detail-modal .modal { max-width: 900px; }
 .post-detail-content { word-break: break-word; }
-.post-detail-content img { max-width: 100%; height: auto; display: block; margin: 0.5rem 0; border-radius: var(--radius-sm); }
+.post-detail-content img {
+    max-width: min(100%, 520px);
+    height: auto;
+    display: inline-block;
+    vertical-align: middle;
+    margin: 0.15rem 0.45rem 0.35rem 0;
+    border-radius: var(--radius-sm);
+}
 .modal-header { display: flex; justify-content: space-between; margin-bottom: 1.5rem; align-items: center; }
 .modal-close { background: none; border: none; font-size: 1.8rem; color: var(--text-muted); cursor: pointer; transition: color 0.2s; }
 .modal-close:hover { color: var(--text-primary); }

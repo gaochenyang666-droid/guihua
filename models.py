@@ -47,6 +47,20 @@ class User(db.Model):
         self.nonce = secrets.token_hex(16)
         self.nonce_created_at = datetime.utcnow()
 
+    def get_honor_title(self):
+        """轻量称号系统：纯规则计算，无需额外表结构。"""
+        if self.is_admin:
+            return '守夜人'
+        if self.has_nft_badge:
+            return '秘藏者'
+        if self.address and self.username:
+            return '双界行者'
+        if self.address:
+            return '链上旅人'
+        if self.created_at and (datetime.utcnow() - self.created_at).days >= 30:
+            return '夜游者'
+        return '新魂'
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -60,6 +74,7 @@ class User(db.Model):
             'has_nft_badge': self.has_nft_badge,
             'is_admin': self.is_admin,
             'is_banned': self.is_banned,
+            'honor_title': self.get_honor_title(),
         }
 
 
