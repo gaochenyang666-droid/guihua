@@ -19,7 +19,6 @@ class User(db.Model):
     nickname = db.Column(db.String(50))
     avatar = db.Column(db.String(500), default='👻')
     bio = db.Column(db.String(500), default='')
-    has_nft_badge = db.Column(db.Boolean, default=False)
     is_admin = db.Column(db.Boolean, default=False)
     is_banned = db.Column(db.Boolean, default=False)
     wallet_address = db.Column(db.String(42), nullable=True)
@@ -48,17 +47,38 @@ class User(db.Model):
         self.nonce_created_at = datetime.utcnow()
 
     def get_honor_title(self):
-        """轻量称号系统：纯规则计算，无需额外表结构。"""
+        """称号系统：按管理员 > 发帖数 > 注册年限 > 账号类型优先级返回单称号。"""
+        now = datetime.utcnow()
+        post_count = None
+        try:
+            post_count = int(getattr(self, '_cached_post_count'))
+        except Exception:
+            try:
+                post_count = self.posts.count()
+            except Exception:
+                post_count = 0
+        years = 0
+        if self.created_at:
+            years = max(0, int((now - self.created_at).days // 365))
+
         if self.is_admin:
             return '守夜人'
-        if self.has_nft_badge:
-            return '秘藏者'
+        if post_count >= 1000:
+            return '千帖通灵者'
+        if post_count >= 100:
+            return '百帖引魂者'
+        if post_count >= 10:
+            return '十帖异闻录'
+        if years >= 10:
+            return '十年守秘人'
+        if years >= 5:
+            return '五年夜巡者'
+        if years >= 1:
+            return '一年见习者'
         if self.address and self.username:
             return '双界行者'
         if self.address:
             return '链上旅人'
-        if self.created_at and (datetime.utcnow() - self.created_at).days >= 30:
-            return '夜游者'
         return '新魂'
 
     def to_dict(self):
@@ -71,7 +91,6 @@ class User(db.Model):
             'nickname': self.nickname or self.username or (self.address[:6] + '...' if self.address else 'Unknown'),
             'avatar': self.avatar,
             'bio': self.bio,
-            'has_nft_badge': self.has_nft_badge,
             'is_admin': self.is_admin,
             'is_banned': self.is_banned,
             'honor_title': self.get_honor_title(),
@@ -89,8 +108,6 @@ class Post(db.Model):
     view_count = db.Column(db.Integer, default=0)
     tx_hash = db.Column(db.String(66), unique=True, nullable=True)
     ipfs_cid = db.Column(db.String(100), nullable=True)
-    nft_token_id = db.Column(db.BigInteger, nullable=True, index=True)
-    nft_tx_hash = db.Column(db.String(66), nullable=True)
     is_paid = db.Column(db.Boolean, default=False)
     region = db.Column(db.String(20), default='其他')
     is_on_chain = db.Column(db.Boolean, default=False)
