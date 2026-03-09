@@ -26,7 +26,7 @@ class User(db.Model):
     withdrawable_balance = db.Column(db.String(50), default='0')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    posts = db.relationship('Post', backref='author', lazy='dynamic')
+    posts = db.relationship('Post', backref='author', lazy='dynamic', foreign_keys='Post.author_id')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -81,6 +81,9 @@ class Post(db.Model):
     is_on_chain = db.Column(db.Boolean, default=False)
     post_type = db.Column(db.Integer, default=0, index=True)
     is_hidden = db.Column(db.Boolean, default=False, index=True)
+    is_pinned = db.Column(db.Boolean, default=False, index=True)
+    pinned_at = db.Column(db.DateTime, nullable=True, index=True)
+    pinned_by = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
     allow_comments = db.Column(db.Boolean, default=True)
     is_repost = db.Column(db.Boolean, default=False)
     original_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
@@ -140,6 +143,9 @@ class Post(db.Model):
             'original_post': original_post_data,
             'repost_comment': self.repost_comment,
             'is_hidden': self.is_hidden,
+            'is_pinned': self.is_pinned,
+            'pinned_at': self.pinned_at.isoformat() if self.pinned_at else None,
+            'pinned_by': self.pinned_by,
             'allow_comments': self.allow_comments,
             'region': self.region,
             'is_on_chain': self.is_on_chain

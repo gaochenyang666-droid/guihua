@@ -65,6 +65,15 @@
         </aside>
 
         <main>
+            <div id="pinnedGuideBanner" class="glass" style="display:none; margin-bottom: 1rem; padding: 0.9rem 1rem; border: 1px solid var(--accent-gold); border-radius: 12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+                    <div style="font-size:0.92rem;">
+                        <span style="color:var(--accent-gold); font-weight:700;">📌 置顶指南：</span>
+                        <span id="pinnedGuideTitle" style="color:var(--text-primary);"></span>
+                    </div>
+                    <button class="btn btn-ghost" id="pinnedGuideOpenBtn" style="border-color:var(--accent-gold); color:var(--accent-gold);">查看</button>
+                </div>
+            </div>
             <div class="masonry-grid" id="postGrid"></div>
             <div id="loadingArea" style="text-align: center; padding: 2rem; color: var(--text-muted);">正在召唤灵体...</div>
             <div id="loadMoreArea" style="text-align: center; padding: 1rem; display: none;">
@@ -752,6 +761,28 @@
             currentQuery: '',
             isLoading: false,
             isFetching: false,
+            pinnedPostId: null,
+
+            async loadPinnedGuide() {
+                try {
+                    const res = await fetch(`${API_BASE}/posts/pinned`);
+                    const data = await res.json().catch(() => ({}));
+                    const banner = document.getElementById('pinnedGuideBanner');
+                    const titleEl = document.getElementById('pinnedGuideTitle');
+                    const btn = document.getElementById('pinnedGuideOpenBtn');
+                    if (!banner || !titleEl || !btn) return;
+                    const post = data && data.post;
+                    if (!res.ok || !post || !post.id) {
+                        banner.style.display = 'none';
+                        this.pinnedPostId = null;
+                        return;
+                    }
+                    this.pinnedPostId = post.id;
+                    titleEl.textContent = post.title || '站点使用指南';
+                    btn.onclick = function() { Modal.openDetail(post.id); };
+                    banner.style.display = 'block';
+                } catch (_) {}
+            },
 
             async load(params={}) {
                 if(this.isLoading || this.isFetching) return;
@@ -982,10 +1013,12 @@
                     const isWeb3 = p.post_type === 1 || p.tx_hash;
                     const borderStyle = isWeb3 ? 'border-color: var(--accent-gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);' : '';
                     const badge = isWeb3 ? '<div style="position:absolute; top:10px; right:10px; background:linear-gradient(45deg, #FFD700, #FFA500); color:#000; padding:4px 8px; border-radius:4px; font-size:0.7rem; font-weight:800; z-index:10; box-shadow:0 2px 5px rgba(0,0,0,0.2);">Web3</div>' : '';
+                    const pinBadge = p.is_pinned ? '<div style="position:absolute; top:10px; left:10px; background:rgba(255,215,0,0.2); border:1px solid var(--accent-gold); color:var(--accent-gold); padding:4px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; z-index:10;">📌 置顶</div>' : '';
 
                     return `
                     <div class="masonry-item">
                         <div class="post-card glass" onclick="Modal.openDetail(${p.id})" style="${borderStyle}">
+                            ${pinBadge}
                             ${badge}
                             ${img || imgPlaceholder}
                             <div class="post-content">
@@ -1386,6 +1419,7 @@
                                 <button class="btn btn-ghost" onclick="Interact.adminDelete(${p.id})" style="border-color:var(--accent-red); color:var(--accent-red);">删除帖子</button>
                                 <button class="btn btn-ghost" onclick="Interact.adminToggleHide(${p.id})">${p.is_hidden ? '取消隐藏' : '隐藏帖子'}</button>
                                 <button class="btn btn-ghost" onclick="Interact.adminToggleComments(${p.id})">${p.allow_comments ? '关闭评论' : '开启评论'}</button>
+                                <button class="btn btn-ghost" onclick="Interact.adminTogglePin(${p.id}, ${p.is_pinned ? 'false' : 'true'})" style="border-color:var(--accent-gold); color:var(--accent-gold);">${p.is_pinned ? '取消置顶' : '设为置顶'}</button>
                             </div>
                         </div>
                     `;
@@ -1394,6 +1428,7 @@
                 body.innerHTML = `
                     <h2 style="margin-bottom:0.5rem;">${escapeHtml(p.title)}</h2>
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                        ${p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span> |' : ''}
                         发布者: ${escapeHtml(p.author.nickname)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
                     </div>
                     <div class="post-detail-content">
@@ -1546,6 +1581,22 @@
                 });
                 if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); }
                 else { const d = await res.json(); Toast.error(d.error || '操作失败'); }
+            },
+            async adminTogglePin(id, pinned) {
+                const res = await fetch(`${API_BASE}/admin/posts/${id}/pin`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}`},
+                    body: JSON.stringify({ pinned, exclusive: true })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    Toast.success(pinned ? '已置顶' : '已取消置顶');
+                    await Post.loadPinnedGuide();
+                    Modal.openDetail(id);
+                    Post.load();
+                } else {
+                    Toast.error(data.error || '操作失败');
+                }
             }
         };
 
@@ -1574,6 +1625,7 @@
                 c.appendChild(d);
             }
             Auth.init();
+            Post.loadPinnedGuide();
             Post.load();
             const postId = new URLSearchParams(window.location.search).get('post');
             if (postId && /^\d+$/.test(postId)) {

@@ -515,7 +515,9 @@ def search_posts():
     posts = Post.query.filter(
         (Post.title.ilike(f'%{escaped_q}%', escape='\\')) |
         (Post.content.ilike(f'%{escaped_q}%', escape='\\'))
-    ).filter_by(is_hidden=False).order_by(Post.created_at.desc()).limit(20).all()
+    ).filter_by(is_hidden=False).order_by(
+        Post.is_pinned.desc(), Post.pinned_at.desc(), Post.created_at.desc()
+    ).limit(20).all()
     return jsonify({'posts': [p.to_dict() for p in posts]})
 
 @app.route('/api/posts/check_tx', methods=['GET'])
@@ -655,8 +657,12 @@ def read_all_notifications():
 def _get_posts_fallback(page, per_page, current_user_id):
     """兜底：仅查 posts 表，不 join users，避免缺列导致 500。返回 (posts_data, total, pages)。"""
     from sqlalchemy import text
+    def _order_sql():
+        return "ORDER BY is_pinned DESC, pinned_at DESC, created_at DESC"
     try:
-        query = Post.query.filter_by(is_hidden=False).order_by(Post.created_at.desc())
+        query = Post.query.filter_by(is_hidden=False).order_by(
+            Post.is_pinned.desc(), Post.pinned_at.desc(), Post.created_at.desc()
+        )
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         posts = pagination.items
         total, pages = pagination.total, pagination.pages
@@ -668,9 +674,9 @@ def _get_posts_fallback(page, per_page, current_user_id):
             rows = db.session.execute(text("""
                 SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
                        tx_hash, ipfs_cid, is_paid, region, is_on_chain, post_type, is_hidden, allow_comments,
-                       is_repost, original_post_id, repost_comment
-                FROM posts WHERE is_hidden = false ORDER BY created_at DESC LIMIT :lim OFFSET :off
-            """), {'lim': per_page, 'off': off}).fetchall()
+                       is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment
+                FROM posts WHERE is_hidden = false
+            """ + _order_sql() + " LIMIT :lim OFFSET :off"), {'lim': per_page, 'off': off}).fetchall()
             total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
             pages = max(1, (total + per_page - 1) // per_page)
             posts = rows
@@ -714,9 +720,12 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 original_post_id = getattr(p, 'original_post_id', None)
                 repost_comment = getattr(p, 'repost_comment', None)
                 is_hidden = getattr(p, 'is_hidden', False)
+                is_pinned = getattr(p, 'is_pinned', False)
+                pinned_at = getattr(p, 'pinned_at', None)
                 allow_comments = getattr(p, 'allow_comments', True)
                 region = getattr(p, 'region', '其他')
                 is_on_chain = getattr(p, 'is_on_chain', False)
+                pinned_by = getattr(p, 'pinned_by', None)
             else:
                 r = p
                 pid = r[0]
@@ -730,13 +739,16 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 tx_hash = r[8] if len(r) > 8 else None
                 ipfs_cid = r[9] if len(r) > 9 else None
                 post_type = r[13] if len(r) > 13 else 0
-                is_repost = r[16] if len(r) > 16 else False
-                original_post_id = r[17] if len(r) > 17 else None
-                repost_comment = r[18] if len(r) > 18 else None
                 is_hidden = r[14] if len(r) > 14 else False
                 allow_comments = r[15] if len(r) > 15 else True
+                is_pinned = r[16] if len(r) > 16 else False
+                pinned_at = r[17] if len(r) > 17 else None
+                pinned_by = r[18] if len(r) > 18 else None
                 region = r[11] if len(r) > 11 else '其他'
                 is_on_chain = r[12] if len(r) > 12 else False
+                is_repost = r[19] if len(r) > 19 else False
+                original_post_id = r[20] if len(r) > 20 else None
+                repost_comment = r[21] if len(r) > 21 else None
 
             images_list = []
             if images_raw:
@@ -779,6 +791,9 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 'original_post': None,
                 'repost_comment': repost_comment,
                 'is_hidden': is_hidden,
+                'is_pinned': is_pinned,
+                'pinned_at': pinned_at.isoformat() if hasattr(pinned_at, 'isoformat') and pinned_at else None,
+                'pinned_by': pinned_by,
                 'allow_comments': allow_comments,
                 'region': region,
                 'is_on_chain': is_on_chain,
@@ -786,6 +801,20 @@ def _get_posts_fallback(page, per_page, current_user_id):
         except Exception as e:
             print(f"[get_posts fallback] skip row: {e}")
     return posts_data, total, pages
+
+
+def _apply_default_post_order(query):
+    """统一帖子排序：置顶优先，其次发布时间。"""
+    return query.order_by(Post.is_pinned.desc(), Post.pinned_at.desc(), Post.created_at.desc())
+
+
+@app.route('/api/posts/pinned', methods=['GET'])
+def get_pinned_post():
+    """返回当前全站置顶帖（若无则返回 null）。"""
+    post = Post.query.filter_by(is_hidden=False, is_pinned=True).order_by(
+        Post.pinned_at.desc(), Post.created_at.desc()
+    ).first()
+    return jsonify({'post': post.to_dict() if post else None})
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
@@ -805,11 +834,12 @@ def get_posts():
             if current_user_id:
                 query = query.join(Bookmark, Post.id == Bookmark.post_id).filter(
                     Bookmark.user_id == current_user_id
-                ).filter(Post.is_hidden == False).order_by(Post.created_at.desc())
+                ).filter(Post.is_hidden == False)
+                query = _apply_default_post_order(query)
             else:
                 return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
         else:
-            query = query.order_by(Post.created_at.desc())
+            query = _apply_default_post_order(query)
         if region:
             query = query.filter_by(region=region)
         current_user = User.query.get(current_user_id) if current_user_id else None
@@ -1414,6 +1444,37 @@ def toggle_hide_post(post_id):
     db.session.commit()
     return jsonify({'message': 'Toggled hide status', 'is_hidden': post.is_hidden})
 
+
+@app.route('/api/admin/posts/<int:post_id>/pin', methods=['POST'])
+@token_required
+@admin_required
+def toggle_pin_post(post_id):
+    """管理员置顶/取消置顶；默认全站仅保留一个置顶帖。"""
+    post = Post.query.get_or_404(post_id)
+    payload = request.get_json(silent=True) or {}
+    should_pin = payload.get('pinned')
+    if should_pin is None:
+        should_pin = not bool(post.is_pinned)
+    should_pin = bool(should_pin)
+    exclusive = payload.get('exclusive', True)
+
+    if should_pin and exclusive:
+        Post.query.filter(Post.id != post.id, Post.is_pinned == True).update({
+            'is_pinned': False,
+            'pinned_at': None,
+            'pinned_by': None
+        }, synchronize_session=False)
+
+    post.is_pinned = should_pin
+    post.pinned_at = datetime.utcnow() if should_pin else None
+    post.pinned_by = g.current_user.id if should_pin else None
+    db.session.commit()
+    return jsonify({
+        'message': 'Pinned' if should_pin else 'Unpinned',
+        'is_pinned': post.is_pinned,
+        'pinned_at': post.pinned_at.isoformat() if post.pinned_at else None
+    })
+
 @app.route('/api/admin/posts/<int:post_id>/toggle-comments', methods=['POST'])
 @token_required
 @admin_required
@@ -1656,6 +1717,52 @@ def _ensure_posts_tx_nullable():
             else:
                 print(f'[Startup] posts.{col} nullable skip: {e}')
 
+
+def _ensure_posts_pin_columns():
+    """启动时确保 posts 表存在置顶相关列。"""
+    from sqlalchemy import text
+    dialect = db.engine.dialect.name
+    try:
+        if dialect == 'postgresql':
+            cols = db.session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='posts' AND column_name IN ('is_pinned','pinned_at','pinned_by')
+            """)).fetchall()
+            existing = {c[0] for c in cols}
+            if 'is_pinned' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT false"))
+                print('[Startup] posts.is_pinned added.')
+            if 'pinned_at' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_at TIMESTAMP NULL"))
+                print('[Startup] posts.pinned_at added.')
+            if 'pinned_by' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_by BIGINT NULL"))
+                print('[Startup] posts.pinned_by added.')
+            db.session.commit()
+            return
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(posts)")).fetchall()
+            existing = {c[1] for c in cols}
+            changed = False
+            if 'is_pinned' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT 0"))
+                print('[Startup] posts.is_pinned added.')
+                changed = True
+            if 'pinned_at' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_at DATETIME"))
+                print('[Startup] posts.pinned_at added.')
+                changed = True
+            if 'pinned_by' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_by BIGINT"))
+                print('[Startup] posts.pinned_by added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+    except Exception as e:
+        db.session.rollback()
+        print(f'[Startup] posts pin columns skip: {e}')
+
 def _check_receive_address():
     """启动时检查：未配置 RECEIVE_ADDRESS 时打印明确错误提示（发帖费与站长赞赏需要）。"""
     addr = app.config.get('BSC', {}).get('RECEIVE_ADDRESS')
@@ -1678,6 +1785,7 @@ def _run_startup_tasks():
     _ensure_users_wallet_address()
     _ensure_users_withdrawable_balance()
     _ensure_posts_tx_nullable()
+    _ensure_posts_pin_columns()
     if _should_run_init_db():
         init_db_data()
     _check_receive_address()
