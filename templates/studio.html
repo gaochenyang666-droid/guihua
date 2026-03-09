@@ -276,6 +276,7 @@
         let currentUser = null;
 
         let studioQuill = null;
+        let lastEditorRange = null;
 
         function compressImage(file, maxWidth, quality) {
             return new Promise((resolve, reject) => {
@@ -920,6 +921,36 @@
             close(id) { document.getElementById(id).classList.remove('active'); }
         };
 
+        async function uploadInlineImageToEditor(file) {
+            if (!studioQuill || !file) return;
+            if (file.size > 2 * 1024 * 1024) {
+                if (typeof Toast !== 'undefined') Toast.error('图片需小于 2MB，请压缩或换图');
+                return;
+            }
+            try {
+                const compressedFile = await compressImage(file, 1000, 0.7).catch(() => file);
+                const safeName = (file.name || 'image.jpg').replace(/[^\w.\-]/g, '_').replace(/\.[^.]+$/, '.jpg');
+                const formData = new FormData();
+                formData.append('file', compressedFile, safeName);
+                const res = await fetch(API_BASE + '/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
+                    body: formData
+                });
+                const resp = await res.json().catch(() => ({}));
+                if (!res.ok || !resp.url) {
+                    if (typeof Toast !== 'undefined') Toast.error(resp.error || '上传失败');
+                    return;
+                }
+                const range = studioQuill.getSelection(true) || lastEditorRange || { index: studioQuill.getLength(), length: 0 };
+                studioQuill.insertEmbed(range.index, 'image', resp.url, 'user');
+                studioQuill.setSelection(range.index + 1, 0, 'silent');
+                if (typeof Toast !== 'undefined') Toast.success('图片已插入');
+            } catch (e) {
+                if (typeof Toast !== 'undefined') Toast.error('上传失败: ' + (e.message || '网络错误'));
+            }
+        }
+
         function initQuill() {
             const el = document.getElementById('studioPostContent');
             if (!el) return;
@@ -940,6 +971,38 @@
                     ]
                 }
             });
+            studioQuill.on('selection-change', function(range) {
+                if (range) lastEditorRange = range;
+            });
+            studioQuill.root.addEventListener('paste', async function(evt) {
+                const clipboard = evt.clipboardData;
+                if (!clipboard || !clipboard.items) return;
+                const imageItem = Array.from(clipboard.items).find(function(it) {
+                    return it && it.type && it.type.indexOf('image/') === 0;
+                });
+                if (!imageItem) return;
+                evt.preventDefault();
+                const file = imageItem.getAsFile();
+                await uploadInlineImageToEditor(file);
+            });
+            studioQuill.root.addEventListener('drop', async function(evt) {
+                const dt = evt.dataTransfer;
+                if (!dt || !dt.files || !dt.files.length) return;
+                const imageFile = Array.from(dt.files).find(function(f) {
+                    return f && f.type && f.type.indexOf('image/') === 0;
+                });
+                if (!imageFile) return;
+                evt.preventDefault();
+                const selection = document.caretRangeFromPoint ? document.caretRangeFromPoint(evt.clientX, evt.clientY) : null;
+                if (selection && selection.startContainer && studioQuill) {
+                    const blot = Quill.find(selection.startContainer, true);
+                    if (blot) {
+                        const idx = studioQuill.getIndex(blot);
+                        lastEditorRange = { index: idx, length: 0 };
+                    }
+                }
+                await uploadInlineImageToEditor(imageFile);
+            });
             const toolbar = studioQuill.getModule('toolbar');
             toolbar.addHandler('image', function() {
                 const input = document.createElement('input');
@@ -948,31 +1011,7 @@
                 input.onchange = async function() {
                     const file = input.files && input.files[0];
                     if (!file) return;
-                    if (file.size > 2 * 1024 * 1024) {
-                        if (typeof Toast !== 'undefined') Toast.error('图片需小于 2MB，请压缩或换图');
-                        return;
-                    }
-                    try {
-                        const compressedFile = await compressImage(file, 1000, 0.7).catch(() => file);
-                        const formData = new FormData();
-                        formData.append('file', compressedFile, (file.name || 'image.jpg').replace(/\.[^.]+$/, '.jpg'));
-                        const res = await fetch(API_BASE + '/upload', {
-                            method: 'POST',
-                            headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
-                            body: formData
-                        });
-                        const resp = await res.json().catch(() => ({}));
-                        if (res.ok && resp.url) {
-                            const range = studioQuill.getSelection(true) || { index: studioQuill.getLength() };
-                            studioQuill.insertEmbed(range.index, 'image', resp.url);
-                            studioQuill.setSelection(range.index + 1);
-                            if (typeof Toast !== 'undefined') Toast.success('图片已插入');
-                        } else {
-                            if (typeof Toast !== 'undefined') Toast.error(resp.error || '上传失败');
-                        }
-                    } catch (e) {
-                        if (typeof Toast !== 'undefined') Toast.error('上传失败: ' + (e.message || '网络错误'));
-                    }
+                    await uploadInlineImageToEditor(file);
                     input.value = '';
                 };
                 input.click();

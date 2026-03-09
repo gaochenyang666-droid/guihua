@@ -84,6 +84,8 @@ BSC_RPC_LIST = [
 
 # JWT 过期时间（小时）；上线后可按需改为 24
 JWT_EXPIRY_HOURS = 24
+# 钱包签名挑战有效期（分钟）
+WALLET_NONCE_TTL_MINUTES = 5
 # 支付校验：要求交易已被至少 N 个区块确认，防链重组假充值。BSC 约 3 秒/块，2 约 6 秒
 TX_CONFIRMATIONS_NEEDED = 2
 # 发帖费：1 人民币等值 USDT（取价失败时用 POST_FEE_USDT 兜底，单位 USDT）
@@ -106,6 +108,19 @@ app.config['TX_CONFIRMATIONS_NEEDED'] = TX_CONFIRMATIONS_NEEDED
 app.config['IMGBB_API_KEY'] = IMGBB_API_KEY
 app.config['ARWEAVE_GATEWAY'] = ARWEAVE_GATEWAY
 app.config['SEED_ARTICLE_PATH'] = os.path.join(basedir, 'seeds', 'default_article_huaxiansheng.html')
+
+# 未注册地址的临时签名挑战（地址 -> {nonce, created_at}）
+_pending_wallet_nonces = {}
+
+
+def _prune_pending_wallet_nonces(now=None):
+    now = now or datetime.utcnow()
+    expired_keys = [
+        k for k, v in _pending_wallet_nonces.items()
+        if not v or not v.get('created_at') or now - v['created_at'] > timedelta(minutes=WALLET_NONCE_TTL_MINUTES)
+    ]
+    for k in expired_keys:
+        _pending_wallet_nonces.pop(k, None)
 
 from extensions import db
 db.init_app(app)
@@ -138,6 +153,7 @@ def profile():
 def get_nonce():
     if _rate_limit('nonce', 30):
         return jsonify({'error': '请求过于频繁'}), 429
+    _prune_pending_wallet_nonces()
     address = request.args.get('address')
     if not address: return jsonify({'error': 'Missing address'}), 400
     
@@ -147,23 +163,23 @@ def get_nonce():
         return jsonify({'error': 'Invalid address format'}), 400
 
     user = User.query.filter_by(address=address).first()
-    if not user:
-        try:
-            user = User(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
-            db.session.add(user)
-            db.session.commit()
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'error': 'Failed to create user, please retry'}), 500
-    
-    # Always refresh nonce
-    user.refresh_nonce()
-    db.session.commit()
-    
-    return jsonify({'nonce': user.nonce})
+    if user:
+        # 已有用户：使用数据库 nonce
+        user.refresh_nonce()
+        db.session.commit()
+        return jsonify({'nonce': user.nonce})
+
+    # 未注册用户：仅下发临时挑战，不预先建号（防刷库）
+    nonce = secrets.token_hex(16)
+    _pending_wallet_nonces[address.lower()] = {
+        'nonce': nonce,
+        'created_at': datetime.utcnow()
+    }
+    return jsonify({'nonce': nonce})
 
 @app.route('/api/auth/verify', methods=['POST'])
 def verify_signature():
+    _prune_pending_wallet_nonces()
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Invalid or empty JSON'}), 400
@@ -181,18 +197,30 @@ def verify_signature():
     from eth_account import Account
     
     user = User.query.filter_by(address=address).first()
-    if not user: return jsonify({'error': 'User not found'}), 404
+    nonce_value = None
+    nonce_created_at = None
+    if user:
+        nonce_value = user.nonce
+        nonce_created_at = user.nonce_created_at
+    else:
+        pending = _pending_wallet_nonces.get(address.lower())
+        if pending:
+            nonce_value = pending.get('nonce')
+            nonce_created_at = pending.get('created_at')
+        if not nonce_value:
+            return jsonify({'error': 'Nonce not found, please request again'}), 401
 
-    # Check nonce expiration (5 mins)
-    if not user.nonce_created_at or datetime.utcnow() - user.nonce_created_at > timedelta(minutes=5):
+    # Check nonce expiration
+    if not nonce_created_at or datetime.utcnow() - nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
+        _pending_wallet_nonces.pop(address.lower(), None)
         return jsonify({'error': 'Nonce expired, please sign again'}), 401
 
     # 严格全文本匹配，防止假站用同一 nonce 骗用户签名后到本站登录
     # 支持两种格式：旧版 "Sign this message to login: {nonce}"，新版 "Sign this message to login to {host}: {nonce}"
     msg_stripped = (message or '').strip()
-    expected_old = f"Sign this message to login: {user.nonce}"
+    expected_old = f"Sign this message to login: {nonce_value}"
     expected_new_prefix = "Sign this message to login to "
-    expected_new_suffix = f": {user.nonce}"
+    expected_new_suffix = f": {nonce_value}"
     valid = (
         msg_stripped == expected_old
         or (msg_stripped.startswith(expected_new_prefix) and msg_stripped.endswith(expected_new_suffix))
@@ -210,9 +238,21 @@ def verify_signature():
         print(f"Verify Error: {e}")
         return jsonify({'error': 'Verification failed'}), 400
     
-    # Rotate nonce to prevent replay attacks
-    user.refresh_nonce()
-    db.session.commit()
+    # 首次验签成功才建号，并轮换 nonce 防重放
+    if not user:
+        try:
+            user = User(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
+            user.refresh_nonce()
+            db.session.add(user)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            return jsonify({'error': 'Failed to create user, please retry'}), 500
+        finally:
+            _pending_wallet_nonces.pop(address.lower(), None)
+    else:
+        user.refresh_nonce()
+        db.session.commit()
     
     token = jwt.encode({
         'user_id': user.id,
@@ -399,7 +439,7 @@ def bind_wallet():
         return jsonify({'error': 'Address already bound to another account'}), 400
 
     # 绑定签名必须带当前登录用户 nonce，且 5 分钟内有效，防重放
-    if not g.current_user.nonce_created_at or datetime.utcnow() - g.current_user.nonce_created_at > timedelta(minutes=5):
+    if not g.current_user.nonce_created_at or datetime.utcnow() - g.current_user.nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
         return jsonify({'error': 'Nonce expired, please request a new bind nonce'}), 401
     msg_stripped = (message or '').strip()
     expected_legacy = f"Bind wallet {address} to user {g.current_user.username}. Nonce: {g.current_user.nonce}"

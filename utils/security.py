@@ -8,9 +8,18 @@ from flask import request, g, jsonify, current_app
 from models import User
 
 
-# 帖子正文 HTML 白名单
-POST_CONTENT_TAGS = ['b', 'i', 'u', 'img', 'p', 'br', 'div', 'span']
-POST_CONTENT_ATTRS = {'img': ['src', 'alt', 'style', 'class']}
+# 帖子正文 HTML 白名单（与 Quill 输出对齐，保留图文混排）
+POST_CONTENT_TAGS = [
+    'b', 'strong', 'i', 'em', 'u',
+    'img', 'p', 'br', 'div', 'span',
+    'a', 'ol', 'ul', 'li', 'blockquote', 'pre', 'code',
+    'h1', 'h2', 'h3'
+]
+POST_CONTENT_ATTRS = {
+    'img': ['src', 'alt', 'style', 'class', 'width', 'height'],
+    'a': ['href', 'target', 'rel', 'class', 'style'],
+    '*': ['class', 'style']
+}
 
 _rate_limit_store = {}
 
