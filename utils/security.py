@@ -1,4 +1,5 @@
 # 安全与工具：JWT 装饰器、限流、HTML 清洗
+import os
 import time
 from functools import wraps
 import jwt
@@ -22,12 +23,41 @@ POST_CONTENT_ATTRS = {
 }
 
 _rate_limit_store = {}
+_redis_client = None
+
+
+def _get_redis_client():
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    redis_url = (os.environ.get('REDIS_URL') or '').strip()
+    if not redis_url:
+        _redis_client = False
+        return None
+    try:
+        import redis
+        _redis_client = redis.from_url(redis_url, decode_responses=True)
+        _redis_client.ping()
+        return _redis_client
+    except Exception:
+        _redis_client = False
+        return None
 
 
 def _rate_limit(key_prefix, max_per_minute=5):
     ip = (request.remote_addr or 'unknown').strip()
     key = f"{key_prefix}:{ip}"
     now = time.time()
+    redis_conn = _get_redis_client()
+    if redis_conn:
+        try:
+            ttl = 60
+            val = redis_conn.incr(key)
+            if val == 1:
+                redis_conn.expire(key, ttl)
+            return val > max_per_minute
+        except Exception:
+            pass
     if key not in _rate_limit_store:
         _rate_limit_store[key] = []
     times = _rate_limit_store[key]
