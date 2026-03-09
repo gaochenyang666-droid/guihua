@@ -51,12 +51,31 @@
         </div>
     </nav>
 
+    <div id="siteAnnouncementBar" class="site-announcement glass" hidden>
+        <div class="site-announcement-inner">
+            <strong id="siteAnnouncementTitle" class="site-announcement-title">公告</strong>
+            <span id="siteAnnouncementContent" class="site-announcement-content"></span>
+        </div>
+    </div>
+
     <div class="main-container">
         <aside class="sidebar">
             <div class="sidebar-card glass">
                 <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')">🔥 热门</div>
                 <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')">✨ 最新</div>
                 <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')">⭐ 收藏</div>
+            </div>
+            <div class="sidebar-card glass onboarding-card" id="onboardingCard" hidden>
+                <div class="onboarding-head">
+                    <div>
+                        <p class="onboarding-title">🧭 新手任务</p>
+                        <p class="onboarding-progress-label">完成进度 <span id="onboardingProgress"></span></p>
+                    </div>
+                    <div class="onboarding-ring" id="onboardingRing">
+                        <span id="onboardingPercent">0%</span>
+                    </div>
+                </div>
+                <div id="onboardingTaskList" class="onboarding-task-list"></div>
             </div>
             <div class="sidebar-card glass" style="font-size: 0.85rem; color: var(--text-secondary); display: block;">
                 <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
@@ -65,14 +84,19 @@
         </aside>
 
         <main>
-            <div id="pinnedGuideBanner" class="glass" style="display:none; margin-bottom: 1rem; padding: 0.9rem 1rem; border: 1px solid var(--accent-gold); border-radius: 12px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:0.8rem; flex-wrap:wrap;">
-                    <div style="font-size:0.92rem;">
-                        <span style="color:var(--accent-gold); font-weight:700;">📌 置顶指南：</span>
-                        <span id="pinnedGuideTitle" style="color:var(--text-primary);"></span>
+            <div id="pinnedGuideBanner" class="pinned-guide glass" hidden>
+                <div class="pinned-guide-head">
+                    <div class="pinned-guide-title-wrap">
+                        <span class="pinned-guide-prefix">📌 置顶指南</span>
+                        <span id="pinnedGuideTitle" class="pinned-guide-title"></span>
                     </div>
-                    <button class="btn btn-ghost" id="pinnedGuideOpenBtn" style="border-color:var(--accent-gold); color:var(--accent-gold);">查看</button>
+                    <div class="pinned-guide-actions">
+                        <button class="btn btn-ghost pinned-guide-toggle" id="pinnedGuideToggleBtn" type="button">展开简介</button>
+                        <button class="btn btn-ghost pinned-guide-open" id="pinnedGuideOpenBtn" type="button">查看原帖</button>
+                    </div>
                 </div>
+                <div id="pinnedGuidePreview" class="pinned-guide-preview"></div>
+                <div id="pinnedGuideExtra" class="pinned-guide-extra" hidden></div>
             </div>
             <div class="masonry-grid" id="postGrid"></div>
             <div id="loadingArea" style="text-align: center; padding: 2rem; color: var(--text-muted);">正在召唤灵体...</div>
@@ -228,6 +252,31 @@
         </div>
     </div>
 
+    <!-- Admin Announcements Modal -->
+    <div class="modal-overlay" id="adminAnnouncementsModal" onclick="Modal.close('adminAnnouncementsModal')">
+        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>📣 公告管理</h3>
+                <button class="modal-close" onclick="Modal.close('adminAnnouncementsModal')">&times;</button>
+            </div>
+            <div style="padding: 0 1rem 0.8rem;">
+                <button class="btn btn-primary btn-sm" onclick="Admin.createAnnouncement()">新增公告</button>
+            </div>
+            <div id="adminAnnouncementsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+        </div>
+    </div>
+
+    <!-- Admin Audit Modal -->
+    <div class="modal-overlay" id="adminAuditModal" onclick="Modal.close('adminAuditModal')">
+        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>🧾 管理审计日志</h3>
+                <button class="modal-close" onclick="Modal.close('adminAuditModal')">&times;</button>
+            </div>
+            <div id="adminAuditBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+        </div>
+    </div>
+
     <!-- Notifications Modal -->
     <div class="modal-overlay" id="notificationModal" onclick="Modal.close('notificationModal')">
         <div class="modal glass" onclick="event.stopPropagation()">
@@ -326,6 +375,12 @@
     <script>
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
+        const stripHtml = (s) => (s == null ? '' : String(s)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        const escapeAttr = (s) => (s == null ? '' : String(s))
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
 
         const Auth = {
             async init() {
@@ -338,6 +393,8 @@
                     if(localStorage.getItem('token') === 'undefined') localStorage.removeItem('token');
                 }
                 UI.updateAuth();
+                SiteNotice.load();
+                Onboarding.load();
                 if (localStorage.getItem('token') && typeof Notification !== 'undefined' && Notification.load) {
                     setInterval(function() {
                         if (document.visibilityState === 'visible') Notification.load();
@@ -754,6 +811,79 @@
             }
         };
 
+        const SiteNotice = {
+            async load() {
+                try {
+                    const res = await fetch(`${API_BASE}/announcements/active`);
+                    const data = await res.json().catch(() => ({}));
+                    const bar = document.getElementById('siteAnnouncementBar');
+                    const titleEl = document.getElementById('siteAnnouncementTitle');
+                    const contentEl = document.getElementById('siteAnnouncementContent');
+                    if (!bar || !titleEl || !contentEl) return;
+                    const ann = data && data.announcement;
+                    if (!res.ok || !ann) {
+                        bar.hidden = true;
+                        return;
+                    }
+                    const levelMap = {
+                        info: '📣 公告',
+                        warning: '⚠️ 提醒',
+                        critical: '🚨 紧急'
+                    };
+                    const levelClassMap = {
+                        info: 'is-info',
+                        warning: 'is-warning',
+                        critical: 'is-critical'
+                    };
+                    bar.classList.remove('is-info', 'is-warning', 'is-critical');
+                    bar.classList.add(levelClassMap[ann.level] || 'is-info');
+                    titleEl.textContent = levelMap[ann.level] || '📣 公告';
+                    contentEl.textContent = `${ann.title}：${ann.content}`;
+                    bar.hidden = false;
+                } catch (_) {}
+            }
+        };
+
+        const Onboarding = {
+            async load() {
+                const card = document.getElementById('onboardingCard');
+                if (!card) return;
+                if (!currentUser) {
+                    card.hidden = true;
+                    return;
+                }
+                try {
+                    const res = await fetch(`${API_BASE}/onboarding/tasks`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok || !Array.isArray(data.tasks)) {
+                        card.hidden = true;
+                        return;
+                    }
+                    const listEl = document.getElementById('onboardingTaskList');
+                    const progressEl = document.getElementById('onboardingProgress');
+                    const percentEl = document.getElementById('onboardingPercent');
+                    const ringEl = document.getElementById('onboardingRing');
+                    const total = Number(data.total || 0);
+                    const done = Number(data.done_count || 0);
+                    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                    progressEl.textContent = `${data.done_count}/${data.total}`;
+                    if (percentEl) percentEl.textContent = `${pct}%`;
+                    if (ringEl) ringEl.style.setProperty('--progress', `${pct}%`);
+                    listEl.innerHTML = data.tasks.map(t => {
+                        const done = !!t.done;
+                        return `<div class="onboarding-task-item ${done ? 'is-done' : ''}">
+                            <span class="onboarding-task-check">${done ? '✅' : '⬜️'}</span><span>${escapeHtml(t.title || '')}</span>
+                        </div>`;
+                    }).join('');
+                    card.hidden = data.done_count >= data.total;
+                } catch (_) {
+                    card.hidden = true;
+                }
+            }
+        };
+
         const Post = {
             currentPage: 1,
             totalPages: 1,
@@ -769,18 +899,32 @@
                     const data = await res.json().catch(() => ({}));
                     const banner = document.getElementById('pinnedGuideBanner');
                     const titleEl = document.getElementById('pinnedGuideTitle');
+                    const previewEl = document.getElementById('pinnedGuidePreview');
+                    const extraEl = document.getElementById('pinnedGuideExtra');
                     const btn = document.getElementById('pinnedGuideOpenBtn');
-                    if (!banner || !titleEl || !btn) return;
+                    const toggleBtn = document.getElementById('pinnedGuideToggleBtn');
+                    if (!banner || !titleEl || !btn || !previewEl || !extraEl || !toggleBtn) return;
                     const post = data && data.post;
                     if (!res.ok || !post || !post.id) {
-                        banner.style.display = 'none';
+                        banner.hidden = true;
                         this.pinnedPostId = null;
                         return;
                     }
+                    const plainText = stripHtml(post.content || '');
+                    const preview = plainText.length > 70 ? `${plainText.slice(0, 70)}...` : plainText;
                     this.pinnedPostId = post.id;
                     titleEl.textContent = post.title || '站点使用指南';
+                    previewEl.textContent = preview || '点击查看站点功能与使用流程。';
+                    extraEl.textContent = plainText || '该帖子用于向新访客解释站点功能与运作方式。';
+                    extraEl.hidden = true;
+                    toggleBtn.textContent = '展开简介';
+                    toggleBtn.onclick = function () {
+                        const isHidden = extraEl.hidden;
+                        extraEl.hidden = !isHidden;
+                        toggleBtn.textContent = isHidden ? '收起简介' : '展开简介';
+                    };
                     btn.onclick = function() { Modal.openDetail(post.id); };
-                    banner.style.display = 'block';
+                    banner.hidden = false;
                 } catch (_) {}
             },
 
@@ -974,9 +1118,24 @@
                             usersBtn.style.borderColor = 'var(--accent-purple)';
                             usersBtn.textContent = '👥 用户';
                             usersBtn.onclick = Admin.openUsers;
+                            const annBtn = document.createElement('button');
+                            annBtn.id = 'adminAnnBtn';
+                            annBtn.className = 'btn btn-ghost';
+                            annBtn.style.color = 'var(--accent-orange)';
+                            annBtn.style.borderColor = 'var(--accent-orange)';
+                            annBtn.textContent = '📣 公告';
+                            annBtn.onclick = Admin.openAnnouncements;
+                            const auditBtn = document.createElement('button');
+                            auditBtn.id = 'adminAuditBtn';
+                            auditBtn.className = 'btn btn-ghost';
+                            auditBtn.style.color = 'var(--text-secondary)';
+                            auditBtn.textContent = '🧾 日志';
+                            auditBtn.onclick = Admin.openAuditLogs;
                             const logoutBtn = document.getElementById('logoutBtn');
                             logoutBtn.parentNode.insertBefore(usersBtn, logoutBtn);
                             logoutBtn.parentNode.insertBefore(reportsBtn, logoutBtn);
+                            logoutBtn.parentNode.insertBefore(annBtn, logoutBtn);
+                            logoutBtn.parentNode.insertBefore(auditBtn, logoutBtn);
                             logoutBtn.parentNode.insertBefore(statsBtn, logoutBtn);
                         }
                     }
@@ -989,47 +1148,40 @@
                     authBtns.style.display = 'flex';
                     userMenu.style.display = 'none';
                 }
+                Onboarding.load();
             },
 
             renderPosts(posts, append=false) {
                 const grid = document.getElementById('postGrid');
                 const html = posts.map(p => {
                     const imgUrl = p.cover_image || (p.images && p.images.length ? p.images[0] : null);
+                    const imgSrc = escapeAttr(imgUrl || '');
                     const img = imgUrl
-                        ? `<div class="post-image-wrap" style="position:relative;min-height:120px;background:var(--bg-secondary);"><img src="${imgUrl}" class="post-image" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';var n=this.nextElementSibling;if(n)n.style.display=\'flex\'"><div class="post-image-placeholder" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:var(--text-muted);font-size:2rem;">📝</div></div>`
+                        ? `<div class="post-image-wrap"><img src="${imgSrc}" class="post-image" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='flex'"><div class="post-image-placeholder hidden">📝</div></div>`
                         : '';
-                    const imgPlaceholder = '<div class="post-image post-image-placeholder" style="display:flex;align-items:center;justify-content:center;min-height:120px;background:var(--bg-secondary);color:var(--text-muted);font-size:2rem;">📝</div>';
-
-                    let content = p.content;
-                    if (p.original_post_id && p.original_post) {
-                     const original = p.original_post;
-                     content = `<div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:0.5rem;">🔄 转发了 <b>${escapeHtml(original.author && original.author.nickname)}</b></div>` +
-                               `<div style="padding:0.5rem; background:var(--bg-secondary); border-radius:4px; margin-bottom:0.5rem;">` +
-                               `<div style="font-weight:600;">${escapeHtml(original.title)}</div>` +
-                               `</div>` +
-                               (p.repost_comment || '');
-                    }
+                    const imgPlaceholder = '<div class="post-image post-image-placeholder">📝</div>';
 
                     const isWeb3 = p.post_type === 1 || p.tx_hash;
-                    const borderStyle = isWeb3 ? 'border-color: var(--accent-gold); box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);' : '';
-                    const badge = isWeb3 ? '<div style="position:absolute; top:10px; right:10px; background:linear-gradient(45deg, #FFD700, #FFA500); color:#000; padding:4px 8px; border-radius:4px; font-size:0.7rem; font-weight:800; z-index:10; box-shadow:0 2px 5px rgba(0,0,0,0.2);">Web3</div>' : '';
-                    const pinBadge = p.is_pinned ? '<div style="position:absolute; top:10px; left:10px; background:rgba(255,215,0,0.2); border:1px solid var(--accent-gold); color:var(--accent-gold); padding:4px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; z-index:10;">📌 置顶</div>' : '';
+                    const cardClasses = ['post-card', 'glass'];
+                    if (isWeb3) cardClasses.push('post-card--web3');
+                    const badge = isWeb3 ? '<div class="post-badge post-badge-web3">Web3</div>' : '';
+                    const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
 
                     return `
                     <div class="masonry-item">
-                        <div class="post-card glass" onclick="Modal.openDetail(${p.id})" style="${borderStyle}">
+                        <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(${p.id})">
                             ${pinBadge}
                             ${badge}
                             ${img || imgPlaceholder}
                             <div class="post-content">
                                 <div class="post-title">${escapeHtml(p.title)}</div>
                                 <div class="post-meta">
-                                    <div class="author-info" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                                    <div class="author-info">
                                         ${UI.renderAvatar(p.author)}
                                         <span>${escapeHtml(p.author.nickname)}</span>
                                         ${p.author.id != null ? formatUserId(p.author.id) : ''}
                                     </div>
-                                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                                    <div class="post-like">
                                         <span><i class="fas fa-heart" style="${p.is_liked ? 'color:var(--accent-red)' : ''}"></i> ${p.likes_count}</span>
                                     </div>
                                 </div>
@@ -1045,7 +1197,7 @@
             },
 
             renderAvatar(user) {
-                return `<div class="user-avatar-emoji" style="width:24px;height:24px;font-size:1rem;">${user.avatar || '👻'}</div>`;
+                return `<div class="user-avatar-emoji post-avatar">${user.avatar || '👻'}</div>`;
             },
 
             handleNav(el, sort) {
@@ -1191,6 +1343,114 @@
                     if (res.ok) { Toast.success(data.message || (currentlyBanned ? '已解除封禁' : '已封禁')); Admin.openUsers(); }
                     else Toast.error(data.error || '操作失败');
                 } catch (e) { Toast.error('网络错误'); }
+            },
+            async openAnnouncements() {
+                Modal.open('adminAnnouncementsModal');
+                const body = document.getElementById('adminAnnouncementsBody');
+                body.innerHTML = '加载中...';
+                try {
+                    const res = await fetch(`${API_BASE}/admin/announcements`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    const list = data.announcements || [];
+                    if (!res.ok) throw new Error(data.error || '加载失败');
+                    if (!list.length) {
+                        body.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem;">暂无公告</div>';
+                        return;
+                    }
+                    body.innerHTML = list.map(a => `
+                        <div class="glass" style="padding:0.7rem; margin-bottom:0.7rem; border-radius:8px;">
+                            <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:center;">
+                                <b>${escapeHtml(a.title || '')}</b>
+                                <span style="font-size:0.78rem; color:${a.is_active ? 'var(--accent-green)' : 'var(--text-muted)'};">${a.is_active ? '生效中' : '未生效'}</span>
+                            </div>
+                            <div style="font-size:0.86rem; margin:0.45rem 0;">${escapeHtml(a.content || '')}</div>
+                            <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
+                                <button class="btn btn-ghost btn-sm" onclick="Admin.toggleAnnouncementActive(${a.id}, ${a.is_active ? 'false' : 'true'})">${a.is_active ? '停用' : '启用'}</button>
+                                <button class="btn btn-ghost btn-sm" style="color:var(--accent-red);" onclick="Admin.deleteAnnouncement(${a.id})">删除</button>
+                            </div>
+                        </div>
+                    `).join('');
+                } catch (e) {
+                    body.innerHTML = `<div style="color:var(--accent-red);">${e.message || '加载失败'}</div>`;
+                }
+            },
+            async createAnnouncement() {
+                const title = prompt('公告标题（120字内）');
+                if (!title || !title.trim()) return;
+                const content = prompt('公告内容（1000字内）');
+                if (!content || !content.trim()) return;
+                const level = (prompt('级别：info / warning / critical', 'info') || 'info').trim().toLowerCase();
+                try {
+                    const res = await fetch(`${API_BASE}/admin/announcements`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: JSON.stringify({ title: title.trim(), content: content.trim(), level, activate: true })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) {
+                        Toast.success(data.message || '已创建');
+                        SiteNotice.load();
+                        this.openAnnouncements();
+                    } else Toast.error(data.error || '创建失败');
+                } catch (_) { Toast.error('网络错误'); }
+            },
+            async toggleAnnouncementActive(id, isActive) {
+                try {
+                    const res = await fetch(`${API_BASE}/admin/announcements/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                        body: JSON.stringify({ is_active: isActive })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) {
+                        Toast.success('状态已更新');
+                        SiteNotice.load();
+                        this.openAnnouncements();
+                    } else Toast.error(data.error || '操作失败');
+                } catch (_) { Toast.error('网络错误'); }
+            },
+            async deleteAnnouncement(id) {
+                if (!confirm('确定删除此公告？')) return;
+                try {
+                    const res = await fetch(`${API_BASE}/admin/announcements/${id}`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.ok) {
+                        Toast.success('已删除');
+                        SiteNotice.load();
+                        this.openAnnouncements();
+                    } else Toast.error(data.error || '删除失败');
+                } catch (_) { Toast.error('网络错误'); }
+            },
+            async openAuditLogs() {
+                Modal.open('adminAuditModal');
+                const body = document.getElementById('adminAuditBody');
+                body.innerHTML = '加载中...';
+                try {
+                    const res = await fetch(`${API_BASE}/admin/audit-logs?limit=200`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    const logs = data.logs || [];
+                    if (!res.ok) throw new Error(data.error || '加载失败');
+                    if (!logs.length) {
+                        body.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem;">暂无日志</div>';
+                        return;
+                    }
+                    body.innerHTML = logs.map(l => `
+                        <div style="padding:0.45rem 0; border-bottom:1px dashed var(--border-color);">
+                            <div style="font-size:0.82rem; color:var(--text-muted);">${new Date(l.created_at).toLocaleString()} · Admin#${l.admin_id}</div>
+                            <div style="font-size:0.9rem;"><b>${escapeHtml(l.action || '')}</b> ${escapeHtml(l.target_type || '')}#${escapeHtml(String(l.target_id || ''))}</div>
+                            ${l.details ? `<div style="font-size:0.8rem; color:var(--text-secondary);">${escapeHtml(l.details)}</div>` : ''}
+                        </div>
+                    `).join('');
+                } catch (e) {
+                    body.innerHTML = `<div style="color:var(--accent-red);">${e.message || '加载失败'}</div>`;
+                }
             }
         };
 
@@ -1392,7 +1652,7 @@
                     `;
                 }
 
-                const escapeAttr = (s) => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const escapeDataAttr = (s) => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const renderComments = (comments, depth=0) => {
                     if (!comments || comments.length === 0) return '';
                     return comments.map(c => `
@@ -1402,7 +1662,7 @@
                                 <span>${new Date(c.created_at).toLocaleDateString()}</span>
                             </div>
                             <div style="margin-bottom: 0.5rem;">${escapeHtml(c.content || '')}</div>
-                            <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, this.getAttribute('data-nickname'))" data-nickname="${escapeAttr((c.author && c.author.nickname) || '')}">↩ 回复</button>
+                            <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, this.getAttribute('data-nickname'))" data-nickname="${escapeDataAttr((c.author && c.author.nickname) || '')}">↩ 回复</button>
                             ${c.replies ? renderComments(c.replies, depth + 1) : ''}
                         </div>
                     `).join('');

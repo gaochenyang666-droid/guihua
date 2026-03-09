@@ -127,9 +127,11 @@ db.init_app(app)
 
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
 from models import (User, Post, Vote, Comment, Like, Bookmark, Notification, UsedTransaction,
-    UserVote, Tip, Report, build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS)
+    UserVote, Tip, Report, Announcement, AdminAuditLog,
+    build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
-    token_required, admin_required, bleach_clean_post_content as _bleach_clean_post_content)
+    token_required, admin_required, _get_redis_client,
+    bleach_clean_post_content as _bleach_clean_post_content)
 from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
 from services.blockchain import (get_post_fee_usdt_raw, verify_transaction)
 
@@ -500,6 +502,109 @@ def get_public_config():
     return jsonify({
         'walletconnect_project_id': os.environ.get('WALLETCONNECT_PROJECT_ID') or ''
     })
+
+
+def _log_admin_action(action, target_type=None, target_id=None, details=None):
+    try:
+        if not getattr(g, 'current_user', None) or not getattr(g.current_user, 'is_admin', False):
+            return
+        row = AdminAuditLog(
+            admin_id=g.current_user.id,
+            action=action,
+            target_type=target_type,
+            target_id=str(target_id) if target_id is not None else None,
+            details=(details or '')[:1000] if details else None
+        )
+        db.session.add(row)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def _parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        v = str(value).strip()
+        if v.endswith('Z'):
+            v = v[:-1] + '+00:00'
+        return datetime.fromisoformat(v)
+    except Exception:
+        return None
+
+
+def _build_post_precheck(user, data):
+    title = (data.get('title') or '').strip()
+    content_html = data.get('content') or ''
+    cover_image = (data.get('cover_image') or '').strip()
+    issues = []
+    warnings = []
+
+    text_content = re.sub(r'<[^>]+>', '', content_html or '').strip()
+    if not title:
+        issues.append('标题不能为空')
+    elif len(title) > 100:
+        issues.append('标题不能超过 100 字')
+    if not text_content:
+        issues.append('正文不能为空')
+    elif len(text_content) < 20:
+        warnings.append('正文较短，建议补充细节提升可读性')
+    if cover_image and not (cover_image.startswith('http://') or cover_image.startswith('https://') or cover_image.startswith('/static/')):
+        warnings.append('封面图链接格式可能无效')
+
+    image_count = len(re.findall(r'<img\\b', content_html or '', flags=re.IGNORECASE))
+    if image_count > 10:
+        warnings.append('正文图片较多，移动端加载可能较慢')
+
+    if not user.is_admin and not user.address:
+        issues.append('请先绑定钱包地址再发布')
+
+    return {
+        'ok': len(issues) == 0,
+        'issues': issues,
+        'warnings': warnings,
+        'stats': {
+            'title_length': len(title),
+            'text_length': len(text_content),
+            'image_count': image_count
+        }
+    }
+
+
+@app.route('/api/posts/precheck', methods=['POST'])
+@token_required
+def precheck_post():
+    data = request.get_json() or {}
+    return jsonify(_build_post_precheck(g.current_user, data))
+
+
+@app.route('/api/onboarding/tasks', methods=['GET'])
+@token_required
+def onboarding_tasks():
+    user = g.current_user
+    posts_count = Post.query.filter_by(author_id=user.id).count()
+    has_post = posts_count > 0
+    has_wallet = bool(user.address)
+    is_web2_bound = bool(user.username) and has_wallet
+    tasks = [
+        {'key': 'login', 'title': '完成登录', 'done': True},
+        {'key': 'bind_wallet', 'title': '绑定钱包', 'done': has_wallet},
+        {'key': 'publish_first', 'title': '发布第一篇帖子', 'done': has_post},
+        {'key': 'verify_archive', 'title': '查看永存证据', 'done': has_post},
+        {'key': 'web2_bind_wallet', 'title': 'Web2 账号绑定钱包', 'done': is_web2_bound},
+    ]
+    done_count = sum(1 for t in tasks if t['done'])
+    return jsonify({'tasks': tasks, 'done_count': done_count, 'total': len(tasks)})
+
+
+@app.route('/api/announcements/active', methods=['GET'])
+def get_active_announcement():
+    now = datetime.utcnow()
+    ann = Announcement.query.filter(
+        Announcement.is_active == True,
+        ((Announcement.expires_at == None) | (Announcement.expires_at > now))
+    ).order_by(Announcement.created_at.desc()).first()
+    return jsonify({'announcement': ann.to_dict() if ann else None})
 
 # --- Posts ---
 
@@ -942,6 +1047,10 @@ def create_post():
         vote_options = []
     if not isinstance(vote_options, list):
         return jsonify({'error': 'vote_options 必须是数组'}), 400
+
+    precheck = _build_post_precheck(g.current_user, data)
+    if not precheck['ok']:
+        return jsonify({'error': '发布前检查未通过', 'issues': precheck['issues']}), 400
     
     # 2. Region Validation
     valid_regions = ['中国', '台湾', '香港', '澳门', '新加坡', '马来西亚', '日本', '韩国', '其他']
@@ -1062,11 +1171,30 @@ def create_post():
 _view_count_key = {}
 _view_count_ttl = 60
 
+
 def _prune_view_count_keys(now):
     global _view_count_key
     expired = [k for k, t in _view_count_key.items() if now - t >= _view_count_ttl]
     for k in expired:
         _view_count_key.pop(k, None)
+
+
+def _allow_view_count_increment(post_id, ip):
+    redis_conn = _get_redis_client()
+    if redis_conn:
+        key = f"view:{post_id}:{ip}"
+        try:
+            ok = redis_conn.set(key, '1', ex=_view_count_ttl, nx=True)
+            return bool(ok)
+        except Exception:
+            pass
+    now = time.time()
+    key = f"{post_id}:{ip}"
+    _prune_view_count_keys(now)
+    if key in _view_count_key and now - _view_count_key[key] < _view_count_ttl:
+        return False
+    _view_count_key[key] = now
+    return True
 
 @app.route('/api/posts/<int:post_id>', methods=['GET'])
 def get_post_detail(post_id):
@@ -1075,11 +1203,7 @@ def get_post_detail(post_id):
         # 浏览量 +1（同 IP 60 秒内仅计一次）
         try:
             ip = (request.remote_addr or 'unknown').strip()
-            key = f"{post_id}:{ip}"
-            now = time.time()
-            _prune_view_count_keys(now)
-            if key not in _view_count_key or now - _view_count_key[key] >= _view_count_ttl:
-                _view_count_key[key] = now
+            if _allow_view_count_increment(post_id, ip):
                 post.view_count = getattr(post, 'view_count', 0) or 0
                 post.view_count += 1
                 db.session.commit()
@@ -1406,6 +1530,8 @@ def delete_post(post_id):
     
     db.session.delete(post)
     db.session.commit()
+    if g.current_user.is_admin:
+        _log_admin_action('post_delete', 'post', post_id)
     return jsonify({'message': 'Post deleted'})
 
 @app.route('/api/posts/<int:post_id>', methods=['PUT'])
@@ -1442,6 +1568,7 @@ def toggle_hide_post(post_id):
     post = Post.query.get_or_404(post_id)
     post.is_hidden = not post.is_hidden
     db.session.commit()
+    _log_admin_action('post_toggle_hide', 'post', post_id, f"is_hidden={post.is_hidden}")
     return jsonify({'message': 'Toggled hide status', 'is_hidden': post.is_hidden})
 
 
@@ -1469,6 +1596,7 @@ def toggle_pin_post(post_id):
     post.pinned_at = datetime.utcnow() if should_pin else None
     post.pinned_by = g.current_user.id if should_pin else None
     db.session.commit()
+    _log_admin_action('post_pin_toggle', 'post', post_id, f"is_pinned={post.is_pinned}")
     return jsonify({
         'message': 'Pinned' if should_pin else 'Unpinned',
         'is_pinned': post.is_pinned,
@@ -1483,6 +1611,7 @@ def toggle_post_comments(post_id):
     post = Post.query.get_or_404(post_id)
     post.allow_comments = not post.allow_comments
     db.session.commit()
+    _log_admin_action('post_toggle_comments', 'post', post_id, f"allow_comments={post.allow_comments}")
     return jsonify({'message': 'Toggled comments status', 'allow_comments': post.allow_comments})
 
 @app.route('/api/admin/users/<int:user_id>/ban', methods=['POST'])
@@ -1495,6 +1624,7 @@ def ban_user(user_id):
         
     user.is_banned = not user.is_banned
     db.session.commit()
+    _log_admin_action('user_ban_toggle', 'user', user_id, f"is_banned={user.is_banned}")
     return jsonify({'message': 'User ban status toggled', 'is_banned': user.is_banned})
 
 @app.route('/api/admin/users', methods=['GET'])
@@ -1503,6 +1633,94 @@ def ban_user(user_id):
 def list_users():
     users = User.query.order_by(User.created_at.desc()).all()
     return jsonify([u.to_dict() for u in users])
+
+
+@app.route('/api/admin/announcements', methods=['GET'])
+@token_required
+@admin_required
+def list_announcements():
+    rows = Announcement.query.order_by(Announcement.created_at.desc()).limit(100).all()
+    return jsonify({'announcements': [a.to_dict() for a in rows]})
+
+
+@app.route('/api/admin/announcements', methods=['POST'])
+@token_required
+@admin_required
+def create_announcement():
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    content = (data.get('content') or '').strip()
+    level = (data.get('level') or 'info').strip().lower()
+    expires_at = _parse_iso_datetime(data.get('expires_at'))
+    activate_now = bool(data.get('activate', True))
+    if not title or not content:
+        return jsonify({'error': '标题和内容不能为空'}), 400
+    if len(title) > 120 or len(content) > 1000:
+        return jsonify({'error': '标题或内容过长'}), 400
+    if level not in ('info', 'warning', 'critical'):
+        return jsonify({'error': 'level 仅支持 info/warning/critical'}), 400
+
+    if activate_now:
+        Announcement.query.update({'is_active': False}, synchronize_session=False)
+    ann = Announcement(
+        title=title,
+        content=content,
+        level=level,
+        is_active=activate_now,
+        expires_at=expires_at,
+        created_by=g.current_user.id
+    )
+    db.session.add(ann)
+    db.session.commit()
+    _log_admin_action('announcement_create', 'announcement', ann.id, f"title={title}")
+    return jsonify({'message': '公告已创建', 'announcement': ann.to_dict()}), 201
+
+
+@app.route('/api/admin/announcements/<int:announcement_id>', methods=['PUT'])
+@token_required
+@admin_required
+def update_announcement(announcement_id):
+    ann = Announcement.query.get_or_404(announcement_id)
+    data = request.get_json() or {}
+    if 'title' in data:
+        ann.title = (data.get('title') or '').strip()[:120]
+    if 'content' in data:
+        ann.content = (data.get('content') or '').strip()[:1000]
+    if 'level' in data:
+        level = (data.get('level') or 'info').strip().lower()
+        if level not in ('info', 'warning', 'critical'):
+            return jsonify({'error': 'level 仅支持 info/warning/critical'}), 400
+        ann.level = level
+    if 'expires_at' in data:
+        ann.expires_at = _parse_iso_datetime(data.get('expires_at'))
+    if 'is_active' in data:
+        make_active = bool(data.get('is_active'))
+        if make_active:
+            Announcement.query.filter(Announcement.id != ann.id).update({'is_active': False}, synchronize_session=False)
+        ann.is_active = make_active
+    db.session.commit()
+    _log_admin_action('announcement_update', 'announcement', ann.id)
+    return jsonify({'message': '公告已更新', 'announcement': ann.to_dict()})
+
+
+@app.route('/api/admin/announcements/<int:announcement_id>', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_announcement(announcement_id):
+    ann = Announcement.query.get_or_404(announcement_id)
+    db.session.delete(ann)
+    db.session.commit()
+    _log_admin_action('announcement_delete', 'announcement', announcement_id)
+    return jsonify({'message': '公告已删除'})
+
+
+@app.route('/api/admin/audit-logs', methods=['GET'])
+@token_required
+@admin_required
+def list_admin_audit_logs():
+    limit = min(request.args.get('limit', 100, type=int), 300)
+    rows = AdminAuditLog.query.order_by(AdminAuditLog.created_at.desc()).limit(limit).all()
+    return jsonify({'logs': [r.to_dict() for r in rows]})
 
 @app.route('/api/reports', methods=['POST'])
 @token_required
@@ -1556,6 +1774,7 @@ def update_report(report_id):
     if 'admin_notes' in data:
         r.admin_notes = (data['admin_notes'] or '')[:500]
     db.session.commit()
+    _log_admin_action('report_update', 'report', report_id, f"status={r.status}")
     return jsonify({'message': '已更新', 'report': r.to_dict()})
 
 # /api/debug/seed 已移除，生产环境不可暴露造数接口；造数请用 Flask shell 或独立脚本
@@ -1658,17 +1877,26 @@ def init_db_data():
 def _ensure_users_wallet_address():
     """启动时确保 users 表存在 wallet_address 列（Render 等可能为旧 schema）。仅在实际变更时打日志。"""
     from sqlalchemy import text
-    if db.engine.dialect.name != 'postgresql':
-        return
+    dialect = db.engine.dialect.name
     try:
-        r = db.session.execute(text(
-            "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='wallet_address'"
-        ))
-        if r.scalar() is not None:
+        if dialect == 'postgresql':
+            r = db.session.execute(text(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='wallet_address'"
+            ))
+            if r.scalar() is not None:
+                return
+            db.session.execute(text('ALTER TABLE users ADD COLUMN wallet_address VARCHAR(42)'))
+            db.session.commit()
+            print('[Startup] users.wallet_address added.')
             return
-        db.session.execute(text('ALTER TABLE users ADD COLUMN wallet_address VARCHAR(42)'))
-        db.session.commit()
-        print('[Startup] users.wallet_address added.')
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(users)")).fetchall()
+            existing = {c[1] for c in cols}
+            if 'wallet_address' not in existing:
+                db.session.execute(text('ALTER TABLE users ADD COLUMN wallet_address VARCHAR(42)'))
+                db.session.commit()
+                print('[Startup] users.wallet_address added.')
+            return
     except Exception as e:
         db.session.rollback()
         if 'already exists' not in str(e).lower():
@@ -1678,17 +1906,26 @@ def _ensure_users_wallet_address():
 def _ensure_users_withdrawable_balance():
     """启动时确保 users 表存在 withdrawable_balance 列。仅在实际变更时打日志。"""
     from sqlalchemy import text
-    if db.engine.dialect.name != 'postgresql':
-        return
+    dialect = db.engine.dialect.name
     try:
-        r = db.session.execute(text(
-            "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='withdrawable_balance'"
-        ))
-        if r.scalar() is not None:
+        if dialect == 'postgresql':
+            r = db.session.execute(text(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='withdrawable_balance'"
+            ))
+            if r.scalar() is not None:
+                return
+            db.session.execute(text("ALTER TABLE users ADD COLUMN withdrawable_balance VARCHAR(50) DEFAULT '0'"))
+            db.session.commit()
+            print('[Startup] users.withdrawable_balance added.')
             return
-        db.session.execute(text("ALTER TABLE users ADD COLUMN withdrawable_balance VARCHAR(50) DEFAULT '0'"))
-        db.session.commit()
-        print('[Startup] users.withdrawable_balance added.')
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(users)")).fetchall()
+            existing = {c[1] for c in cols}
+            if 'withdrawable_balance' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN withdrawable_balance VARCHAR(50) DEFAULT '0'"))
+                db.session.commit()
+                print('[Startup] users.withdrawable_balance added.')
+            return
     except Exception as e:
         db.session.rollback()
         if 'already exists' not in str(e).lower():
