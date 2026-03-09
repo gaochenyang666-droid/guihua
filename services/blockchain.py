@@ -1,8 +1,6 @@
-# 区块链服务层：BSC 交易校验、USDT 打款
-import os
+# 区块链服务层：BSC 交易校验
 import re
 import time
-import threading
 import requests
 from web3 import Web3
 try:
@@ -11,43 +9,9 @@ except ImportError:
     from web3.middleware import geth_poa_middleware
 
 from flask import current_app
-from extensions import db
-from models import Post, UsedTransaction, Tip
+from models import Post, UsedTransaction
 
 _TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
-
-_w3_cache = None
-
-
-def get_working_web3():
-    global _w3_cache
-    rpc_list = current_app.config.get('BSC_RPC_LIST') or [current_app.config['BSC']['RPC_URL']]
-    if _w3_cache and _w3_cache.is_connected():
-        return _w3_cache
-    for rpc in rpc_list:
-        try:
-            provider = Web3(Web3.HTTPProvider(rpc))
-            provider.middleware_onion.inject(geth_poa_middleware, layer=0)
-            if provider.is_connected():
-                _w3_cache = provider
-                return provider
-        except Exception as e:
-            continue
-    provider = Web3(Web3.HTTPProvider(rpc_list[0]))
-    provider.middleware_onion.inject(geth_poa_middleware, layer=0)
-    return provider
-
-
-def get_bnb_price_usd():
-    try:
-        r = requests.get('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT', timeout=5)
-        if r.ok:
-            data = r.json()
-            return float(data.get('price', 0)) or None
-    except Exception as e:
-        print(f"BNB price fetch error: {e}")
-    return None
-
 
 def get_usdt_per_cny():
     try:
@@ -71,100 +35,6 @@ def get_post_fee_usdt_raw():
     else:
         fee_usdt = current_app.config['BSC']['POST_FEE_USDT_FALLBACK']
     return int(fee_usdt * (10 ** decimals))
-
-
-def _encode_usdt_transfer(to_address, amount_raw):
-    try:
-        from eth_abi import encode
-        amount_raw = int(amount_raw)
-        if amount_raw < 0 or amount_raw > (1 << 256) - 1:
-            return None
-        selector = bytes.fromhex('a9059cbb')
-        encoded = encode(['address', 'uint256'], [Web3.to_checksum_address(to_address), amount_raw])
-        return '0x' + (selector + encoded).hex()
-    except (ImportError, TypeError, ValueError):
-        return None
-
-
-def try_send_tip_payout_raw(to_address, amount_raw):
-    pk = os.environ.get('PLATFORM_PRIVATE_KEY')
-    if not pk:
-        return ('no_key', None)
-    if not to_address or not Web3.is_address(to_address) or amount_raw <= 0:
-        return ('failed', 'Invalid address or amount')
-    usdt_contract = current_app.config['BSC'].get('USDT_CONTRACT_ADDRESS')
-    if not usdt_contract:
-        return ('failed', 'USDT contract not configured')
-    data_hex = _encode_usdt_transfer(to_address, amount_raw)
-    if not data_hex:
-        return ('failed', 'eth_abi not available')
-    try:
-        from eth_account import Account
-        w3_conn = get_working_web3()
-        account = Account.from_key(pk)
-        platform_address = account.address
-        if platform_address.lower() != (current_app.config['BSC'].get('RECEIVE_ADDRESS') or '').lower():
-            return ('failed', 'Platform key does not match RECEIVE_ADDRESS')
-        balance_bnb = w3_conn.eth.get_balance(platform_address)
-        if balance_bnb < Web3.to_wei(0.0005, 'ether'):
-            return ('failed', '平台钱包 BNB 不足')
-        nonce = w3_conn.eth.get_transaction_count(platform_address)
-        base_gas = w3_conn.eth.gas_price
-        gas_price = min(int(base_gas * 1.1), Web3.to_wei(20, 'gwei'))
-        tx = {
-            'nonce': nonce,
-            'chainId': current_app.config['BSC']['CHAIN_ID'],
-            'to': Web3.to_checksum_address(usdt_contract),
-            'value': 0,
-            'data': data_hex,
-            'gas': 100000,
-            'gasPrice': gas_price
-        }
-        signed = account.sign_transaction(tx)
-        tx_hash = w3_conn.eth.send_raw_transaction(signed.raw_transaction)
-        return ('sent', tx_hash.hex())
-    except Exception as e:
-        return ('failed', str(e)[:500])
-
-
-def try_send_tip_payout(tip, author_amount_raw):
-    if not tip.recipient:
-        return ('no_address', None)
-    tip_full = int(tip.amount)
-    if author_amount_raw <= 0 or author_amount_raw > tip_full:
-        return ('failed', 'Invalid payout amount')
-    to_address = (tip.recipient.wallet_address or tip.recipient.address or '').strip()
-    return try_send_tip_payout_raw(to_address, author_amount_raw)
-
-
-def process_pending_tip_payouts():
-    fee_percent = current_app.config.get('TIP_PLATFORM_FEE_PERCENT', 7)
-    if not os.environ.get('PLATFORM_PRIVATE_KEY'):
-        return (0, 0, 0)
-    tips = Tip.query.filter(
-        Tip.payout_tx_hash.is_(None),
-        Tip.payout_status.in_(('pending', 'failed', 'no_address'))
-    ).all()
-    sent, failed = 0, 0
-    for tip in tips:
-        full_raw = int(tip.amount)
-        author_raw = (full_raw * (100 - fee_percent)) // 100
-        status, result = try_send_tip_payout(tip, author_raw)
-        tip.payout_status = status
-        if status == 'sent':
-            tip.payout_tx_hash = result
-            tip.payout_error = None
-            sent += 1
-        elif status == 'failed':
-            tip.payout_error = result
-            failed += 1
-        elif status == 'no_address':
-            tip.payout_error = tip.payout_error or 'Author has no wallet address'
-    try:
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-    return (len(tips), sent, failed)
 
 
 def _addr_to_topic(addr):
@@ -285,5 +155,3 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
     except Exception as e:
         print(f"Verify Tx Error: {e}")
         return False, 'Verification process failed'
-
-

@@ -281,7 +281,7 @@
                 打赏将<strong style="color: var(--accent-green);">直接转入作者绑定的钱包</strong>，不经过平台、无抽成。
             </p>
             <div style="margin-bottom: 1rem; padding: 0.6rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.85rem;">
-                <strong style="color: var(--text-secondary);">收款地址：</strong>
+                <strong style="color: var(--text-secondary);">发帖人钱包ID：</strong>
                 <span id="tipAuthorAddressDisplay" style="word-break: break-all; color: var(--accent-green);">-</span>
                 <button type="button" class="btn btn-ghost btn-sm" id="tipAuthorCopyBtn" style="margin-left: 0.5rem; display: none;" onclick="TipAuthor.copyAddress()">复制</button>
             </div>
@@ -656,10 +656,12 @@
                     const accounts = await (window.ethereum || window.BinanceChain).request({ method: 'eth_requestAccounts' });
                     const address = accounts[0];
 
-                    const resNonce = await fetch(`${API_BASE}/auth/nonce?address=${address}`);
+                    const resNonce = await fetch(`${API_BASE}/user/bind_wallet/nonce`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
                     const { nonce } = await resNonce.json();
 
-                    const message = `Bind wallet ${address} to user ${currentUser.username}. Nonce: ${nonce}`;
+                    const message = `Bind wallet ${address} to account ${currentUser.id} on ${location.host}: ${nonce}`;
                     let signature;
 
                     try {

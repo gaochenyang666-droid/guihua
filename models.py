@@ -281,11 +281,8 @@ class Tip(db.Model):
     to_user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     amount = db.Column(db.String(50))
-    token_symbol = db.Column(db.String(10), default='BNB')
+    token_symbol = db.Column(db.String(10), default='USDT')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    payout_tx_hash = db.Column(db.String(66), nullable=True, index=True)
-    payout_status = db.Column(db.String(20), default='pending')
-    payout_error = db.Column(db.String(500), nullable=True)
 
     sender = db.relationship('User', foreign_keys=[from_user_id])
     recipient = db.relationship('User', foreign_keys=[to_user_id])
