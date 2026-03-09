@@ -325,6 +325,56 @@ class Report(db.Model):
         }
 
 
+class Announcement(db.Model):
+    __tablename__ = 'announcements'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(120), nullable=False)
+    content = db.Column(db.String(1000), nullable=False)
+    level = db.Column(db.String(20), default='info')  # info|warning|critical
+    is_active = db.Column(db.Boolean, default=True, index=True)
+    expires_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_by = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'content': self.content,
+            'level': self.level,
+            'is_active': self.is_active,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'created_by': self.created_by,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AdminAuditLog(db.Model):
+    __tablename__ = 'admin_audit_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False, index=True)
+    action = db.Column(db.String(50), nullable=False, index=True)
+    target_type = db.Column(db.String(30), nullable=True, index=True)
+    target_id = db.Column(db.String(64), nullable=True, index=True)
+    details = db.Column(db.String(1000), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    admin = db.relationship('User', foreign_keys=[admin_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'admin_id': self.admin_id,
+            'action': self.action,
+            'target_type': self.target_type,
+            'target_id': self.target_id,
+            'details': self.details,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 ALLOWED_AVATARS = ['👻', '💀', '👽', '👾', '🤖', '🎃', '🧛', '🧟', '🧞', '🧝', '🧙', '🧚', '🧜', '👼', '👿', '👺', '👹', '🤡', '💩', '🦄']
 
 
