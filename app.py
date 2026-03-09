@@ -621,7 +621,10 @@ def search_posts():
         (Post.title.ilike(f'%{escaped_q}%', escape='\\')) |
         (Post.content.ilike(f'%{escaped_q}%', escape='\\'))
     ).filter_by(is_hidden=False).order_by(
-        Post.is_pinned.desc(), Post.pinned_at.desc(), Post.created_at.desc()
+        Post.is_special_announcement.desc(),
+        Post.is_pinned.desc(),
+        Post.pinned_at.desc(),
+        Post.created_at.desc()
     ).limit(20).all()
     return jsonify({'posts': [p.to_dict() for p in posts]})
 
@@ -763,10 +766,13 @@ def _get_posts_fallback(page, per_page, current_user_id):
     """兜底：仅查 posts 表，不 join users，避免缺列导致 500。返回 (posts_data, total, pages)。"""
     from sqlalchemy import text
     def _order_sql():
-        return "ORDER BY is_pinned DESC, pinned_at DESC, created_at DESC"
+        return "ORDER BY is_special_announcement DESC, is_pinned DESC, pinned_at DESC, created_at DESC"
     try:
         query = Post.query.filter_by(is_hidden=False).order_by(
-            Post.is_pinned.desc(), Post.pinned_at.desc(), Post.created_at.desc()
+            Post.is_special_announcement.desc(),
+            Post.is_pinned.desc(),
+            Post.pinned_at.desc(),
+            Post.created_at.desc()
         )
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         posts = pagination.items
@@ -779,7 +785,7 @@ def _get_posts_fallback(page, per_page, current_user_id):
             rows = db.session.execute(text("""
                 SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
                        tx_hash, ipfs_cid, is_paid, region, is_on_chain, post_type, is_hidden, allow_comments,
-                       is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment
+                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment
                 FROM posts WHERE is_hidden = false
             """ + _order_sql() + " LIMIT :lim OFFSET :off"), {'lim': per_page, 'off': off}).fetchall()
             total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
@@ -800,6 +806,15 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 return [], 0, 1
 
     post_ids = [p.id if hasattr(p, 'id') else p[0] for p in posts]
+    author_ids = {p.author_id if hasattr(p, 'author_id') else p[3] for p in posts}
+    authors_map = {}
+    if author_ids:
+        try:
+            users = User.query.filter(User.id.in_(list(author_ids))).all()
+            for u in users:
+                authors_map[u.id] = u.to_dict()
+        except Exception:
+            authors_map = {}
     user_likes = set()
     user_bookmarks = set()
     if current_user_id and post_ids:
@@ -825,6 +840,7 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 original_post_id = getattr(p, 'original_post_id', None)
                 repost_comment = getattr(p, 'repost_comment', None)
                 is_hidden = getattr(p, 'is_hidden', False)
+                is_special_announcement = getattr(p, 'is_special_announcement', False)
                 is_pinned = getattr(p, 'is_pinned', False)
                 pinned_at = getattr(p, 'pinned_at', None)
                 allow_comments = getattr(p, 'allow_comments', True)
@@ -846,14 +862,15 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 post_type = r[13] if len(r) > 13 else 0
                 is_hidden = r[14] if len(r) > 14 else False
                 allow_comments = r[15] if len(r) > 15 else True
-                is_pinned = r[16] if len(r) > 16 else False
-                pinned_at = r[17] if len(r) > 17 else None
-                pinned_by = r[18] if len(r) > 18 else None
+                is_special_announcement = r[16] if len(r) > 16 else False
+                is_pinned = r[17] if len(r) > 17 else False
+                pinned_at = r[18] if len(r) > 18 else None
+                pinned_by = r[19] if len(r) > 19 else None
                 region = r[11] if len(r) > 11 else '其他'
                 is_on_chain = r[12] if len(r) > 12 else False
-                is_repost = r[19] if len(r) > 19 else False
-                original_post_id = r[20] if len(r) > 20 else None
-                repost_comment = r[21] if len(r) > 21 else None
+                is_repost = r[20] if len(r) > 20 else False
+                original_post_id = r[21] if len(r) > 21 else None
+                repost_comment = r[22] if len(r) > 22 else None
 
             images_list = []
             if images_raw:
@@ -880,7 +897,7 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 'content': content,
                 'cover_image': cover_image,
                 'images': images_list,
-                'author': {'id': author_id, 'nickname': '用户', 'avatar': '👻'},
+                'author': authors_map.get(author_id, {'id': author_id, 'nickname': '用户', 'avatar': '👻', 'honor_title': '新魂'}),
                 'view_count': view_count,
                 'likes_count': likes_count,
                 'comments_count': comments_count,
@@ -896,6 +913,7 @@ def _get_posts_fallback(page, per_page, current_user_id):
                 'original_post': None,
                 'repost_comment': repost_comment,
                 'is_hidden': is_hidden,
+                'is_special_announcement': is_special_announcement,
                 'is_pinned': is_pinned,
                 'pinned_at': pinned_at.isoformat() if hasattr(pinned_at, 'isoformat') and pinned_at else None,
                 'pinned_by': pinned_by,
@@ -909,8 +927,13 @@ def _get_posts_fallback(page, per_page, current_user_id):
 
 
 def _apply_default_post_order(query):
-    """统一帖子排序：置顶优先，其次发布时间。"""
-    return query.order_by(Post.is_pinned.desc(), Post.pinned_at.desc(), Post.created_at.desc())
+    """统一帖子排序：特殊公告优先，再置顶，其次发布时间。"""
+    return query.order_by(
+        Post.is_special_announcement.desc(),
+        Post.is_pinned.desc(),
+        Post.pinned_at.desc(),
+        Post.created_at.desc()
+    )
 
 
 @app.route('/api/posts/pinned', methods=['GET'])
@@ -1117,6 +1140,7 @@ def create_post():
         cover_image = cover_image.strip() or None
     if not cover_image:
         cover_image = None
+    is_special_announcement = bool(data.get('is_special_announcement')) if g.current_user.is_admin else False
     post = Post(
         title=clean_title,
         content=clean_content,
@@ -1128,6 +1152,7 @@ def create_post():
         is_paid=is_paid,
         is_on_chain=is_on_chain,
         region=region,
+        is_special_announcement=is_special_announcement,
         post_type=1 if is_on_chain else 0
     )
     
@@ -2000,6 +2025,33 @@ def _ensure_posts_pin_columns():
         db.session.rollback()
         print(f'[Startup] posts pin columns skip: {e}')
 
+
+def _ensure_posts_special_column():
+    """启动时确保 posts 表存在特殊公告列。"""
+    from sqlalchemy import text
+    dialect = db.engine.dialect.name
+    try:
+        if dialect == 'postgresql':
+            r = db.session.execute(text(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='is_special_announcement'"
+            ))
+            if r.scalar() is None:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_special_announcement BOOLEAN DEFAULT false"))
+                db.session.commit()
+                print('[Startup] posts.is_special_announcement added.')
+            return
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(posts)")).fetchall()
+            existing = {c[1] for c in cols}
+            if 'is_special_announcement' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_special_announcement BOOLEAN DEFAULT 0"))
+                db.session.commit()
+                print('[Startup] posts.is_special_announcement added.')
+            return
+    except Exception as e:
+        db.session.rollback()
+        print(f'[Startup] posts special column skip: {e}')
+
 def _check_receive_address():
     """启动时检查：未配置 RECEIVE_ADDRESS 时打印明确错误提示（发帖费与站长赞赏需要）。"""
     addr = app.config.get('BSC', {}).get('RECEIVE_ADDRESS')
@@ -2023,6 +2075,7 @@ def _run_startup_tasks():
     _ensure_users_withdrawable_balance()
     _ensure_posts_tx_nullable()
     _ensure_posts_pin_columns()
+    _ensure_posts_special_column()
     if _should_run_init_db():
         init_db_data()
     _check_receive_address()

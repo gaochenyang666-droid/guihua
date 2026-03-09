@@ -203,7 +203,7 @@
                         <label class="form-label">封面图 (选填)</label>
                         <div style="display:flex; flex-direction: column; gap:1rem;">
                             <div id="coverPreview" style="width:100%; aspect-ratio: 16/9; background:var(--bg-secondary); border-radius:8px; border:1px dashed var(--border-color); display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                                <span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>
+                                <span style="font-size:2rem; color:var(--text-secondary);">🖼️</span>
                             </div>
                             <input type="text" class="form-input" id="studioPostImage" placeholder="输入图片 URL 或点击上传..." oninput="Editor.previewCover(this.value)">
                             <label class="btn btn-ghost" style="width: 100%; justify-content: center;">
@@ -240,6 +240,12 @@
                         <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.publish()">
                             ⚡ 确认支付并发布
                         </button>
+                    </div>
+                    <div id="adminSpecialArea" style="display:none; margin-top: 0.9rem; padding: 0.8rem 1rem; border: 1px dashed var(--accent-orange); border-radius: 10px;">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="adminSpecialPostCheckbox">
+                            <span style="font-size:0.88rem; color:var(--text-primary);">发布为特殊帖子（始终优先出现在第一页）</span>
+                        </label>
                     </div>
                     <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
                         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">已支付但未完成发帖？输入交易哈希继续（无需再付）</div>
@@ -320,6 +326,7 @@
                 formData.append('file', file, file.name || 'cover.png');
                 try {
                     const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData });
+                    if (handle401(res)) return;
                     const resp = await res.json().catch(() => ({}));
                     if (res.ok && resp.url) {
                         document.getElementById('studioPostImage').value = resp.url;
@@ -337,7 +344,7 @@
                     p.innerHTML = `<img src="${esc(url)}" referrerpolicy="no-referrer" style="width:100%; height:100%; object-fit:cover; object-position:center center; border-radius:8px;" onerror="this.style.display='none'">`;
                     p.style.border = '1px solid var(--accent-purple)';
                 } else {
-                    p.innerHTML = '<span style="font-size:0.9rem; color:var(--text-secondary);">预览区域</span>';
+                    p.innerHTML = '<span style="font-size:2rem; color:var(--text-secondary);">🖼️</span>';
                     p.style.border = '1px dashed var(--border-color)';
                 }
             }
@@ -487,7 +494,9 @@
 
             checkWalletEnv() {
                 const area = document.getElementById('walletActionArea');
+                const specialArea = document.getElementById('adminSpecialArea');
                 const isAdmin = currentUser && currentUser.is_admin;
+                if (specialArea) specialArea.style.display = isAdmin ? 'block' : 'none';
                 area.innerHTML = isAdmin ? `
                     <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 0.8rem;" onclick="Studio.initPayment()">
                         ⚡ 支付并上链发布 (Web3)
@@ -552,7 +561,15 @@
                 const title = document.getElementById('studioPostTitle').value;
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
                 const coverImage = document.getElementById('studioPostImage').value;
-                const data = { title, content, cover_image: coverImage, tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null), time: Date.now() };
+                const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
+                const data = {
+                    title,
+                    content,
+                    cover_image: coverImage,
+                    tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null),
+                    is_special_announcement: specialChecked,
+                    time: Date.now()
+                };
                 try { localStorage.setItem(PENDING_POST_KEY, JSON.stringify(data)); } catch(e) {}
             },
             clearPendingPost() {
@@ -569,6 +586,8 @@
                     if (p.content && studioQuill) studioQuill.clipboard.dangerouslyPasteHTML(p.content);
                     if (p.cover_image) document.getElementById('studioPostImage').value = p.cover_image;
                     if (typeof Editor !== 'undefined' && Editor.previewCover) Editor.previewCover(p.cover_image);
+                    const specialBox = document.getElementById('adminSpecialPostCheckbox');
+                    if (specialBox) specialBox.checked = !!p.is_special_announcement;
                     Toast.info('检测到未完成的发布（已支付），可直接点击发布继续，无需再次支付');
                 } catch(e) {}
             },
@@ -720,6 +739,7 @@
                 const title = document.getElementById('studioPostTitle').value;
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
                 const coverImage = document.getElementById('studioPostImage').value;
+                const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const btn = document.getElementById('publishBtn');
 
                 this.isPublishing = true;
@@ -821,6 +841,7 @@
                             content,
                             tx_hash: txHash,
                             cover_image: coverImage,
+                            is_special_announcement: specialChecked,
                             images: [],
                             region: '其他'
                         })
@@ -892,6 +913,7 @@
                     return;
                 }
                 const coverImage = document.getElementById('studioPostImage').value || '';
+                const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const btn = document.getElementById('adminDirectPublishBtn');
                 if (btn) btn.disabled = true;
                 try {
@@ -905,6 +927,7 @@
                             title,
                             content,
                             cover_image: coverImage || null,
+                            is_special_announcement: specialChecked,
                             images: [],
                             region: '其他'
                         })
@@ -975,6 +998,7 @@
                     headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
                     body: formData
                 });
+                if (handle401(res)) return;
                 const resp = await res.json().catch(() => ({}));
                 if (!res.ok || !resp.url) {
                     if (typeof Toast !== 'undefined') Toast.error(resp.error || '上传失败');

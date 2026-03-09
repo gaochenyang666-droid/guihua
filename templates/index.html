@@ -73,8 +73,11 @@
                         <p class="onboarding-title">🧭 新手任务</p>
                         <p class="onboarding-progress-label">完成进度 <span id="onboardingProgress"></span></p>
                     </div>
-                    <div class="onboarding-ring" id="onboardingRing">
-                        <span id="onboardingPercent">0%</span>
+                    <div class="onboarding-right">
+                        <button class="onboarding-close-btn" type="button" onclick="Onboarding.dismiss()">✕</button>
+                        <div class="onboarding-ring" id="onboardingRing">
+                            <span id="onboardingPercent">0%</span>
+                        </div>
                     </div>
                 </div>
                 <div id="onboardingTaskList" class="onboarding-task-list"></div>
@@ -103,7 +106,7 @@
             <div class="masonry-grid" id="postGrid"></div>
             <div id="loadingArea" style="text-align: center; padding: 2rem; color: var(--text-muted);">正在召唤灵体...</div>
             <div id="loadMoreArea" style="text-align: center; padding: 1rem; display: none;">
-                <button class="btn btn-ghost" onclick="Post.loadMore()">⬇️ 召唤更多</button>
+                <span style="font-size:0.85rem; color:var(--text-secondary);">继续下滑自动加载更多...</span>
             </div>
         </main>
     </div>
@@ -847,6 +850,15 @@
         };
 
         const Onboarding = {
+            dismissedKey() {
+                const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
+                return `onboarding_dismissed_${uid}`;
+            },
+            dismiss() {
+                try { localStorage.setItem(this.dismissedKey(), '1'); } catch (_) {}
+                const card = document.getElementById('onboardingCard');
+                if (card) card.hidden = true;
+            },
             async load() {
                 const card = document.getElementById('onboardingCard');
                 if (!card) return;
@@ -854,6 +866,12 @@
                     card.hidden = true;
                     return;
                 }
+                try {
+                    if (localStorage.getItem(this.dismissedKey()) === '1') {
+                        card.hidden = true;
+                        return;
+                    }
+                } catch (_) {}
                 try {
                     const res = await fetch(`${API_BASE}/onboarding/tasks`, {
                         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -894,6 +912,7 @@
             isLoading: false,
             isFetching: false,
             pinnedPostId: null,
+            autoLoadObserver: null,
 
             async loadPinnedGuide() {
                 try {
@@ -1018,6 +1037,22 @@
                     this.currentPage++;
                     this.load();
                 }
+            },
+            initAutoLoad() {
+                const sentinel = document.getElementById('loadMoreArea');
+                if (!sentinel || this.autoLoadObserver) return;
+                this.autoLoadObserver = new IntersectionObserver((entries) => {
+                    const entry = entries && entries[0];
+                    if (!entry || !entry.isIntersecting) return;
+                    if (this.isLoading || this.isFetching) return;
+                    if (this.currentPage >= this.totalPages) return;
+                    this.loadMore();
+                }, {
+                    root: null,
+                    rootMargin: '200px 0px 260px 0px',
+                    threshold: 0.01
+                });
+                this.autoLoadObserver.observe(sentinel);
             },
 
             async repost(id) {
@@ -1164,9 +1199,11 @@
                     const imgPlaceholder = '<div class="post-image post-image-placeholder">📝</div>';
 
                     const isWeb3 = p.post_type === 1 || p.tx_hash;
+                    const isSpecial = !!p.is_special_announcement;
                     const cardClasses = ['post-card', 'glass'];
                     if (isWeb3) cardClasses.push('post-card--web3');
                     const badge = isWeb3 ? '<div class="post-badge post-badge-web3">Web3</div>' : '';
+                    const specialBadge = isSpecial ? '<div class="post-badge post-badge-special">📜 长公告</div>' : '';
                     const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
 
                     return `
@@ -1174,6 +1211,7 @@
                         <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(${p.id})">
                             ${pinBadge}
                             ${badge}
+                            ${specialBadge}
                             ${img || imgPlaceholder}
                             <div class="post-content">
                                 <div class="post-title">${escapeHtml(p.title)}</div>
@@ -1695,6 +1733,7 @@
                 body.innerHTML = `
                     <h2 style="margin-bottom:0.5rem;">${escapeHtml(p.title)}</h2>
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                        ${p.is_special_announcement ? '<span style="color:var(--accent-orange); font-weight:700;">📜 长公告</span> |' : ''}
                         ${p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span> |' : ''}
                         发布者: ${escapeHtml(p.author.nickname)} ${UI.renderHonor(p.author)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
                     </div>
@@ -1894,6 +1933,7 @@
             Auth.init();
             Post.loadPinnedGuide();
             Post.load();
+            Post.initAutoLoad();
             const postId = new URLSearchParams(window.location.search).get('post');
             if (postId && /^\d+$/.test(postId)) {
                 setTimeout(() => Modal.openDetail(parseInt(postId, 10)), 300);

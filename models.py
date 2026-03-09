@@ -60,6 +60,9 @@ class User(db.Model):
         years = 0
         if self.created_at:
             years = max(0, int((now - self.created_at).days // 365))
+        has_wallet = bool(self.address)
+        has_web2 = bool(self.username)
+        onboarding_completed = has_wallet and has_web2 and post_count > 0
 
         if self.is_admin:
             return '守夜人'
@@ -69,15 +72,17 @@ class User(db.Model):
             return '百帖引魂者'
         if post_count >= 10:
             return '十帖异闻录'
+        if onboarding_completed:
+            return '结契通灵者'
         if years >= 10:
             return '十年守秘人'
         if years >= 5:
             return '五年夜巡者'
         if years >= 1:
             return '一年见习者'
-        if self.address and self.username:
+        if has_wallet and has_web2:
             return '双界行者'
-        if self.address:
+        if has_wallet:
             return '链上旅人'
         return '新魂'
 
@@ -113,6 +118,7 @@ class Post(db.Model):
     is_on_chain = db.Column(db.Boolean, default=False)
     post_type = db.Column(db.Integer, default=0, index=True)
     is_hidden = db.Column(db.Boolean, default=False, index=True)
+    is_special_announcement = db.Column(db.Boolean, default=False, index=True)
     is_pinned = db.Column(db.Boolean, default=False, index=True)
     pinned_at = db.Column(db.DateTime, nullable=True, index=True)
     pinned_by = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
@@ -159,7 +165,7 @@ class Post(db.Model):
             'content': self.content,
             'cover_image': cover_image,
             'images': images_list,
-            'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻'},
+            'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻', 'honor_title': '新魂'},
             'view_count': self.view_count,
             'likes_count': lc,
             'comments_count': cc,
@@ -175,6 +181,7 @@ class Post(db.Model):
             'original_post': original_post_data,
             'repost_comment': self.repost_comment,
             'is_hidden': self.is_hidden,
+            'is_special_announcement': self.is_special_announcement,
             'is_pinned': self.is_pinned,
             'pinned_at': self.pinned_at.isoformat() if self.pinned_at else None,
             'pinned_by': self.pinned_by,
@@ -222,7 +229,7 @@ class Comment(db.Model):
 
 
 def _comment_to_dict_node(c):
-    author_data = c.author.to_dict() if c.author else {'id': c.author_id, 'nickname': '已注销', 'avatar': '👻'}
+    author_data = c.author.to_dict() if c.author else {'id': c.author_id, 'nickname': '已注销', 'avatar': '👻', 'honor_title': '新魂'}
     return {
         'id': c.id,
         'content': c.content,
