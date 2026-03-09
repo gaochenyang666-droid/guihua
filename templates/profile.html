@@ -137,7 +137,10 @@
                     ${avatarHtml}
                     <div style="flex:1;">
                         <div style="display:flex; justify-content:space-between; align-items:start;">
-                            <h1 style="margin-bottom:0.5rem;">${escapeHtml(user.nickname)}</h1>
+                            <h1 style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                                <span>${escapeHtml(user.nickname)}</span>
+                                ${user.honor_title ? `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>` : ''}
+                            </h1>
                             ${isMe ? `<div style="display:flex; gap:0.5rem;"><button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>${currentUser.username ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.openChangePassword()">🔒 修改密码</button>` : ''}</div>` : ''}
                         </div>
                         <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">

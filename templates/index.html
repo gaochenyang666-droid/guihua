@@ -74,7 +74,7 @@
                         <p class="onboarding-progress-label">完成进度 <span id="onboardingProgress"></span></p>
                     </div>
                     <div class="onboarding-right">
-                        <button class="onboarding-close-btn" type="button" onclick="Onboarding.dismiss()">✕</button>
+                        <button class="onboarding-close-btn" id="onboardingCloseBtn" type="button">✕</button>
                         <div class="onboarding-ring" id="onboardingRing">
                             <span id="onboardingPercent">0%</span>
                         </div>
@@ -854,20 +854,41 @@
                 const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
                 return `onboarding_dismissed_${uid}`;
             },
+            fallbackDismissedKey() {
+                return 'onboarding_dismissed_global';
+            },
+            bindClose() {
+                const btn = document.getElementById('onboardingCloseBtn');
+                if (!btn || btn.dataset.bound === '1') return;
+                btn.dataset.bound = '1';
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.dismiss();
+                });
+            },
             dismiss() {
-                try { localStorage.setItem(this.dismissedKey(), '1'); } catch (_) {}
+                try {
+                    localStorage.setItem(this.dismissedKey(), '1');
+                    localStorage.setItem(this.fallbackDismissedKey(), '1');
+                    sessionStorage.setItem(this.dismissedKey(), '1');
+                } catch (_) {}
                 const card = document.getElementById('onboardingCard');
                 if (card) card.hidden = true;
             },
             async load() {
                 const card = document.getElementById('onboardingCard');
                 if (!card) return;
+                this.bindClose();
                 if (!currentUser) {
                     card.hidden = true;
                     return;
                 }
                 try {
-                    if (localStorage.getItem(this.dismissedKey()) === '1') {
+                    const dismissed = localStorage.getItem(this.dismissedKey()) === '1'
+                        || localStorage.getItem(this.fallbackDismissedKey()) === '1'
+                        || sessionStorage.getItem(this.dismissedKey()) === '1';
+                    if (dismissed) {
                         card.hidden = true;
                         return;
                     }
@@ -1920,6 +1941,7 @@
         };
 
         window.addEventListener('load', () => {
+            Onboarding.bindClose();
             const c = document.getElementById('ghostFireContainer');
             // Optimize for mobile: fewer particles
             const isMobile = window.innerWidth < 768;
