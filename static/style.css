@@ -240,6 +240,7 @@ body.page-motion.page-leaving {
 .sidebar {
     display: flex;
     flex-direction: row;
+    align-items: flex-start;
     overflow-x: auto;
     white-space: nowrap;
     padding: 0 4px 12px 4px;
@@ -252,19 +253,36 @@ body.page-motion.page-leaving {
 .sidebar-card {
     background: transparent; box-shadow: none; border: none; padding: 0 12px; margin: 0;
     display: block;
+    flex: 0 0 auto;
     scroll-snap-align: start;
 }
 .nav-sort-card {
-    display: flex;
+    display: inline-flex;
+    align-items: center;
     gap: 10px;
+    padding: 6px 8px;
+    border-radius: 16px;
+    background: rgba(18, 18, 26, 0.65);
+    border: 1px solid var(--border-color);
 }
 .sidebar-card p { display: none; } /* Hide long card copy in mobile horizontal sidebar */
 .onboarding-card p,
 .checkin-card p,
 .group-links-card p { display: block; }
 .nav-item {
-    margin: 0; padding: 6px 16px; background: var(--bg-card); border: 1px solid var(--border-color);
-    border-radius: 20px; font-size: 14px; flex-shrink: 0; color: var(--text-secondary);
+    margin: 0;
+    padding: 7px 12px;
+    min-height: 34px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-size: 13px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: var(--text-secondary);
 }
 .nav-item.active { background: var(--accent-purple); color: white; border-color: var(--accent-purple); }
 
@@ -736,6 +754,7 @@ body.page-motion.page-leaving {
     /* Sidebar (Desktop: Vertical) */
     .sidebar {
         display: flex; flex-direction: column;
+        align-items: stretch;
         overflow-x: visible; white-space: normal;
         padding: 0; margin: 0;
         position: sticky; top: calc(var(--nav-height) + 2rem); height: fit-content;
@@ -747,6 +766,9 @@ body.page-motion.page-leaving {
     }
     .nav-sort-card {
         display: block;
+        background: transparent;
+        border: none;
+        padding: 0;
     }
     .sidebar-card p { display: block; color: var(--text-secondary); font-size: 0.9rem; }
     .onboarding-card {
