@@ -850,6 +850,7 @@
         };
 
         const Onboarding = {
+            dismissedInMemory: false,
             dismissedKey() {
                 const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
                 return `onboarding_dismissed_${uid}`;
@@ -857,17 +858,30 @@
             fallbackDismissedKey() {
                 return 'onboarding_dismissed_global';
             },
+            isDismissed() {
+                if (this.dismissedInMemory) return true;
+                try {
+                    return localStorage.getItem(this.dismissedKey()) === '1'
+                        || localStorage.getItem(this.fallbackDismissedKey()) === '1'
+                        || sessionStorage.getItem(this.dismissedKey()) === '1';
+                } catch (_) {
+                    return this.dismissedInMemory;
+                }
+            },
             bindClose() {
                 const btn = document.getElementById('onboardingCloseBtn');
                 if (!btn || btn.dataset.bound === '1') return;
                 btn.dataset.bound = '1';
-                btn.addEventListener('click', (e) => {
+                const closeHandler = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     this.dismiss();
-                });
+                };
+                btn.addEventListener('click', closeHandler);
+                btn.addEventListener('touchend', closeHandler, { passive: false });
             },
             dismiss() {
+                this.dismissedInMemory = true;
                 try {
                     localStorage.setItem(this.dismissedKey(), '1');
                     localStorage.setItem(this.fallbackDismissedKey(), '1');
@@ -884,15 +898,10 @@
                     card.hidden = true;
                     return;
                 }
-                try {
-                    const dismissed = localStorage.getItem(this.dismissedKey()) === '1'
-                        || localStorage.getItem(this.fallbackDismissedKey()) === '1'
-                        || sessionStorage.getItem(this.dismissedKey()) === '1';
-                    if (dismissed) {
-                        card.hidden = true;
-                        return;
-                    }
-                } catch (_) {}
+                if (this.isDismissed()) {
+                    card.hidden = true;
+                    return;
+                }
                 try {
                     const res = await fetch(`${API_BASE}/onboarding/tasks`, {
                         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
@@ -909,16 +918,16 @@
                     const total = Number(data.total || 0);
                     const done = Number(data.done_count || 0);
                     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                    progressEl.textContent = `${data.done_count}/${data.total}`;
+                    if (progressEl) progressEl.textContent = `${done}/${total}`;
                     if (percentEl) percentEl.textContent = `${pct}%`;
                     if (ringEl) ringEl.style.setProperty('--progress', `${pct}%`);
-                    listEl.innerHTML = data.tasks.map(t => {
+                    if (listEl) listEl.innerHTML = data.tasks.map(t => {
                         const done = !!t.done;
                         return `<div class="onboarding-task-item ${done ? 'is-done' : ''}">
                             <span class="onboarding-task-check">${done ? '✅' : '⬜️'}</span><span>${escapeHtml(t.title || '')}</span>
                         </div>`;
                     }).join('');
-                    card.hidden = data.done_count >= data.total;
+                    card.hidden = total > 0 ? done >= total : false;
                 } catch (_) {
                     card.hidden = true;
                 }
@@ -1209,15 +1218,62 @@
                 Onboarding.load();
             },
 
+            resolveCoverUrl(post) {
+                const removedLegacyCover = '/static/images/hua_cover.jpg';
+                const normalize = (val) => {
+                    if (typeof val !== 'string') return null;
+                    const trimmed = val.trim();
+                    if (!trimmed || trimmed === removedLegacyCover) return null;
+                    return trimmed;
+                };
+                const direct = normalize(post && post.cover_image);
+                if (direct) return direct;
+
+                const images = post && post.images;
+                if (Array.isArray(images)) {
+                    for (const it of images) {
+                        const found = normalize(it);
+                        if (found) return found;
+                    }
+                    return null;
+                }
+                if (typeof images === 'string') {
+                    const raw = images.trim();
+                    if (!raw) return null;
+                    if (raw.startsWith('[')) {
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                for (const it of parsed) {
+                                    const found = normalize(it);
+                                    if (found) return found;
+                                }
+                                return null;
+                            }
+                        } catch (_) {}
+                    }
+                    return normalize(raw);
+                }
+                return null;
+            },
+
+            renderCover(imageUrl) {
+                if (!imageUrl) {
+                    return '<div class="post-image-wrap is-fallback"><div class="post-image-placeholder">📝</div></div>';
+                }
+                const imgSrc = escapeAttr(imageUrl);
+                return `<div class="post-image-wrap">
+                    <div class="post-image-placeholder">📝</div>
+                    <img src="${imgSrc}" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image');this.parentElement.classList.remove('is-fallback')" onerror="this.remove();this.parentElement.classList.add('is-fallback')">
+                </div>`;
+            },
+
             renderPosts(posts, append=false) {
                 const grid = document.getElementById('postGrid');
                 const html = posts.map(p => {
-                    const imgUrl = p.cover_image || (p.images && p.images.length ? p.images[0] : null);
-                    const imgSrc = escapeAttr(imgUrl || '');
-                    const img = imgUrl
-                        ? `<div class="post-image-wrap"><img src="${imgSrc}" class="post-image" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='flex'"><div class="post-image-placeholder hidden">📝</div></div>`
-                        : '';
-                    const imgPlaceholder = '<div class="post-image post-image-placeholder">📝</div>';
+                    const imgUrl = this.resolveCoverUrl(p);
+                    const coverHtml = this.renderCover(imgUrl);
+                    const author = p.author || { nickname: '用户', avatar: '👻' };
 
                     const isWeb3 = p.post_type === 1 || p.tx_hash;
                     const isSpecial = !!p.is_special_announcement;
@@ -1233,15 +1289,15 @@
                             ${pinBadge}
                             ${badge}
                             ${specialBadge}
-                            ${img || imgPlaceholder}
+                            ${coverHtml}
                             <div class="post-content">
                                 <div class="post-title">${escapeHtml(p.title)}</div>
                                 <div class="post-meta">
                                     <div class="author-info">
-                                        ${UI.renderAvatar(p.author)}
-                                        <span>${escapeHtml(p.author.nickname)}</span>
-                                        ${UI.renderHonor(p.author)}
-                                        ${p.author.id != null ? formatUserId(p.author.id) : ''}
+                                        ${UI.renderAvatar(author)}
+                                        <span>${escapeHtml(author.nickname || '用户')}</span>
+                                        ${UI.renderHonor(author)}
+                                        ${author.id != null ? formatUserId(author.id) : ''}
                                     </div>
                                     <div class="post-like">
                                         <span><i class="fas fa-heart" style="${p.is_liked ? 'color:var(--accent-red)' : ''}"></i> ${p.likes_count}</span>

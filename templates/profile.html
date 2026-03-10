@@ -83,6 +83,41 @@
         let currentUser = null;
         let displayedUser = null;
         let tempAvatar = null;
+        const escapeAttr = (s) => (s == null ? '' : String(s))
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        function resolvePostCoverUrl(post) {
+            const normalize = (val) => {
+                if (typeof val !== 'string') return null;
+                const trimmed = val.trim();
+                if (!trimmed || trimmed === '/static/images/hua_cover.jpg') return null;
+                return trimmed;
+            };
+            const direct = normalize(post && post.cover_image);
+            if (direct) return direct;
+            const images = post && post.images;
+            if (Array.isArray(images)) {
+                for (const it of images) {
+                    const found = normalize(it);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        function renderPostCover(post) {
+            const coverUrl = resolvePostCoverUrl(post);
+            if (!coverUrl) {
+                return '<div class="post-cover-wrap is-fallback"><div class="post-cover-placeholder">📝</div></div>';
+            }
+            return `<div class="post-cover-wrap">
+                <div class="post-cover-placeholder">📝</div>
+                <img src="${escapeAttr(coverUrl)}" class="post-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image')" onerror="this.remove();this.parentElement.classList.remove('has-image')">
+            </div>`;
+        }
 
         async function loadProfile() {
             const params = new URLSearchParams(window.location.search);
@@ -173,7 +208,7 @@
                 };
                 document.getElementById('postsArea').innerHTML = posts.map(p => `
                     <div class="post-item glass" onclick="window.location.href='/?post=${p.id}'"> 
-                        ${p.cover_image ? `<img src="${p.cover_image}" class="post-cover" loading="lazy" onerror="this.style.display='none'">` : '<div class="post-cover" style="display:flex;align-items:center;justify-content:center;font-size:2rem;">📝</div>'}
+                        ${renderPostCover(p)}
                         <div style="flex:1;">
                             <div style="font-weight:bold; font-size:1.1rem; margin-bottom:0.3rem;">${escapeHtml(p.title)}</div>
                             <div style="color:var(--text-secondary); font-size:0.85rem; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">${escapeHtml((p.content || '').replace(/<[^>]*>?/gm, ''))}</div>
