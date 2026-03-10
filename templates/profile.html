@@ -78,8 +78,8 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="achievementsModal" onclick="Achievements.closeWall()">
-        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="achievementsModal" onclick="Achievements.closeWall()" style="align-items:flex-start; overflow-y:auto; padding:calc(var(--nav-height) + 8px) 0 12px;">
+        <div class="modal glass" style="width:min(760px, 94vw); max-width:760px; max-height: calc(100vh - var(--nav-height) - 28px); overflow: hidden; display: flex; flex-direction: column; margin:0 auto;" onclick="event.stopPropagation()">
             <div class="modal-header">
                 <h3>🏆 成就安装墙</h3>
                 <button class="modal-close" onclick="Achievements.closeWall()">&times;</button>
@@ -116,6 +116,30 @@
             const m = ACHIEVEMENT_META[key];
             return m ? m.title : key;
         }
+
+        async function copyWalletAddress(address) {
+            const val = (address || '').trim();
+            if (!val) return;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(val);
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = val;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.focus();
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                }
+                if (typeof Toast !== 'undefined') Toast.success('打赏地址已复制');
+            } catch (_) {
+                if (typeof Toast !== 'undefined') Toast.error('复制失败，请手动复制');
+            }
+        }
+        window.copyWalletAddress = copyWalletAddress;
 
         function resolvePostCoverUrl(post) {
             const normalize = (val) => {
@@ -207,7 +231,7 @@
                 const unlocked = !!a.unlocked;
                 const wearable = !!a.wearable;
                 const legacy = !!a.legacy;
-                const lockedText = unlocked ? '已解锁' : `Lv.${a.min_level} 解锁`;
+                const lockedText = unlocked ? '已解锁' : (legacy ? '未解锁' : `Lv.${a.min_level} 解锁`);
                 let actionHtml = '';
                 if (a.key === 'report_privilege') {
                     actionHtml = unlocked
@@ -215,7 +239,7 @@
                         : '<span style="font-size:0.78rem; color:var(--text-muted);">等级不足，无法举报</span>';
                 } else if (wearable) {
                     if (!unlocked) {
-                        actionHtml = '<span style="font-size:0.78rem; color:var(--text-muted);">未达佩戴等级</span>';
+                        actionHtml = `<span style="font-size:0.78rem; color:var(--text-muted);">${legacy ? '尚未满足解锁条件' : '未达佩戴等级'}</span>`;
                     } else if (!canEquip) {
                         actionHtml = '<span style="font-size:0.78rem; color:var(--text-muted);">Lv.3 解锁佩戴按钮</span>';
                     } else if (a.equipped) {
@@ -260,6 +284,9 @@
                 if (!res.ok) return;
                 myAchievementsState = data;
                 renderAchievementWallBody();
+                if (displayedUser && currentUser && displayedUser.id === currentUser.id) {
+                    renderProfile(displayedUser, displayedPosts);
+                }
             } catch (_) {}
         }
         
@@ -267,6 +294,10 @@
             displayedPosts = Array.isArray(posts) ? posts : [];
             // Always render emoji avatar
             let avatarHtml = `<div class="avatar-lg">${user.avatar || '👻'}</div>`;
+            const walletAddress = ((user.wallet_address || user.address || '') + '').trim();
+            const walletAddressBtn = walletAddress
+                ? `<button type="button" class="btn btn-ghost btn-sm" style="background:rgba(16,185,129,0.1); color:#10b981; border-color:rgba(16,185,129,0.4); min-height:24px; padding:2px 8px; font-size:0.72rem;" title="点击复制打赏地址" onclick="copyWalletAddress('${escapeAttr(walletAddress)}')">打赏地址: ${escapeHtml(walletAddress.substring(0,6) + '...' + walletAddress.slice(-4))}</button>`
+                : '';
             
             const isMe = currentUser && currentUser.id === user.id;
             
@@ -285,7 +316,7 @@
                         <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                             ${user.username ? user.username + ' · ' : ''}
                             ${typeof user.id !== 'undefined' ? formatUserId(user.id) : ''}
-                            ${(user.wallet_address || user.address) ? `<span style="background:rgba(16,185,129,0.1); color:#10b981; padding:2px 6px; border-radius:4px; font-size:0.7rem;" title="打赏请转账至该地址">打赏地址: ${(user.wallet_address || user.address).substring(0,6)}...${(user.wallet_address || user.address).slice(-4)}</span>` : ''}
+                            ${walletAddressBtn}
                         </div>
                         ${user.bio ? `<div style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-primary); background:rgba(255,255,255,0.05); padding:0.5rem; border-radius:8px;">${escapeHtml(user.bio)}</div>` : ''}
                         <div style="color:var(--text-secondary); font-size:0.82rem; margin-bottom:0.8rem;">${user.admin_infinite_level ? '🛡️ 管理员免签到（无限等级）' : ('📅 连续签到 ' + Number(user.checkin_streak || 0) + ' 天')}</div>
@@ -358,15 +389,34 @@
         }
 
         const Achievements = {
+            savedScrollY: 0,
+            lockScroll() {
+                this.savedScrollY = window.scrollY || window.pageYOffset || 0;
+                document.body.style.position = 'fixed';
+                document.body.style.top = `-${this.savedScrollY}px`;
+                document.body.style.width = '100%';
+            },
+            unlockScroll() {
+                const y = Number(this.savedScrollY || 0);
+                document.body.style.position = '';
+                document.body.style.top = '';
+                document.body.style.width = '';
+                window.scrollTo(0, y);
+            },
             openWall() {
                 const modal = document.getElementById('achievementsModal');
-                if (modal) modal.classList.add('active');
+                if (!modal) return;
+                if (!modal.classList.contains('active')) this.lockScroll();
+                modal.classList.add('active');
                 renderAchievementWallBody();
                 if (!myAchievementsState) loadAchievements();
             },
             closeWall() {
                 const modal = document.getElementById('achievementsModal');
-                if (modal) modal.classList.remove('active');
+                if (!modal) return;
+                const wasActive = modal.classList.contains('active');
+                modal.classList.remove('active');
+                if (wasActive) this.unlockScroll();
             },
             async equip(key) {
                 if (!currentUser) return;

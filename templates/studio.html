@@ -314,6 +314,31 @@
             });
         }
 
+        function normalizeUploadName(file, forcedExt) {
+            const raw = String((file && file.name) || 'image').replace(/[^\w.\-]/g, '_');
+            const base = raw.replace(/\.[^.]+$/, '') || 'image';
+            let ext = forcedExt || ((raw.match(/\.([^.]+)$/) || [])[1] || 'jpg');
+            ext = String(ext).toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+            return `${base}.${ext}`;
+        }
+
+        async function prepareUploadImage(file, maxWidth, quality) {
+            const mime = String((file && file.type) || '').toLowerCase();
+            if (mime === 'image/gif') {
+                return { uploadBlob: file, uploadName: normalizeUploadName(file, 'gif') };
+            }
+            if ((file && file.size ? file.size : 0) <= 260 * 1024) {
+                const ext = (mime.indexOf('png') >= 0) ? 'png' : ((mime.indexOf('webp') >= 0) ? 'webp' : 'jpg');
+                return { uploadBlob: file, uploadName: normalizeUploadName(file, ext) };
+            }
+            const compressed = await compressImage(file, maxWidth, quality).catch(() => file);
+            if (!compressed || compressed === file) {
+                const ext = (mime.indexOf('png') >= 0) ? 'png' : ((mime.indexOf('webp') >= 0) ? 'webp' : 'jpg');
+                return { uploadBlob: file, uploadName: normalizeUploadName(file, ext) };
+            }
+            return { uploadBlob: compressed, uploadName: normalizeUploadName(file, 'jpg') };
+        }
+
         const Editor = {
             async uploadCover(input) {
                 const file = input.files[0];
@@ -326,9 +351,8 @@
                 this.previewCover(localUrl);
                 const formData = new FormData();
                 try {
-                    const compressed = await compressImage(file, 960, 0.68).catch(() => file);
-                    const safeName = (file.name || 'cover.jpg').replace(/[^\w.\-]/g, '_').replace(/\.[^.]+$/, '.jpg');
-                    formData.append('file', compressed, safeName);
+                    const prepared = await prepareUploadImage(file, 960, 0.68);
+                    formData.append('file', prepared.uploadBlob, prepared.uploadName);
                     const res = await fetch(`${API_BASE}/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }, body: formData });
                     if (handle401(res)) return;
                     const resp = await res.json().catch(() => ({}));
@@ -999,15 +1023,10 @@
                 return;
             }
             try {
-                const range = studioQuill.getSelection(true) || lastEditorRange || { index: studioQuill.getLength(), length: 0 };
-                const localUrl = URL.createObjectURL(file);
-                studioQuill.insertEmbed(range.index, 'image', localUrl, 'user');
-                studioQuill.setSelection(range.index + 1, 0, 'silent');
-
-                const compressedFile = await compressImage(file, 720, 0.62).catch(() => file);
-                const safeName = (file.name || 'image.jpg').replace(/[^\w.\-]/g, '_').replace(/\.[^.]+$/, '.jpg');
+                const insertRange = studioQuill.getSelection(true) || lastEditorRange || { index: studioQuill.getLength(), length: 0 };
+                const prepared = await prepareUploadImage(file, 720, 0.62);
                 const formData = new FormData();
-                formData.append('file', compressedFile, safeName);
+                formData.append('file', prepared.uploadBlob, prepared.uploadName);
                 const res = await fetch(API_BASE + '/upload', {
                     method: 'POST',
                     headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
@@ -1017,13 +1036,12 @@
                 const resp = await res.json().catch(() => ({}));
                 if (!res.ok || !resp.url) {
                     if (typeof Toast !== 'undefined') Toast.error(resp.error || '上传失败');
-                    URL.revokeObjectURL(localUrl);
                     return;
                 }
-                studioQuill.root.querySelectorAll('img').forEach(function(im) {
-                    if (im.getAttribute('src') === localUrl) im.setAttribute('src', resp.url);
-                });
-                URL.revokeObjectURL(localUrl);
+                const targetRange = lastEditorRange || insertRange;
+                studioQuill.insertEmbed(targetRange.index, 'image', resp.url, 'user');
+                studioQuill.setSelection(targetRange.index + 1, 0, 'silent');
+                lastEditorRange = { index: targetRange.index + 1, length: 0 };
                 if (typeof Toast !== 'undefined') Toast.success('图片已插入');
             } catch (e) {
                 if (typeof Toast !== 'undefined') Toast.error('上传失败: ' + (e.message || '网络错误'));

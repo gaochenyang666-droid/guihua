@@ -455,12 +455,14 @@ body.page-motion.page-leaving {
 .pinned-guide-head {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.8rem;
     flex-wrap: wrap;
 }
 .pinned-guide-title-wrap {
     font-size: 0.92rem;
+    flex: 1 1 260px;
+    min-width: 0;
 }
 .pinned-guide-prefix {
     color: var(--accent-gold);
@@ -473,6 +475,10 @@ body.page-motion.page-leaving {
 .pinned-guide-actions {
     display: flex;
     gap: 0.5rem;
+    margin-left: auto;
+    align-self: flex-start;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 .pinned-guide-toggle,
 .pinned-guide-open {

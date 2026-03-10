@@ -187,21 +187,20 @@ BASE_ACHIEVEMENT_DEFINITIONS = [
     }
 ]
 LEGACY_ACHIEVEMENT_DEFINITIONS = [
-    {'key': 'legacy_new_soul', 'title': '新魂', 'description': '初入诡话世界', 'wearable': False},
-    {'key': 'legacy_chain_traveler', 'title': '链上旅人', 'description': '完成钱包绑定', 'wearable': False},
-    {'key': 'legacy_wallet_bound', 'title': '钱包绑定', 'description': '完成钱包绑定', 'wearable': False},
-    {'key': 'legacy_dual_identity', 'title': '双界行者', 'description': '同时拥有 Web2 与钱包身份', 'wearable': False},
-    {'key': 'legacy_contract_psychic', 'title': '结契通灵者', 'description': '完成 Web2 与钱包绑定并发布帖子', 'wearable': False},
-    {'key': 'legacy_first_post', 'title': '首帖达成', 'description': '发布第一篇帖子', 'wearable': False},
-    {'key': 'legacy_post_10', 'title': '十帖异闻录', 'description': '累计发布 10 篇帖子', 'wearable': False},
-    {'key': 'legacy_post_100', 'title': '百帖引魂者', 'description': '累计发布 100 篇帖子', 'wearable': False},
-    {'key': 'legacy_post_1000', 'title': '千帖通灵者', 'description': '累计发布 1000 篇帖子', 'wearable': False},
-    {'key': 'legacy_year_1', 'title': '一年见习者', 'description': '账号满 1 年', 'wearable': False},
-    {'key': 'legacy_year_5', 'title': '五年夜巡者', 'description': '账号满 5 年', 'wearable': False},
-    {'key': 'legacy_year_10', 'title': '十年守秘人', 'description': '账号满 10 年', 'wearable': False},
-    {'key': 'legacy_admin_guardian', 'title': '守夜人', 'description': '管理员专属称号', 'wearable': False},
+    {'key': 'legacy_new_soul', 'title': '新魂', 'description': '初入诡话世界', 'wearable': True},
+    {'key': 'legacy_chain_traveler', 'title': '链上旅人', 'description': '完成钱包绑定', 'wearable': True},
+    {'key': 'legacy_wallet_bound', 'title': '钱包绑定', 'description': '完成钱包绑定', 'wearable': True},
+    {'key': 'legacy_dual_identity', 'title': '双界行者', 'description': '同时拥有 Web2 与钱包身份', 'wearable': True},
+    {'key': 'legacy_contract_psychic', 'title': '结契通灵者', 'description': '完成 Web2 与钱包绑定并发布帖子', 'wearable': True},
+    {'key': 'legacy_first_post', 'title': '首帖达成', 'description': '发布第一篇帖子', 'wearable': True},
+    {'key': 'legacy_post_10', 'title': '十帖异闻录', 'description': '累计发布 10 篇帖子', 'wearable': True},
+    {'key': 'legacy_post_100', 'title': '百帖引魂者', 'description': '累计发布 100 篇帖子', 'wearable': True},
+    {'key': 'legacy_post_1000', 'title': '千帖通灵者', 'description': '累计发布 1000 篇帖子', 'wearable': True},
+    {'key': 'legacy_year_1', 'title': '一年见习者', 'description': '账号满 1 年', 'wearable': True},
+    {'key': 'legacy_year_5', 'title': '五年夜巡者', 'description': '账号满 5 年', 'wearable': True},
+    {'key': 'legacy_year_10', 'title': '十年守秘人', 'description': '账号满 10 年', 'wearable': True},
+    {'key': 'legacy_admin_guardian', 'title': '守夜人', 'description': '管理员专属称号', 'wearable': True},
 ]
-ACHIEVEMENT_MAP = {a['key']: a for a in BASE_ACHIEVEMENT_DEFINITIONS}
 TELEGRAM_GROUP_SETTING_KEYS = {
     'co_create': 'telegram_group_co_create_url',
     'core': 'telegram_group_core_url'
@@ -308,10 +307,6 @@ def _build_achievements_for_user(user):
     is_admin = bool(getattr(user, 'is_admin', False))
     equipped_key = (getattr(user, 'equipped_achievement_key', None) or '').strip() or None
     can_equip = is_admin or level >= 3
-    if equipped_key:
-        equipped_def = ACHIEVEMENT_MAP.get(equipped_key)
-        if not equipped_def or not equipped_def.get('wearable') or (not is_admin and level < int(equipped_def.get('min_level', 999))):
-            equipped_key = None
     items = []
     for definition in BASE_ACHIEVEMENT_DEFINITIONS:
         min_level = int(definition.get('min_level', 1))
@@ -327,6 +322,13 @@ def _build_achievements_for_user(user):
             'equipped': bool(equipped_key and equipped_key == definition['key'])
         })
     items.extend(_build_legacy_achievements(user, is_admin=is_admin))
+    item_map = {item.get('key'): item for item in items}
+    if equipped_key:
+        equipped_item = item_map.get(equipped_key)
+        if (not can_equip) or (not equipped_item) or (not equipped_item.get('wearable')) or (not equipped_item.get('unlocked')):
+            equipped_key = None
+    for item in items:
+        item['equipped'] = bool(equipped_key and equipped_key == item.get('key'))
     return {
         'level': level,
         'level_label': '∞' if is_admin else f'Lv.{max(1, level)}',
@@ -675,8 +677,8 @@ def get_my_achievements():
 @token_required
 def equip_achievement():
     user = g.current_user
-    level = _get_user_level(user)
-    if level < 3:
+    state = _build_achievements_for_user(user)
+    if not state.get('can_equip'):
         return jsonify({'error': '等级达到 3 才可佩戴成就'}), 403
     data = request.get_json() or {}
     key = (data.get('key') or '').strip()
@@ -685,18 +687,24 @@ def equip_achievement():
         db.session.commit()
         return jsonify({'message': '已取消佩戴', 'status': _build_achievements_for_user(user)})
 
-    definition = ACHIEVEMENT_MAP.get(key)
-    if not definition:
+    target = None
+    for item in state.get('achievements', []):
+        if item.get('key') == key:
+            target = item
+            break
+    if not target:
         return jsonify({'error': '成就不存在'}), 404
-    if not definition.get('wearable'):
+    if not target.get('wearable'):
         return jsonify({'error': '该成就不可佩戴'}), 400
-    min_level = int(definition.get('min_level', 1))
-    if level < min_level:
-        return jsonify({'error': f'等级达到 {min_level} 才可佩戴该成就'}), 403
+    if not target.get('unlocked'):
+        min_level = int(target.get('min_level', 1) or 1)
+        if min_level > 1:
+            return jsonify({'error': f'等级达到 {min_level} 才可佩戴该成就'}), 403
+        return jsonify({'error': '该成就尚未解锁，暂不可佩戴'}), 403
 
     user.equipped_achievement_key = key
     db.session.commit()
-    return jsonify({'message': f'已佩戴「{definition.get("title")}」', 'status': _build_achievements_for_user(user)})
+    return jsonify({'message': f'已佩戴「{target.get("title")}」', 'status': _build_achievements_for_user(user)})
 
 
 @app.route('/api/group-links', methods=['GET'])
