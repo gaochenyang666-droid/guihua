@@ -27,7 +27,6 @@
 
     <div class="container" style="max-width: 800px; margin: 2rem auto; padding: 0 1rem;">
         <div id="profileArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 2rem;">加载中...</div>
-        <div id="achievementsArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 2rem; padding: 1rem;" hidden></div>
         
         <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">发布的灵异事件</h3>
         <div id="postsArea" class="post-list"></div>
@@ -79,6 +78,16 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="achievementsModal" onclick="Achievements.closeWall()">
+        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>🏆 成就安装墙</h3>
+                <button class="modal-close" onclick="Achievements.closeWall()">&times;</button>
+            </div>
+            <div id="achievementsWallBody" style="overflow:auto; flex:1; padding-right:0.2rem;">加载中...</div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
@@ -87,7 +96,7 @@
         let tempAvatar = null;
         let myAchievementsState = null;
         const ACHIEVEMENT_META = {
-            report_xutong: { title: '举报徐桐权限', min_level: 2, wearable: false },
+            report_privilege: { title: '举报权限', min_level: 2, wearable: false },
             wearable_unlock: { title: '成就佩戴权限', min_level: 3, wearable: false },
             co_create_group: { title: '共创群资格', min_level: 5, wearable: true },
             core_group: { title: '核心群资格', min_level: 10, wearable: true }
@@ -100,6 +109,10 @@
 
         function achievementTitleByKey(key) {
             if (!key) return '';
+            if (myAchievementsState && Array.isArray(myAchievementsState.achievements)) {
+                const found = myAchievementsState.achievements.find((a) => a && a.key === key);
+                if (found && found.title) return found.title;
+            }
             const m = ACHIEVEMENT_META[key];
             return m ? m.title : key;
         }
@@ -154,7 +167,6 @@
                 if(!currentUser) { navigateWithTransition('/'); return; }
                 displayedUser = currentUser;
                 renderProfile(currentUser, []);
-                renderAchievementWall(true, currentUser);
                 loadAchievements();
                 loadUserPosts(currentUser.username || currentUser.address);
             } else {
@@ -181,39 +193,25 @@
             document.getElementById('profileArea').innerHTML = `<div style="text-align:center; padding: 2rem; color: var(--text-secondary);"><p style="color:var(--accent-red); margin-bottom:0.5rem;">${msg}</p>${backHtml}</div>`;
         }
 
-        function renderAchievementWall(isMe, user) {
-            const wall = document.getElementById('achievementsArea');
+        function renderAchievementWallBody() {
+            const wall = document.getElementById('achievementsWallBody');
             if (!wall) return;
-            if (!isMe) {
-                const equippedTitle = achievementTitleByKey(user && user.equipped_achievement_key);
-                if (!equippedTitle) {
-                    wall.hidden = true;
-                    wall.innerHTML = '';
-                    return;
-                }
-                wall.hidden = false;
-                wall.innerHTML = `
-                    <h3 style="margin-bottom:0.8rem;">🏆 成就墙</h3>
-                    <div style="color:var(--text-secondary);">当前佩戴：<span style="color:var(--accent-gold);">${escapeHtml(equippedTitle)}</span></div>
-                `;
-                return;
-            }
-
             const state = myAchievementsState;
             if (!state || !Array.isArray(state.achievements)) {
-                wall.hidden = true;
-                wall.innerHTML = '';
+                wall.innerHTML = '<div style="color:var(--text-muted); padding:0.8rem;">暂无成就数据</div>';
                 return;
             }
             const canEquip = !!state.can_equip;
+            const isAdminInfinite = !!state.admin_infinite_level;
             const cards = state.achievements.map((a) => {
                 const unlocked = !!a.unlocked;
                 const wearable = !!a.wearable;
+                const legacy = !!a.legacy;
                 const lockedText = unlocked ? '已解锁' : `Lv.${a.min_level} 解锁`;
                 let actionHtml = '';
-                if (a.key === 'report_xutong') {
+                if (a.key === 'report_privilege') {
                     actionHtml = unlocked
-                        ? '<button class="btn btn-ghost btn-sm" style="border-color:var(--accent-red); color:var(--accent-red);" onclick="Achievements.reportXuTong()">举报徐桐</button>'
+                        ? '<button class="btn btn-ghost btn-sm" style="border-color:var(--accent-red); color:var(--accent-red);" onclick="Achievements.quickReport()">快速举报</button>'
                         : '<span style="font-size:0.78rem; color:var(--text-muted);">等级不足，无法举报</span>';
                 } else if (wearable) {
                     if (!unlocked) {
@@ -234,7 +232,7 @@
                     <div style="padding:0.75rem; border:1px solid ${unlocked ? 'rgba(16,185,129,0.35)' : 'var(--border-color)'}; border-radius:12px; background:${unlocked ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)'};">
                         <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
                             <b>${escapeHtml(a.title || '')}</b>
-                            <span style="font-size:0.74rem; color:${unlocked ? 'var(--accent-green)' : 'var(--text-muted)'};">${lockedText}</span>
+                            <span style="font-size:0.74rem; color:${unlocked ? 'var(--accent-green)' : 'var(--text-muted)'};">${legacy ? '旧成就 · ' : ''}${lockedText}</span>
                         </div>
                         <div style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:0.55rem;">${escapeHtml(a.description || '')}</div>
                         <div>${actionHtml}</div>
@@ -242,12 +240,12 @@
                 `;
             }).join('');
             const equippedTitle = achievementTitleByKey(state.equipped_key);
-            wall.hidden = false;
             wall.innerHTML = `
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.8rem; flex-wrap:wrap;">
                     <h3>🏆 我的成就安装墙</h3>
                     <span style="font-size:0.8rem; color:var(--text-secondary);">当前佩戴：${equippedTitle ? `<span style="color:var(--accent-gold);">${escapeHtml(equippedTitle)}</span>` : '未佩戴'}</span>
                 </div>
+                <div style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:0.7rem;">当前等级：${isAdminInfinite ? '<span style="color:var(--accent-gold);">∞（管理员）</span>' : escapeHtml(state.level_label || ('Lv.' + state.level))}</div>
                 <div style="display:grid; gap:0.7rem;">${cards}</div>
             `;
         }
@@ -261,9 +259,7 @@
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) return;
                 myAchievementsState = data;
-                if (displayedUser && currentUser && displayedUser.id === currentUser.id) {
-                    renderAchievementWall(true, displayedUser);
-                }
+                renderAchievementWallBody();
             } catch (_) {}
         }
         
@@ -284,7 +280,7 @@
                                 ${user.honor_title ? `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>` : ''}
                                 ${user.equipped_achievement_key ? `<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ${escapeHtml(achievementTitleByKey(user.equipped_achievement_key))}</span>` : ''}
                             </h1>
-                            ${isMe ? `<div style="display:flex; gap:0.5rem;"><button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>${currentUser.username ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.openChangePassword()">🔒 修改密码</button>` : ''}</div>` : ''}
+                            ${isMe ? `<div style="display:flex; gap:0.5rem; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" onclick="Achievements.openWall()">🏆 成就墙</button><button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>${currentUser.username ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.openChangePassword()">🔒 修改密码</button>` : ''}</div>` : ''}
                         </div>
                         <div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                             ${user.username ? user.username + ' · ' : ''}
@@ -292,7 +288,7 @@
                             ${(user.wallet_address || user.address) ? `<span style="background:rgba(16,185,129,0.1); color:#10b981; padding:2px 6px; border-radius:4px; font-size:0.7rem;" title="打赏请转账至该地址">打赏地址: ${(user.wallet_address || user.address).substring(0,6)}...${(user.wallet_address || user.address).slice(-4)}</span>` : ''}
                         </div>
                         ${user.bio ? `<div style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-primary); background:rgba(255,255,255,0.05); padding:0.5rem; border-radius:8px;">${escapeHtml(user.bio)}</div>` : ''}
-                        <div style="color:var(--text-secondary); font-size:0.82rem; margin-bottom:0.8rem;">📅 连续签到 ${Number(user.checkin_streak || 0)} 天</div>
+                        <div style="color:var(--text-secondary); font-size:0.82rem; margin-bottom:0.8rem;">${user.admin_infinite_level ? '🛡️ 管理员免签到（无限等级）' : ('📅 连续签到 ' + Number(user.checkin_streak || 0) + ' 天')}</div>
                         
                         <div class="stats">
                             <div class="stat-item">
@@ -304,7 +300,7 @@
                                 <div class="stat-label">获赞</div>
                             </div>
                             <div class="stat-item">
-                                <div class="stat-val">Lv.${Math.max(1, Number(user.level || 1))}</div>
+                                <div class="stat-val">${escapeHtml(user.level_label || ('Lv.' + Math.max(1, Number(user.level || 1))))}</div>
                                 <div class="stat-label">等级</div>
                             </div>
                             <div class="stat-item">
@@ -315,8 +311,6 @@
                     </div>
                 </div>
             `;
-            renderAchievementWall(!!isMe, user);
-            
             if(displayedPosts && displayedPosts.length > 0) {
                 const proofLink = (p) => {
                     const parts = [];
@@ -364,6 +358,16 @@
         }
 
         const Achievements = {
+            openWall() {
+                const modal = document.getElementById('achievementsModal');
+                if (modal) modal.classList.add('active');
+                renderAchievementWallBody();
+                if (!myAchievementsState) loadAchievements();
+            },
+            closeWall() {
+                const modal = document.getElementById('achievementsModal');
+                if (modal) modal.classList.remove('active');
+            },
             async equip(key) {
                 if (!currentUser) return;
                 try {
@@ -389,19 +393,18 @@
                     }
                     if (displayedUser && displayedUser.id === currentUser.id) {
                         renderProfile(displayedUser, displayedPosts);
-                    } else if (displayedUser) {
-                        renderAchievementWall(true, displayedUser);
                     }
+                    renderAchievementWallBody();
                     if (typeof Toast !== 'undefined') Toast.success(data.message || '佩戴状态已更新');
                 } catch (_) {
                     if (typeof Toast !== 'undefined') Toast.error('网络错误');
                 }
             },
-            async reportXuTong() {
+            async quickReport() {
                 if (!currentUser) return;
                 const reason = prompt('可选：补充举报说明（最多 460 字）') || '';
                 try {
-                    const res = await fetch(`${API_BASE}/reports/xutong`, {
+                    const res = await fetch(`${API_BASE}/reports/priority`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

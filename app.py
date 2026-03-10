@@ -148,11 +148,15 @@ def _new_user(**kwargs):
     return User(**kwargs)
 
 
-ACHIEVEMENT_DEFINITIONS = [
+CHECKIN_STREAK_BONUS_DAYS = 3
+CHECKIN_STREAK_BONUS_EXP = 3
+
+
+BASE_ACHIEVEMENT_DEFINITIONS = [
     {
-        'key': 'report_xutong',
-        'title': '举报徐桐权限',
-        'description': '等级达到 2 可使用专属举报按钮',
+        'key': 'report_privilege',
+        'title': '举报权限',
+        'description': '等级达到 2 可使用快捷举报按钮',
         'min_level': 2,
         'wearable': False,
         'group_key': None
@@ -182,7 +186,22 @@ ACHIEVEMENT_DEFINITIONS = [
         'group_key': 'core'
     }
 ]
-ACHIEVEMENT_MAP = {a['key']: a for a in ACHIEVEMENT_DEFINITIONS}
+LEGACY_ACHIEVEMENT_DEFINITIONS = [
+    {'key': 'legacy_new_soul', 'title': '新魂', 'description': '初入诡话世界', 'wearable': False},
+    {'key': 'legacy_chain_traveler', 'title': '链上旅人', 'description': '完成钱包绑定', 'wearable': False},
+    {'key': 'legacy_wallet_bound', 'title': '钱包绑定', 'description': '完成钱包绑定', 'wearable': False},
+    {'key': 'legacy_dual_identity', 'title': '双界行者', 'description': '同时拥有 Web2 与钱包身份', 'wearable': False},
+    {'key': 'legacy_contract_psychic', 'title': '结契通灵者', 'description': '完成 Web2 与钱包绑定并发布帖子', 'wearable': False},
+    {'key': 'legacy_first_post', 'title': '首帖达成', 'description': '发布第一篇帖子', 'wearable': False},
+    {'key': 'legacy_post_10', 'title': '十帖异闻录', 'description': '累计发布 10 篇帖子', 'wearable': False},
+    {'key': 'legacy_post_100', 'title': '百帖引魂者', 'description': '累计发布 100 篇帖子', 'wearable': False},
+    {'key': 'legacy_post_1000', 'title': '千帖通灵者', 'description': '累计发布 1000 篇帖子', 'wearable': False},
+    {'key': 'legacy_year_1', 'title': '一年见习者', 'description': '账号满 1 年', 'wearable': False},
+    {'key': 'legacy_year_5', 'title': '五年夜巡者', 'description': '账号满 5 年', 'wearable': False},
+    {'key': 'legacy_year_10', 'title': '十年守秘人', 'description': '账号满 10 年', 'wearable': False},
+    {'key': 'legacy_admin_guardian', 'title': '守夜人', 'description': '管理员专属称号', 'wearable': False},
+]
+ACHIEVEMENT_MAP = {a['key']: a for a in BASE_ACHIEVEMENT_DEFINITIONS}
 TELEGRAM_GROUP_SETTING_KEYS = {
     'co_create': 'telegram_group_co_create_url',
     'core': 'telegram_group_core_url'
@@ -190,6 +209,8 @@ TELEGRAM_GROUP_SETTING_KEYS = {
 
 
 def _get_user_level(user):
+    if getattr(user, 'is_admin', False):
+        return 9999
     info = calc_level_info(getattr(user, 'experience_points', 0) or 0)
     return int(info.get('level', 1) or 1)
 
@@ -212,6 +233,7 @@ def _set_setting_value(setting_key, setting_value):
 
 def _build_group_links_for_user(user):
     level = _get_user_level(user)
+    is_admin = bool(getattr(user, 'is_admin', False))
     co_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], '')
     core_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], '')
     items = [
@@ -219,45 +241,96 @@ def _build_group_links_for_user(user):
             'key': 'co_create',
             'title': '共创群',
             'required_level': 5,
-            'unlocked': level >= 5,
+            'unlocked': is_admin or level >= 5,
             'configured': bool(co_url),
-            'url': co_url if level >= 5 and co_url else None
+            'url': co_url if (is_admin or level >= 5) and co_url else None
         },
         {
             'key': 'core',
             'title': '核心群',
             'required_level': 10,
-            'unlocked': level >= 10,
+            'unlocked': is_admin or level >= 10,
             'configured': bool(core_url),
-            'url': core_url if level >= 10 and core_url else None
+            'url': core_url if (is_admin or level >= 10) and core_url else None
         }
     ]
-    return {'level': level, 'groups': items}
+    return {
+        'level': level,
+        'level_label': '∞' if is_admin else f'Lv.{max(1, level)}',
+        'admin_infinite_level': is_admin,
+        'groups': items
+    }
+
+
+def _build_legacy_achievements(user, is_admin=False):
+    try:
+        post_count = Post.query.filter_by(author_id=user.id).count()
+    except Exception:
+        post_count = 0
+    years = 0
+    if getattr(user, 'created_at', None):
+        years = max(0, int((datetime.utcnow() - user.created_at).days // 365))
+    has_wallet = bool(getattr(user, 'address', None))
+    has_web2 = bool(getattr(user, 'username', None))
+    onboarding_completed = has_wallet and has_web2 and post_count > 0
+    unlocked_map = {
+        'legacy_new_soul': True,
+        'legacy_chain_traveler': is_admin or has_wallet,
+        'legacy_wallet_bound': is_admin or has_wallet,
+        'legacy_dual_identity': is_admin or (has_wallet and has_web2),
+        'legacy_contract_psychic': is_admin or onboarding_completed,
+        'legacy_first_post': is_admin or post_count >= 1,
+        'legacy_post_10': is_admin or post_count >= 10,
+        'legacy_post_100': is_admin or post_count >= 100,
+        'legacy_post_1000': is_admin or post_count >= 1000,
+        'legacy_year_1': is_admin or years >= 1,
+        'legacy_year_5': is_admin or years >= 5,
+        'legacy_year_10': is_admin or years >= 10,
+        'legacy_admin_guardian': is_admin,
+    }
+    items = []
+    for definition in LEGACY_ACHIEVEMENT_DEFINITIONS:
+        items.append({
+            'key': definition['key'],
+            'title': definition['title'],
+            'description': definition['description'],
+            'min_level': 1,
+            'wearable': bool(definition.get('wearable')),
+            'legacy': True,
+            'unlocked': bool(unlocked_map.get(definition['key'], False)),
+            'equipped': False
+        })
+    return items
 
 
 def _build_achievements_for_user(user):
     level = _get_user_level(user)
+    is_admin = bool(getattr(user, 'is_admin', False))
     equipped_key = (getattr(user, 'equipped_achievement_key', None) or '').strip() or None
-    can_equip = level >= 3
+    can_equip = is_admin or level >= 3
     if equipped_key:
         equipped_def = ACHIEVEMENT_MAP.get(equipped_key)
-        if not equipped_def or not equipped_def.get('wearable') or level < int(equipped_def.get('min_level', 999)):
+        if not equipped_def or not equipped_def.get('wearable') or (not is_admin and level < int(equipped_def.get('min_level', 999))):
             equipped_key = None
     items = []
-    for definition in ACHIEVEMENT_DEFINITIONS:
+    for definition in BASE_ACHIEVEMENT_DEFINITIONS:
         min_level = int(definition.get('min_level', 1))
-        unlocked = level >= min_level
+        unlocked = is_admin or level >= min_level
         items.append({
             'key': definition['key'],
             'title': definition['title'],
             'description': definition['description'],
             'min_level': min_level,
             'wearable': bool(definition.get('wearable')),
+            'legacy': False,
             'unlocked': unlocked,
             'equipped': bool(equipped_key and equipped_key == definition['key'])
         })
+    items.extend(_build_legacy_achievements(user, is_admin=is_admin))
     return {
         'level': level,
+        'level_label': '∞' if is_admin else f'Lv.{max(1, level)}',
+        'admin_infinite_level': is_admin,
         'can_equip': can_equip,
         'equipped_key': equipped_key,
         'achievements': items
@@ -533,6 +606,14 @@ def get_checkin_status():
 @token_required
 def daily_checkin():
     user = g.current_user
+    if getattr(user, 'is_admin', False):
+        return jsonify({
+            'message': '管理员免签到，等级为无限',
+            'already_checked': True,
+            'gained_exp': 0,
+            'bonus_exp': 0,
+            'status': _build_checkin_status(user)
+        })
     today = _china_today()
     yesterday = today - timedelta(days=1)
     if getattr(user, 'last_checkin_date', None) == today:
@@ -547,7 +628,9 @@ def daily_checkin():
         streak = int(getattr(user, 'checkin_streak', 0) or 0) + 1
     else:
         streak = 1
-    gained_exp = checkin_exp_by_streak(streak)
+    base_exp = checkin_exp_by_streak(streak)
+    bonus_exp = CHECKIN_STREAK_BONUS_EXP if (streak % CHECKIN_STREAK_BONUS_DAYS == 0) else 0
+    gained_exp = base_exp + bonus_exp
     user.checkin_streak = streak
     user.last_checkin_date = today
     user.experience_points = int(getattr(user, 'experience_points', 0) or 0) + gained_exp
@@ -573,8 +656,10 @@ def daily_checkin():
         return jsonify({'error': '签到失败，请稍后重试'}), 500
 
     return jsonify({
-        'message': f'签到成功，获得 +{gained_exp} 经验',
+        'message': f'签到成功，获得 +{gained_exp} 经验' + (f'（连续{streak}天额外 +{bonus_exp}）' if bonus_exp else ''),
         'already_checked': False,
+        'base_exp': base_exp,
+        'bonus_exp': bonus_exp,
         'gained_exp': gained_exp,
         'status': _build_checkin_status(user)
     })
@@ -795,22 +880,45 @@ def _china_today():
 def _build_checkin_status(user):
     today = _china_today()
     last_date = getattr(user, 'last_checkin_date', None)
-    already_checked = bool(last_date and last_date == today)
-    level_info = calc_level_info(getattr(user, 'experience_points', 0) or 0)
+    is_admin = bool(getattr(user, 'is_admin', False))
+    already_checked = bool(last_date and last_date == today) or is_admin
+    if is_admin:
+        level_info = {
+            'level': 9999,
+            'total_exp': int(getattr(user, 'experience_points', 0) or 0),
+            'level_current_exp': 0,
+            'level_next_exp': 1,
+            'level_progress': 1.0
+        }
+    else:
+        level_info = calc_level_info(getattr(user, 'experience_points', 0) or 0)
+    streak = int(getattr(user, 'checkin_streak', 0) or 0)
+    if is_admin:
+        base_reward = 0
+        bonus_reward = 0
+    else:
+        base_reward = checkin_exp_by_streak(max(1, streak + 1))
+        bonus_reward = CHECKIN_STREAK_BONUS_EXP if ((streak + 1) % CHECKIN_STREAK_BONUS_DAYS == 0) else 0
     return {
         'today': today.isoformat(),
+        'admin_exempt': is_admin,
         'already_checked': already_checked,
         'last_checkin_date': last_date.isoformat() if last_date else None,
-        'streak': int(getattr(user, 'checkin_streak', 0) or 0),
+        'streak': streak,
         'experience_points': level_info['total_exp'],
         'level': level_info['level'],
+        'level_label': '∞' if is_admin else f"Lv.{level_info['level']}",
         'level_current_exp': level_info['level_current_exp'],
         'level_next_exp': level_info['level_next_exp'],
         'level_progress': level_info['level_progress'],
+        'next_reward': base_reward + bonus_reward,
+        'next_bonus_reward': bonus_reward,
         'rule': {
             'base': 2,
             'max': 12,
-            'formula': '连续签到第N天经验=MIN(12, N*2)'
+            'streak_bonus_days': CHECKIN_STREAK_BONUS_DAYS,
+            'streak_bonus_exp': CHECKIN_STREAK_BONUS_EXP,
+            'formula': f'连续签到第N天经验=MIN(12, N*2)，每连续{CHECKIN_STREAK_BONUS_DAYS}天额外+{CHECKIN_STREAK_BONUS_EXP}'
         }
     }
 
@@ -868,7 +976,7 @@ def onboarding_tasks():
     has_post = posts_count > 0
     has_wallet = bool(user.address)
     is_web2_bound = bool(user.username) and has_wallet
-    has_checked_today = bool(getattr(user, 'last_checkin_date', None) == _china_today())
+    has_checked_today = bool(getattr(user, 'last_checkin_date', None) == _china_today()) or bool(getattr(user, 'is_admin', False))
     tasks = [
         {'key': 'login', 'title': '完成登录', 'done': True},
         {'key': 'bind_wallet', 'title': '绑定钱包', 'done': has_wallet},
@@ -2072,35 +2180,34 @@ def create_report():
     return jsonify({'message': '举报已提交，管理员会尽快处理', 'id': r.id}), 201
 
 
-@app.route('/api/reports/xutong', methods=['POST'])
+@app.route('/api/reports/priority', methods=['POST'])
 @token_required
-def report_xutong():
+def report_priority():
     level = _get_user_level(g.current_user)
+    is_admin = bool(getattr(g.current_user, 'is_admin', False))
+    if is_admin:
+        level = 9999
     if level < 2:
         return jsonify({'error': '等级达到 2 才能解锁该举报权限'}), 403
     data = request.get_json(silent=True) or {}
     extra_reason = (data.get('reason') or '').strip()
     if len(extra_reason) > 460:
         return jsonify({'error': '补充说明最多 460 字'}), 400
-    reason = '等级权益举报：徐桐'
+    reason = '等级权益举报'
     if extra_reason:
         reason = f'{reason} | {extra_reason}'
-
-    target_user = User.query.filter(
-        (User.nickname == '徐桐') | (User.username == 'xutong')
-    ).first()
     row = Report(
         reporter_id=g.current_user.id,
         target_type='user',
-        target_id=target_user.id if target_user else 0,
-        reported_user_id=target_user.id if target_user else None,
+        target_id=0,
+        reported_user_id=None,
         post_id=None,
         reason=reason,
         status='pending'
     )
     db.session.add(row)
     db.session.commit()
-    return jsonify({'message': '已提交「举报徐桐」', 'id': row.id}), 201
+    return jsonify({'message': '已提交快速举报', 'id': row.id}), 201
 
 @app.route('/api/admin/reports', methods=['GET'])
 @token_required

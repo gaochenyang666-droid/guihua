@@ -107,7 +107,7 @@
                 <div class="checkin-progress"><span id="checkinProgressBar"></span></div>
                 <div class="checkin-actions">
                     <button class="btn btn-ghost btn-sm" id="checkinBtn" type="button" onclick="Checkin.sign()">立即签到</button>
-                    <span class="checkin-tip" id="checkinTip">经验规则：连续第 N 天 = min(12, N*2)</span>
+                    <span class="checkin-tip" id="checkinTip">经验规则：连续第 N 天 = min(12, N*2)，每 3 天额外 +3</span>
                 </div>
             </div>
             <div class="sidebar-card glass group-links-card" id="groupLinksCard" hidden>
@@ -1026,6 +1026,8 @@
             applyToCurrentUser(status) {
                 if (!currentUser || !status) return;
                 currentUser.level = status.level;
+                currentUser.level_label = status.level_label || currentUser.level_label;
+                currentUser.admin_infinite_level = !!status.admin_exempt;
                 currentUser.experience_points = status.experience_points;
                 currentUser.level_current_exp = status.level_current_exp;
                 currentUser.level_next_exp = status.level_next_exp;
@@ -1039,13 +1041,16 @@
                 }
                 this.applyToCurrentUser(status);
                 const already = !!status.already_checked;
+                const adminExempt = !!status.admin_exempt;
                 const streak = Number(status.streak || 0);
                 const level = Number(status.level || 1);
+                const levelLabel = status.level_label || `Lv.${Math.max(1, level)}`;
                 const exp = Number(status.experience_points || 0);
                 const cur = Number(status.level_current_exp || 0);
                 const next = Math.max(1, Number(status.level_next_exp || 1));
                 const pct = Math.max(0, Math.min(100, Math.round((cur / next) * 100)));
-                const reward = Math.min(12, Math.max(2, (streak > 0 ? streak : 1) * 2));
+                const reward = Math.max(0, Number(status.next_reward || 0));
+                const bonusReward = Math.max(0, Number(status.next_bonus_reward || 0));
 
                 const subtitleEl = document.getElementById('checkinSubtitle');
                 const stateEl = document.getElementById('checkinState');
@@ -1056,21 +1061,25 @@
                 const btn = document.getElementById('checkinBtn');
                 const tipEl = document.getElementById('checkinTip');
 
-                if (subtitleEl) subtitleEl.textContent = `连续签到 ${streak} 天`;
+                if (subtitleEl) subtitleEl.textContent = adminExempt ? '管理员免签到' : `连续签到 ${streak} 天`;
                 if (stateEl) {
-                    stateEl.textContent = already ? '已签到' : '未签到';
-                    stateEl.classList.toggle('is-done', already);
+                    stateEl.textContent = adminExempt ? '免签到' : (already ? '已签到' : '未签到');
+                    stateEl.classList.toggle('is-done', already || adminExempt);
                 }
-                if (levelEl) levelEl.textContent = `Lv.${Math.max(1, level)}`;
+                if (levelEl) levelEl.textContent = levelLabel;
                 if (expEl) expEl.textContent = `${exp}`;
                 if (rewardEl) rewardEl.textContent = `+${reward}`;
                 if (barEl) barEl.style.width = `${pct}%`;
                 if (btn) {
-                    btn.disabled = already;
-                    btn.textContent = already ? '今日已签到' : '立即签到';
-                    btn.classList.toggle('btn-primary', !already);
+                    btn.disabled = already || adminExempt;
+                    btn.textContent = adminExempt ? '管理员免签到' : (already ? '今日已签到' : '立即签到');
+                    btn.classList.toggle('btn-primary', !(already || adminExempt));
                 }
-                if (tipEl) tipEl.textContent = `当前等级进度 ${cur}/${next}`;
+                if (tipEl) {
+                    if (adminExempt) tipEl.textContent = '管理员拥有全部签到权益（免签到）';
+                    else if (bonusReward > 0) tipEl.textContent = `当前等级进度 ${cur}/${next} · 下次连签奖励 +${bonusReward}`;
+                    else tipEl.textContent = `当前等级进度 ${cur}/${next}`;
+                }
 
                 this.showCard();
             },
@@ -1153,7 +1162,9 @@
                     return;
                 }
                 const level = Number(payload.level || 1);
-                if (hintEl) hintEl.textContent = `当前等级 Lv.${Math.max(1, level)}，达标后自动解锁`;
+                const levelLabel = payload.level_label || `Lv.${Math.max(1, level)}`;
+                const adminExempt = !!payload.admin_infinite_level;
+                if (hintEl) hintEl.textContent = adminExempt ? '管理员已解锁全部社群入口' : `当前等级 ${levelLabel}，达标后自动解锁`;
                 listEl.innerHTML = payload.groups.map((g) => {
                     const required = Number(g.required_level || 1);
                     if (g.unlocked && g.url) {

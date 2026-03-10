@@ -134,7 +134,20 @@ class User(db.Model):
         return '新魂'
 
     def get_level_info(self):
-        return calc_level_info(getattr(self, 'experience_points', 0))
+        if self.is_admin:
+            return {
+                'level': 9999,
+                'total_exp': int(getattr(self, 'experience_points', 0) or 0),
+                'level_current_exp': 0,
+                'level_next_exp': 1,
+                'level_progress': 1.0,
+                'level_label': '∞',
+                'admin_infinite_level': True
+            }
+        info = calc_level_info(getattr(self, 'experience_points', 0))
+        info['level_label'] = f"Lv.{info['level']}"
+        info['admin_infinite_level'] = False
+        return info
 
     def to_dict(self):
         level_info = self.get_level_info()
@@ -152,6 +165,8 @@ class User(db.Model):
             'honor_title': self.get_honor_title(),
             'experience_points': level_info['total_exp'],
             'level': level_info['level'],
+            'level_label': level_info.get('level_label') or f"Lv.{level_info['level']}",
+            'admin_infinite_level': bool(level_info.get('admin_infinite_level')),
             'level_current_exp': level_info['level_current_exp'],
             'level_next_exp': level_info['level_next_exp'],
             'level_progress': level_info['level_progress'],
