@@ -136,10 +136,10 @@
             }
 
             if(!userParam) {
-                if(!currentUser) { window.location.href = '/'; return; }
+                if(!currentUser) { navigateWithTransition('/'); return; }
                 displayedUser = currentUser;
                 renderProfile(currentUser, []);
-                loadUserPosts(currentUser.username);
+                loadUserPosts(currentUser.username || currentUser.address);
             } else {
                 try {
                     const res = await fetch(`${API_BASE}/users/${userParam}`);
@@ -171,7 +171,7 @@
                 <div class="profile-header" style="border:none; margin:0; background:transparent;">
                     ${avatarHtml}
                     <div style="flex:1;">
-                        <div style="display:flex; justify-content:space-between; align-items:start;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <h1 style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                                 <span>${escapeHtml(user.nickname)}</span>
                                 ${user.honor_title ? `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>` : ''}
@@ -184,6 +184,7 @@
                             ${(user.wallet_address || user.address) ? `<span style="background:rgba(16,185,129,0.1); color:#10b981; padding:2px 6px; border-radius:4px; font-size:0.7rem;" title="打赏请转账至该地址">打赏地址: ${(user.wallet_address || user.address).substring(0,6)}...${(user.wallet_address || user.address).slice(-4)}</span>` : ''}
                         </div>
                         ${user.bio ? `<div style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-primary); background:rgba(255,255,255,0.05); padding:0.5rem; border-radius:8px;">${escapeHtml(user.bio)}</div>` : ''}
+                        <div style="color:var(--text-secondary); font-size:0.82rem; margin-bottom:0.8rem;">📅 连续签到 ${Number(user.checkin_streak || 0)} 天</div>
                         
                         <div class="stats">
                             <div class="stat-item">
@@ -193,6 +194,14 @@
                             <div class="stat-item">
                                 <div class="stat-val">${user.likes_count || 0}</div>
                                 <div class="stat-label">获赞</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-val">Lv.${Math.max(1, Number(user.level || 1))}</div>
+                                <div class="stat-label">等级</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-val">${Number(user.experience_points || 0)}</div>
+                                <div class="stat-label">经验</div>
                             </div>
                         </div>
                     </div>
@@ -207,7 +216,7 @@
                     return parts.length ? '<div style="margin-top:0.4rem; font-size:0.75rem;">链上证据: ' + parts.join(' · ') + '</div>' : '';
                 };
                 document.getElementById('postsArea').innerHTML = posts.map(p => `
-                    <div class="post-item glass" onclick="window.location.href='/?post=${p.id}'"> 
+                    <div class="post-item glass" onclick="navigateWithTransition('/?post=${p.id}')"> 
                         ${renderPostCover(p)}
                         <div style="flex:1;">
                             <div style="font-weight:bold; font-size:1.1rem; margin-bottom:0.3rem;">${escapeHtml(p.title)}</div>
@@ -290,7 +299,7 @@
                         currentUser = data.user;
                         displayedUser = currentUser; 
                         renderProfile(currentUser, []); 
-                        loadUserPosts(currentUser.username); 
+                        loadUserPosts(currentUser.username || currentUser.address); 
                         this.close();
                         tempAvatar = false;
                     } else {

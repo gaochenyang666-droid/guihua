@@ -62,7 +62,7 @@
 
     <div class="main-container">
         <aside class="sidebar">
-            <div class="sidebar-card glass">
+            <div class="sidebar-card nav-sort-card glass">
                 <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')">🔥 热门</div>
                 <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')">✨ 最新</div>
                 <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')">⭐ 收藏</div>
@@ -81,6 +81,34 @@
                     </div>
                 </div>
                 <div id="onboardingTaskList" class="onboarding-task-list"></div>
+            </div>
+            <div class="sidebar-card glass checkin-card" id="checkinCard" hidden>
+                <div class="checkin-head">
+                    <div>
+                        <p class="checkin-title">📅 每日签到</p>
+                        <p class="checkin-subtitle" id="checkinSubtitle">连续签到 0 天</p>
+                    </div>
+                    <span class="checkin-pill" id="checkinState">未签到</span>
+                </div>
+                <div class="checkin-stats">
+                    <div class="checkin-stat">
+                        <div class="checkin-stat-key">等级</div>
+                        <div class="checkin-stat-val" id="checkinLevel">Lv.1</div>
+                    </div>
+                    <div class="checkin-stat">
+                        <div class="checkin-stat-key">经验</div>
+                        <div class="checkin-stat-val" id="checkinExp">0</div>
+                    </div>
+                    <div class="checkin-stat">
+                        <div class="checkin-stat-key">今日奖励</div>
+                        <div class="checkin-stat-val" id="checkinReward">+2</div>
+                    </div>
+                </div>
+                <div class="checkin-progress"><span id="checkinProgressBar"></span></div>
+                <div class="checkin-actions">
+                    <button class="btn btn-ghost btn-sm" id="checkinBtn" type="button" onclick="Checkin.sign()">立即签到</button>
+                    <span class="checkin-tip" id="checkinTip">经验规则：连续第 N 天 = min(12, N*2)</span>
+                </div>
             </div>
             <div class="sidebar-card glass" style="font-size: 0.85rem; color: var(--text-secondary); display: block;">
                 <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
@@ -133,7 +161,7 @@
         <a href="#" onclick="Auth.checkAndGoStudio(); return false;" class="bottom-nav-item">
             <i class="fas fa-plus-circle nav-highlight-btn" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
         </a>
-        <a href="#" onclick="if(currentUser) window.location.href='/profile?user='+currentUser.username; else Modal.open('loginModal'); return false;" class="bottom-nav-item">
+        <a href="#" onclick="if(currentUser) navigateWithTransition('/profile?user='+currentUser.username); else Modal.open('loginModal'); return false;" class="bottom-nav-item">
             <i class="fas fa-user"></i>
             <span>我的</span>
         </a>
@@ -400,6 +428,7 @@
                 UI.updateAuth();
                 SiteNotice.load();
                 Onboarding.load();
+                Checkin.load();
                 if (localStorage.getItem('token') && typeof Notification !== 'undefined' && Notification.load) {
                     setInterval(function() {
                         if (document.visibilityState === 'visible') Notification.load();
@@ -704,7 +733,7 @@
                 currentUser = null;
                 UI.updateAuth();
                 Toast.info('已退出');
-                location.href = '/';
+                navigateWithTransition('/');
             },
 
             /** 登录即将过期提醒（无 Refresh Token 时的替代）：接近 24h 弹一次提醒 */
@@ -762,7 +791,7 @@
             },
 
             checkAndGoStudio() {
-                if(currentUser) window.location.href = '/studio';
+                if(currentUser) navigateWithTransition('/studio');
                 else {
                     Toast.info('请先登录');
                     Modal.open('loginModal');
@@ -855,6 +884,7 @@
                 return [
                     { key: 'login', title: '完成登录', done: !!currentUser },
                     { key: 'bind_wallet', title: '绑定钱包', done: false },
+                    { key: 'daily_checkin', title: '完成今日签到', done: false },
                     { key: 'publish_first', title: '发布第一篇帖子', done: false },
                     { key: 'verify_archive', title: '查看永存证据', done: false },
                     { key: 'web2_bind_wallet', title: 'Web2 账号绑定钱包', done: false }
@@ -975,6 +1005,130 @@
             }
         };
         window.Onboarding = Onboarding;
+
+        const Checkin = {
+            hideCard() {
+                const card = document.getElementById('checkinCard');
+                if (!card) return;
+                card.hidden = true;
+            },
+            showCard() {
+                const card = document.getElementById('checkinCard');
+                if (!card) return;
+                card.hidden = false;
+            },
+            applyToCurrentUser(status) {
+                if (!currentUser || !status) return;
+                currentUser.level = status.level;
+                currentUser.experience_points = status.experience_points;
+                currentUser.level_current_exp = status.level_current_exp;
+                currentUser.level_next_exp = status.level_next_exp;
+                currentUser.level_progress = status.level_progress;
+                currentUser.checkin_streak = status.streak;
+            },
+            render(status) {
+                if (!status) {
+                    this.hideCard();
+                    return;
+                }
+                this.applyToCurrentUser(status);
+                const already = !!status.already_checked;
+                const streak = Number(status.streak || 0);
+                const level = Number(status.level || 1);
+                const exp = Number(status.experience_points || 0);
+                const cur = Number(status.level_current_exp || 0);
+                const next = Math.max(1, Number(status.level_next_exp || 1));
+                const pct = Math.max(0, Math.min(100, Math.round((cur / next) * 100)));
+                const reward = Math.min(12, Math.max(2, (streak > 0 ? streak : 1) * 2));
+
+                const subtitleEl = document.getElementById('checkinSubtitle');
+                const stateEl = document.getElementById('checkinState');
+                const levelEl = document.getElementById('checkinLevel');
+                const expEl = document.getElementById('checkinExp');
+                const rewardEl = document.getElementById('checkinReward');
+                const barEl = document.getElementById('checkinProgressBar');
+                const btn = document.getElementById('checkinBtn');
+                const tipEl = document.getElementById('checkinTip');
+
+                if (subtitleEl) subtitleEl.textContent = `连续签到 ${streak} 天`;
+                if (stateEl) {
+                    stateEl.textContent = already ? '已签到' : '未签到';
+                    stateEl.classList.toggle('is-done', already);
+                }
+                if (levelEl) levelEl.textContent = `Lv.${Math.max(1, level)}`;
+                if (expEl) expEl.textContent = `${exp}`;
+                if (rewardEl) rewardEl.textContent = `+${reward}`;
+                if (barEl) barEl.style.width = `${pct}%`;
+                if (btn) {
+                    btn.disabled = already;
+                    btn.textContent = already ? '今日已签到' : '立即签到';
+                    btn.classList.toggle('btn-primary', !already);
+                }
+                if (tipEl) tipEl.textContent = `当前等级进度 ${cur}/${next}`;
+
+                this.showCard();
+            },
+            async load() {
+                if (!currentUser) {
+                    this.hideCard();
+                    return;
+                }
+                try {
+                    const token = localStorage.getItem('token');
+                    if (!token) {
+                        this.hideCard();
+                        return;
+                    }
+                    const res = await fetch(`${API_BASE}/checkin/status`, {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        cache: 'no-store'
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        this.hideCard();
+                        return;
+                    }
+                    this.render(data);
+                } catch (_) {
+                    this.hideCard();
+                }
+            },
+            async sign() {
+                if (!currentUser) {
+                    Modal.open('loginModal');
+                    return;
+                }
+                const btn = document.getElementById('checkinBtn');
+                if (btn && btn.disabled) return;
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = '签到中...';
+                }
+                try {
+                    const res = await fetch(`${API_BASE}/checkin`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        if (btn) btn.disabled = false;
+                        Toast.error(data.error || '签到失败');
+                        return;
+                    }
+                    if (data.status) this.render(data.status);
+                    if (data.already_checked) Toast.info(data.message || '今天已经签到过了');
+                    else Toast.success(data.message || '签到成功');
+                    Onboarding.load();
+                } catch (_) {
+                    Toast.error('签到失败，请稍后重试');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = '立即签到';
+                    }
+                }
+            }
+        };
+        window.Checkin = Checkin;
 
         const Post = {
             currentPage: 1,
@@ -1258,6 +1412,7 @@
                     userMenu.style.display = 'none';
                 }
                 Onboarding.load();
+                Checkin.load();
             },
 
             resolveCoverUrl(post) {
@@ -1937,6 +2092,9 @@
                         </div>
                     </div>
                 `;
+                body.classList.remove('detail-body-enter');
+                void body.offsetWidth;
+                body.classList.add('detail-body-enter');
                 body.querySelectorAll('.post-detail-content img').forEach(function(im) {
                     im.setAttribute('referrerpolicy', 'no-referrer');
                     im.loading = 'lazy';

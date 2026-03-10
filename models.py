@@ -8,6 +8,49 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import db
 
 
+LEVEL_BASE_EXP = 20
+LEVEL_EXP_STEP = 12
+CHECKIN_BASE_EXP = 2
+CHECKIN_MAX_EXP = 12
+
+
+def exp_needed_for_next_level(level):
+    lv = int(level or 1)
+    if lv < 1:
+        lv = 1
+    return LEVEL_BASE_EXP + (lv - 1) * LEVEL_EXP_STEP
+
+
+def calc_level_info(total_exp):
+    total = int(total_exp or 0)
+    if total < 0:
+        total = 0
+    level = 1
+    spent = 0
+    need = exp_needed_for_next_level(level)
+    while total - spent >= need:
+        spent += need
+        level += 1
+        need = exp_needed_for_next_level(level)
+        if level >= 1000:
+            break
+    current_in_level = total - spent
+    return {
+        'level': max(1, level),
+        'total_exp': total,
+        'level_current_exp': max(0, current_in_level),
+        'level_next_exp': max(1, need),
+        'level_progress': round(max(0.0, min(1.0, current_in_level / float(need))), 4)
+    }
+
+
+def checkin_exp_by_streak(streak):
+    s = int(streak or 1)
+    if s < 1:
+        s = 1
+    return min(CHECKIN_MAX_EXP, CHECKIN_BASE_EXP * s)
+
+
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
@@ -23,6 +66,9 @@ class User(db.Model):
     is_banned = db.Column(db.Boolean, default=False)
     wallet_address = db.Column(db.String(42), nullable=True)
     withdrawable_balance = db.Column(db.String(50), default='0')
+    experience_points = db.Column(db.Integer, default=0)
+    checkin_streak = db.Column(db.Integer, default=0)
+    last_checkin_date = db.Column(db.Date, nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic', foreign_keys='Post.author_id')
@@ -86,7 +132,11 @@ class User(db.Model):
             return '链上旅人'
         return '新魂'
 
+    def get_level_info(self):
+        return calc_level_info(getattr(self, 'experience_points', 0))
+
     def to_dict(self):
+        level_info = self.get_level_info()
         return {
             'id': self.id,
             'type': 'web3' if self.address else 'web2',
@@ -99,6 +149,12 @@ class User(db.Model):
             'is_admin': self.is_admin,
             'is_banned': self.is_banned,
             'honor_title': self.get_honor_title(),
+            'experience_points': level_info['total_exp'],
+            'level': level_info['level'],
+            'level_current_exp': level_info['level_current_exp'],
+            'level_next_exp': level_info['level_next_exp'],
+            'level_progress': level_info['level_progress'],
+            'checkin_streak': int(getattr(self, 'checkin_streak', 0) or 0),
         }
 
 
@@ -332,6 +388,18 @@ class Tip(db.Model):
     sender = db.relationship('User', foreign_keys=[from_user_id])
     recipient = db.relationship('User', foreign_keys=[to_user_id])
     post = db.relationship('Post')
+
+
+class CheckinLog(db.Model):
+    __tablename__ = 'checkin_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False, index=True)
+    checkin_date = db.Column(db.Date, nullable=False, index=True)
+    gained_exp = db.Column(db.Integer, nullable=False, default=0)
+    streak_after = db.Column(db.Integer, nullable=False, default=1)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    user = db.relationship('User', foreign_keys=[user_id])
+    __table_args__ = (db.UniqueConstraint('user_id', 'checkin_date', name='uniq_user_checkin_date'),)
 
 
 class Report(db.Model):

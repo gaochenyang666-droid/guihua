@@ -278,7 +278,7 @@
             <!-- ... Login forms ... -->
             <div style="text-align: center; padding: 2rem;">
                 <p>请先登录以访问工作室</p>
-                <button class="btn btn-primary" onclick="window.location.href='/'">返回首页</button>
+                <button class="btn btn-primary" onclick="navigateWithTransition('/')">返回首页</button>
             </div>
         </div>
     </div>
@@ -397,7 +397,7 @@
                     await this.fetchMe();
                 } else {
                     Toast.info('请先登录');
-                    window.location.href = '/';
+                    navigateWithTransition('/');
                 }
                 UI.updateAuth();
                 Draft.load();
@@ -417,13 +417,13 @@
                         currentUser = await res.json();
                         if (!currentUser.is_admin && currentUser.type !== 'web3') {
                             alert('仅限 Web3 创作者或管理员进入');
-                            window.location.href = '/';
+                            navigateWithTransition('/');
                             return;
                         }
                     } else {
                         if (handle401(res)) return;
                         localStorage.removeItem('token');
-                        window.location.href = '/';
+                        navigateWithTransition('/');
                     }
                 } catch(e) { console.error(e); }
             }
@@ -726,7 +726,7 @@
                             this.addLog("✅ 服务器确认成功!");
                             Draft.clear();
                             Toast.success('发布成功');
-                            setTimeout(() => window.location.href = '/', 2000);
+                            setTimeout(() => navigateWithTransition('/'), 2000);
                         } else {
                             setTimeout(poll, 3000);
                         }
@@ -865,7 +865,7 @@
                         this.pendingTxHash = null;
                         Toast.success('发布成功');
                         setTimeout(() => {
-                            window.location.href = '/';
+                            navigateWithTransition('/');
                         }, 2000);
                     } else {
                         const errData = await res.json().catch(() => ({}));
@@ -883,7 +883,7 @@
                         this.addLog("❌ 身份验证过期，草稿已自动保存");
                         Draft.save();
                         Toast.error('登录过期，请重新登录');
-                        setTimeout(() => window.location.href = '/', 2000);
+                        setTimeout(() => navigateWithTransition('/'), 2000);
                         return;
                     }
 
@@ -947,7 +947,7 @@
                     if (res.ok) {
                         Draft.clear();
                         Toast.success('已发布（普通帖，未上链）');
-                        setTimeout(() => { window.location.href = '/'; }, 1500);
+                        setTimeout(() => { navigateWithTransition('/'); }, 1500);
                     } else {
                         Toast.error(resp.error || '发布失败');
                     }

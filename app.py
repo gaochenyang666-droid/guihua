@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify, g, render_template
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
@@ -127,13 +128,24 @@ db.init_app(app)
 
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
 from models import (User, Post, Vote, Comment, Like, Bookmark, Notification, UsedTransaction,
-    UserVote, Tip, Report, Announcement, AdminAuditLog,
-    build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS)
+    UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog,
+    build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
+    calc_level_info, checkin_exp_by_streak)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
     token_required, admin_required, _get_redis_client,
     bleach_clean_post_content as _bleach_clean_post_content)
 from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
 from services.blockchain import (get_post_fee_usdt_raw, verify_transaction)
+
+
+def _new_user(**kwargs):
+    """SQLite 上 BigInteger 主键不自增，创建用户时补一个递增 ID。"""
+    if db.engine.dialect.name == 'sqlite' and not kwargs.get('id'):
+        max_id = db.session.query(func.max(User.id)).scalar()
+        seed = int(datetime.utcnow().strftime('%Y') + '1000000')
+        next_id = int(max_id) + 1 if max_id else seed
+        kwargs['id'] = next_id
+    return User(**kwargs)
 
 # ============== Routes ==============
 
@@ -243,7 +255,7 @@ def verify_signature():
     # 首次验签成功才建号，并轮换 nonce 防重放
     if not user:
         try:
-            user = User(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
+            user = _new_user(address=address, nickname=f"User_{address[:6]}", avatar=get_random_avatar())
             user.refresh_nonce()
             db.session.add(user)
             db.session.commit()
@@ -283,7 +295,7 @@ def register():
             return jsonify({'error': '该用户名已被注册，请换一个或直接登录'}), 400
 
         try:
-            user = User(username=username, nickname=username, avatar=get_random_avatar())
+            user = _new_user(username=username, nickname=username, avatar=get_random_avatar())
             user.set_password(password)
             db.session.add(user)
             db.session.commit()
@@ -393,6 +405,63 @@ def user_me():
         
     db.session.commit()
     return jsonify({'message': 'Profile updated', 'user': g.current_user.to_dict()})
+
+
+@app.route('/api/checkin/status', methods=['GET'])
+@token_required
+def get_checkin_status():
+    return jsonify(_build_checkin_status(g.current_user))
+
+
+@app.route('/api/checkin', methods=['POST'])
+@token_required
+def daily_checkin():
+    user = g.current_user
+    today = _china_today()
+    yesterday = today - timedelta(days=1)
+    if getattr(user, 'last_checkin_date', None) == today:
+        return jsonify({
+            'message': '今天已经签到过了',
+            'already_checked': True,
+            'status': _build_checkin_status(user)
+        })
+
+    last_date = getattr(user, 'last_checkin_date', None)
+    if last_date == yesterday:
+        streak = int(getattr(user, 'checkin_streak', 0) or 0) + 1
+    else:
+        streak = 1
+    gained_exp = checkin_exp_by_streak(streak)
+    user.checkin_streak = streak
+    user.last_checkin_date = today
+    user.experience_points = int(getattr(user, 'experience_points', 0) or 0) + gained_exp
+    db.session.add(CheckinLog(
+        user_id=user.id,
+        checkin_date=today,
+        gained_exp=gained_exp,
+        streak_after=streak
+    ))
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        fresh_user = User.query.get(user.id)
+        return jsonify({
+            'message': '今天已经签到过了',
+            'already_checked': True,
+            'status': _build_checkin_status(fresh_user or user)
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"[daily_checkin] failed: {e}")
+        return jsonify({'error': '签到失败，请稍后重试'}), 500
+
+    return jsonify({
+        'message': f'签到成功，获得 +{gained_exp} 经验',
+        'already_checked': False,
+        'gained_exp': gained_exp,
+        'status': _build_checkin_status(user)
+    })
 
 @app.route('/api/user/password', methods=['PUT'])
 @token_required
@@ -533,6 +602,34 @@ def _parse_iso_datetime(value):
         return None
 
 
+def _china_today():
+    # 签到按中国时区自然日计算，避免 UTC 跨日导致用户体验错乱
+    return (datetime.utcnow() + timedelta(hours=8)).date()
+
+
+def _build_checkin_status(user):
+    today = _china_today()
+    last_date = getattr(user, 'last_checkin_date', None)
+    already_checked = bool(last_date and last_date == today)
+    level_info = calc_level_info(getattr(user, 'experience_points', 0) or 0)
+    return {
+        'today': today.isoformat(),
+        'already_checked': already_checked,
+        'last_checkin_date': last_date.isoformat() if last_date else None,
+        'streak': int(getattr(user, 'checkin_streak', 0) or 0),
+        'experience_points': level_info['total_exp'],
+        'level': level_info['level'],
+        'level_current_exp': level_info['level_current_exp'],
+        'level_next_exp': level_info['level_next_exp'],
+        'level_progress': level_info['level_progress'],
+        'rule': {
+            'base': 2,
+            'max': 12,
+            'formula': '连续签到第N天经验=MIN(12, N*2)'
+        }
+    }
+
+
 def _build_post_precheck(user, data):
     title = (data.get('title') or '').strip()
     content_html = data.get('content') or ''
@@ -586,9 +683,11 @@ def onboarding_tasks():
     has_post = posts_count > 0
     has_wallet = bool(user.address)
     is_web2_bound = bool(user.username) and has_wallet
+    has_checked_today = bool(getattr(user, 'last_checkin_date', None) == _china_today())
     tasks = [
         {'key': 'login', 'title': '完成登录', 'done': True},
         {'key': 'bind_wallet', 'title': '绑定钱包', 'done': has_wallet},
+        {'key': 'daily_checkin', 'title': '完成今日签到', 'done': has_checked_today},
         {'key': 'publish_first', 'title': '发布第一篇帖子', 'done': has_post},
         {'key': 'verify_archive', 'title': '查看永存证据', 'done': has_post},
         {'key': 'web2_bind_wallet', 'title': 'Web2 账号绑定钱包', 'done': is_web2_bound},
@@ -1835,7 +1934,7 @@ def _ensure_bootstrap_admin():
             existing.set_password(bootstrap_password)
         admin = existing
     else:
-        admin = User(
+        admin = _new_user(
             username=bootstrap_username,
             nickname=bootstrap_username,
             is_admin=True,
@@ -1956,6 +2055,66 @@ def _ensure_users_withdrawable_balance():
         if 'already exists' not in str(e).lower():
             print(f'[Startup] users.withdrawable_balance skip: {e}')
 
+
+def _ensure_users_checkin_columns():
+    """启动时确保 users 表存在签到经验相关列。"""
+    from sqlalchemy import text
+    dialect = db.engine.dialect.name
+    try:
+        if dialect == 'postgresql':
+            cols = db.session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='users' AND column_name IN ('experience_points','checkin_streak','last_checkin_date')
+            """)).fetchall()
+            existing = {c[0] for c in cols}
+            changed = False
+            if 'experience_points' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN experience_points INTEGER DEFAULT 0"))
+                print('[Startup] users.experience_points added.')
+                changed = True
+            if 'checkin_streak' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN checkin_streak INTEGER DEFAULT 0"))
+                print('[Startup] users.checkin_streak added.')
+                changed = True
+            if 'last_checkin_date' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN last_checkin_date DATE"))
+                print('[Startup] users.last_checkin_date added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(users)")).fetchall()
+            existing = {c[1] for c in cols}
+            changed = False
+            if 'experience_points' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN experience_points INTEGER DEFAULT 0"))
+                print('[Startup] users.experience_points added.')
+                changed = True
+            if 'checkin_streak' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN checkin_streak INTEGER DEFAULT 0"))
+                print('[Startup] users.checkin_streak added.')
+                changed = True
+            if 'last_checkin_date' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN last_checkin_date DATE"))
+                print('[Startup] users.last_checkin_date added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+    except Exception as e:
+        db.session.rollback()
+        if 'already exists' not in str(e).lower():
+            print(f'[Startup] users checkin columns skip: {e}')
+
+
+def _ensure_checkin_logs_table():
+    """启动时确保签到日志表存在（create_all 对历史库补表）。"""
+    try:
+        CheckinLog.__table__.create(db.engine, checkfirst=True)
+    except Exception as e:
+        print(f'[Startup] checkin_logs table skip: {e}')
+
 def _ensure_posts_tx_nullable():
     """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
     from sqlalchemy import text
@@ -2073,6 +2232,8 @@ def _run_startup_tasks():
     db.create_all()
     _ensure_users_wallet_address()
     _ensure_users_withdrawable_balance()
+    _ensure_users_checkin_columns()
+    _ensure_checkin_logs_table()
     _ensure_posts_tx_nullable()
     _ensure_posts_pin_columns()
     _ensure_posts_special_column()

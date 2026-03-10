@@ -38,4 +38,65 @@
         var res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
         return '<span class="user-id-badge" style="color:' + res.color + '">' + res.emoji + ' ' + window.escapeHtml(idStr) + '</span>';
     };
+
+    var PAGE_TRANSITION_MS = 260;
+    var isNavigating = false;
+
+    window.navigateWithTransition = function (url) {
+        if (!url || isNavigating) {
+            return;
+        }
+        isNavigating = true;
+        var body = document.body;
+        if (!body || body.classList.contains('reduce-motion')) {
+            window.location.href = url;
+            return;
+        }
+        body.classList.add('page-motion', 'page-leaving');
+        body.classList.remove('page-ready');
+        window.setTimeout(function () {
+            window.location.href = url;
+        }, PAGE_TRANSITION_MS);
+    };
+
+    function setupPageTransitions() {
+        var body = document.body;
+        if (!body) return;
+        if (!body.classList.contains('reduce-motion')) {
+            body.classList.add('page-motion');
+            window.requestAnimationFrame(function () {
+                body.classList.add('page-ready');
+            });
+        }
+
+        document.addEventListener('click', function (e) {
+            if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            var target = e.target;
+            if (!target || !target.closest) return;
+            var anchor = target.closest('a[href]');
+            if (!anchor) return;
+            if (anchor.hasAttribute('download')) return;
+            if (anchor.target && anchor.target !== '_self') return;
+            if (anchor.getAttribute('data-no-transition') === '1') return;
+            var href = anchor.getAttribute('href') || '';
+            if (!href || href.charAt(0) === '#') return;
+            if (href.indexOf('javascript:') === 0) return;
+            var targetUrl;
+            try {
+                targetUrl = new URL(anchor.href, window.location.href);
+            } catch (err) {
+                return;
+            }
+            if (targetUrl.origin !== window.location.origin) return;
+            if (targetUrl.href === window.location.href) return;
+            e.preventDefault();
+            window.navigateWithTransition(targetUrl.href);
+        }, true);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupPageTransitions);
+    } else {
+        setupPageTransitions();
+    }
 })();
