@@ -862,10 +862,7 @@
             },
             dismissedKey() {
                 const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
-                return `onboarding_dismissed_${uid}`;
-            },
-            fallbackDismissedKey() {
-                return 'onboarding_dismissed_global';
+                return `onboarding_v2_dismissed_${uid}`;
             },
             hideCard() {
                 const card = document.getElementById('onboardingCard');
@@ -907,17 +904,12 @@
                     }).join('');
                 }
 
-                if (total > 0 && done >= total) {
-                    this.hideCard();
-                } else {
-                    this.showCard();
-                }
+                this.showCard();
             },
             isDismissed() {
                 if (this.dismissedInMemory) return true;
                 try {
                     return localStorage.getItem(this.dismissedKey()) === '1'
-                        || localStorage.getItem(this.fallbackDismissedKey()) === '1'
                         || sessionStorage.getItem(this.dismissedKey()) === '1';
                 } catch (_) {
                     return this.dismissedInMemory;
@@ -940,7 +932,6 @@
                 this.dismissedInMemory = true;
                 try {
                     localStorage.setItem(this.dismissedKey(), '1');
-                    localStorage.setItem(this.fallbackDismissedKey(), '1');
                     sessionStorage.setItem(this.dismissedKey(), '1');
                 } catch (_) {}
                 this.hideCard();
