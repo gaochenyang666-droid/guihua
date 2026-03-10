@@ -851,12 +851,67 @@
 
         const Onboarding = {
             dismissedInMemory: false,
+            defaultTasks() {
+                return [
+                    { key: 'login', title: '完成登录', done: !!currentUser },
+                    { key: 'bind_wallet', title: '绑定钱包', done: false },
+                    { key: 'publish_first', title: '发布第一篇帖子', done: false },
+                    { key: 'verify_archive', title: '查看永存证据', done: false },
+                    { key: 'web2_bind_wallet', title: 'Web2 账号绑定钱包', done: false }
+                ];
+            },
             dismissedKey() {
                 const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
                 return `onboarding_dismissed_${uid}`;
             },
             fallbackDismissedKey() {
                 return 'onboarding_dismissed_global';
+            },
+            hideCard() {
+                const card = document.getElementById('onboardingCard');
+                if (!card) return;
+                card.hidden = true;
+                card.style.display = 'none';
+                card.setAttribute('aria-hidden', 'true');
+            },
+            showCard() {
+                const card = document.getElementById('onboardingCard');
+                if (!card) return;
+                card.hidden = false;
+                card.style.display = '';
+                card.setAttribute('aria-hidden', 'false');
+            },
+            render(data) {
+                const listEl = document.getElementById('onboardingTaskList');
+                const progressEl = document.getElementById('onboardingProgress');
+                const percentEl = document.getElementById('onboardingPercent');
+                const ringEl = document.getElementById('onboardingRing');
+                let tasks = Array.isArray(data && data.tasks) ? data.tasks : [];
+                if (!tasks.length) tasks = this.defaultTasks();
+                const totalRaw = Number(data && data.total);
+                const doneRaw = Number(data && data.done_count);
+                const total = Number.isFinite(totalRaw) && totalRaw >= 0 ? totalRaw : tasks.length;
+                const doneFromTasks = tasks.reduce((n, t) => n + (t && t.done ? 1 : 0), 0);
+                const done = Number.isFinite(doneRaw) && doneRaw >= 0 ? doneRaw : doneFromTasks;
+                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+                if (progressEl) progressEl.textContent = `${done}/${total}`;
+                if (percentEl) percentEl.textContent = `${pct}%`;
+                if (ringEl) ringEl.style.setProperty('--progress', `${pct}%`);
+                if (listEl) {
+                    listEl.innerHTML = tasks.map(t => {
+                        const isDone = !!t.done;
+                        return `<div class="onboarding-task-item ${isDone ? 'is-done' : ''}">
+                            <span class="onboarding-task-check">${isDone ? '✅' : '⬜️'}</span><span>${escapeHtml(t.title || '')}</span>
+                        </div>`;
+                    }).join('');
+                }
+
+                if (total > 0 && done >= total) {
+                    this.hideCard();
+                } else {
+                    this.showCard();
+                }
             },
             isDismissed() {
                 if (this.dismissedInMemory) return true;
@@ -879,6 +934,7 @@
                 };
                 btn.addEventListener('click', closeHandler);
                 btn.addEventListener('touchend', closeHandler, { passive: false });
+                btn.addEventListener('pointerup', closeHandler);
             },
             dismiss() {
                 this.dismissedInMemory = true;
@@ -887,57 +943,43 @@
                     localStorage.setItem(this.fallbackDismissedKey(), '1');
                     sessionStorage.setItem(this.dismissedKey(), '1');
                 } catch (_) {}
-                const card = document.getElementById('onboardingCard');
-                if (card) card.hidden = true;
+                this.hideCard();
             },
             async load() {
                 const card = document.getElementById('onboardingCard');
                 if (!card) return;
                 this.bindClose();
                 if (!currentUser) {
-                    card.hidden = true;
+                    this.hideCard();
                     return;
                 }
                 if (this.isDismissed()) {
-                    card.hidden = true;
+                    this.hideCard();
                     return;
                 }
+                this.render(null);
                 try {
+                    const token = localStorage.getItem('token');
+                    if (!token) {
+                        this.hideCard();
+                        return;
+                    }
                     const res = await fetch(`${API_BASE}/onboarding/tasks`, {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        cache: 'no-store'
                     });
                     const data = await res.json().catch(() => ({}));
-                    if (!res.ok) {
-                        card.hidden = true;
+                    if (res.status === 401) {
+                        this.hideCard();
                         return;
                     }
                     if (this.isDismissed()) {
-                        card.hidden = true;
+                        this.hideCard();
                         return;
                     }
-                    const listEl = document.getElementById('onboardingTaskList');
-                    const progressEl = document.getElementById('onboardingProgress');
-                    const percentEl = document.getElementById('onboardingPercent');
-                    const ringEl = document.getElementById('onboardingRing');
-                    const tasks = Array.isArray(data.tasks) ? data.tasks : [];
-                    const totalRaw = Number(data.total);
-                    const doneRaw = Number(data.done_count);
-                    const total = Number.isFinite(totalRaw) && totalRaw >= 0 ? totalRaw : tasks.length;
-                    const doneFromTasks = tasks.reduce((n, t) => n + (t && t.done ? 1 : 0), 0);
-                    const done = Number.isFinite(doneRaw) && doneRaw >= 0 ? doneRaw : doneFromTasks;
-                    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                    if (progressEl) progressEl.textContent = `${done}/${total}`;
-                    if (percentEl) percentEl.textContent = `${pct}%`;
-                    if (ringEl) ringEl.style.setProperty('--progress', `${pct}%`);
-                    if (listEl) listEl.innerHTML = tasks.map(t => {
-                        const done = !!t.done;
-                        return `<div class="onboarding-task-item ${done ? 'is-done' : ''}">
-                            <span class="onboarding-task-check">${done ? '✅' : '⬜️'}</span><span>${escapeHtml(t.title || '')}</span>
-                        </div>`;
-                    }).join('');
-                    card.hidden = total > 0 ? done >= total : tasks.length === 0;
+                    this.render(res.ok ? data : null);
                 } catch (_) {
-                    card.hidden = true;
+                    if (!this.isDismissed()) this.render(null);
                 }
             }
         };
@@ -1279,7 +1321,7 @@
 
             renderPosts(posts, append=false) {
                 const grid = document.getElementById('postGrid');
-                const html = posts.map(p => {
+                const html = posts.map((p, idx) => {
                     const imgUrl = this.resolveCoverUrl(p);
                     const coverHtml = this.renderCover(imgUrl);
                     const author = p.author || { nickname: '用户', avatar: '👻' };
@@ -1293,7 +1335,7 @@
                     const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
 
                     return `
-                    <div class="masonry-item">
+                    <div class="masonry-item" style="--stagger:${Math.min((idx % 12) * 28, 280)}ms;">
                         <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(${p.id})">
                             ${pinBadge}
                             ${badge}
@@ -1587,6 +1629,37 @@
 
         let tipAuthorPostId = null;
         let tipAuthorWallet = '';
+        async function copyTextWithFallback(text, successMsg) {
+            const safeText = (text || '').trim();
+            if (!safeText) return false;
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(safeText);
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = safeText;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                }
+                if (successMsg && typeof Toast !== 'undefined') Toast.success(successMsg);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        async function ensureWalletProvider(fallbackAddress) {
+            const provider = window.BinanceChain || window.ethereum;
+            if (provider) return provider;
+            if (fallbackAddress) {
+                await copyTextWithFallback(fallbackAddress, '已复制收款地址，可手动转账');
+            }
+            Toast.info('未检测到钱包，请用钱包 App 内置浏览器打开本站后再支付');
+            return null;
+        }
+
         const TipAuthor = {
             open(postId, authorWallet) {
                 tipAuthorPostId = postId;
@@ -1611,12 +1684,7 @@
             },
             copyAddress() {
                 if (!tipAuthorWallet) return;
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(tipAuthorWallet).then(function() { if (typeof Toast !== 'undefined') Toast.success('已复制收款地址'); });
-                } else {
-                    const ta = document.createElement('textarea'); ta.value = tipAuthorWallet; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-                    if (typeof Toast !== 'undefined') Toast.success('已复制收款地址');
-                }
+                copyTextWithFallback(tipAuthorWallet, '已复制收款地址');
             },
             async send() {
                 if (!tipAuthorPostId || !currentUser || !currentUser.address) {
@@ -1634,8 +1702,8 @@
                     return;
                 }
                 try {
-                    const provider = window.BinanceChain || window.ethereum;
-                    if (!provider) return Toast.error('请安装钱包');
+                    const provider = await ensureWalletProvider(tipAuthorWallet);
+                    if (!provider) return;
                     const web3 = new Web3(provider);
                     const cRes = await fetch(`${API_BASE}/config/fees`);
                     const config = await cRes.json();
@@ -1673,62 +1741,79 @@
                         Toast.error(resp.error || '验证失败');
                     }
                 } catch (e) {
-                    Toast.error(e.message || '打赏失败');
+                    if (e && e.code === 4001) Toast.error('已取消打赏');
+                    else Toast.error(e.message || '打赏失败');
                 }
             }
         };
 
         const Donate = {
-            async openModal() {
+            cachedConfig: null,
+            async getConfig(forceRefresh=false) {
+                if (!forceRefresh && this.cachedConfig) return this.cachedConfig;
                 try {
-                    const r = await fetch(API_BASE + '/config/fees');
-                    const c = await r.json();
-                    const el = document.getElementById('donateAddress');
-                    if (el && c.receive_address) el.textContent = c.receive_address;
-                } catch (e) {}
+                    const r = await fetch(`${API_BASE}/config/fees`, { cache: 'no-store' });
+                    const c = await r.json().catch(() => ({}));
+                    if (!r.ok) return null;
+                    this.cachedConfig = c;
+                    return c;
+                } catch (_) {
+                    return null;
+                }
+            },
+            async openModal() {
+                const c = await this.getConfig(true);
+                const el = document.getElementById('donateAddress');
+                if (el) el.textContent = (c && c.receive_address) ? c.receive_address : '暂不可用';
+                if (!c || !c.receive_address || !c.usdt_contract) {
+                    Toast.error('暂时无法获取收款配置，请稍后再试');
+                }
                 Modal.open('donateModal');
             },
             async send(amount) {
-                if (!window.ethereum && !window.BinanceChain) {
-                    Toast.error('请安装钱包');
-                    return;
-                }
                 const amountUsdt = typeof amount === 'number' ? amount : parseFloat(amount);
                 if (isNaN(amountUsdt) || amountUsdt < 0.1) {
                     Toast.error('请输入有效金额（至少 0.1 USDT）');
                     return;
                 }
                 try {
-                    const provider = window.BinanceChain || window.ethereum;
-                    const web3 = new Web3(provider);
-                    const accounts = await provider.request({ method: 'eth_requestAccounts' });
-                    const from = accounts[0];
-                    const cRes = await fetch(`${API_BASE}/config/fees`);
-                    const config = await cRes.json();
-                    if (!cRes.ok || !config.receive_address || !config.usdt_contract) {
+                    const config = await this.getConfig();
+                    if (!config || !config.receive_address || !config.usdt_contract) {
                         Toast.error('无法获取收款配置');
                         return;
                     }
-                    if (document.getElementById('donateAddress')) document.getElementById('donateAddress').textContent = config.receive_address;
+                    if (document.getElementById('donateAddress')) {
+                        document.getElementById('donateAddress').textContent = config.receive_address;
+                    }
+                    const provider = await ensureWalletProvider(config.receive_address);
+                    if (!provider) return;
+                    const web3 = new Web3(provider);
+                    const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                    const from = accounts[0];
                     const amountRaw = web3.utils.toBN(web3.utils.toWei(amountUsdt.toString(), 'ether'));
                     const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
                     const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, amountRaw]);
                     const data = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
+                    const txReq = {
+                        to: config.usdt_contract,
+                        from: from,
+                        value: '0x0',
+                        data: data,
+                        gas: web3.utils.toHex(100000)
+                    };
+                    const chainIdNum = Number(config.chain_id || 56);
+                    if (Number.isFinite(chainIdNum) && chainIdNum > 0) {
+                        txReq.chainId = web3.utils.toHex(chainIdNum);
+                    }
                     await provider.request({
                         method: 'eth_sendTransaction',
-                        params: [{
-                            to: config.usdt_contract,
-                            from: from,
-                            value: '0x0',
-                            data: data,
-                            gas: web3.utils.toHex(100000),
-                            chainId: config.chain_id
-                        }]
+                        params: [txReq]
                     });
                     Toast.success(`感谢您的 ${amountUsdt} USDT 打赏！🙏`);
                     Modal.close('donateModal');
                 } catch(e) {
-                    Toast.error(e.message || '打赏取消或失败');
+                    if (e && e.code === 4001) Toast.error('已取消打赏');
+                    else Toast.error(e.message || '打赏取消或失败');
                 }
             }
         };
@@ -2008,14 +2093,23 @@
         window.addEventListener('load', () => {
             Onboarding.bindClose();
             const c = document.getElementById('ghostFireContainer');
-            // Optimize for mobile: fewer particles
             const isMobile = window.innerWidth < 768;
-            const count = isMobile ? 6 : 10;
+            const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const lowPerfDevice = (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4)
+                || (typeof navigator.deviceMemory !== 'undefined' && navigator.deviceMemory <= 4);
+            if (reduceMotion || lowPerfDevice) document.body.classList.add('reduce-motion');
 
-            for(let i=0; i<count; i++) {
-                const d = document.createElement('div'); d.className='ghost-fire';
-                d.style.left=Math.random()*100+'%'; d.style.animationDelay=Math.random()*5+'s';
-                c.appendChild(d);
+            const count = (reduceMotion || lowPerfDevice) ? 0 : (isMobile ? 3 : 6);
+            if (c && count > 0) {
+                for (let i = 0; i < count; i++) {
+                    const d = document.createElement('div');
+                    d.className = 'ghost-fire';
+                    d.style.left = Math.random() * 100 + '%';
+                    d.style.animationDelay = Math.random() * 5 + 's';
+                    c.appendChild(d);
+                }
+            } else if (c) {
+                c.style.display = 'none';
             }
             Auth.init();
             Post.loadPinnedGuide();

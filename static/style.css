@@ -93,6 +93,10 @@ body {
     100% { transform: scale(1); filter: drop-shadow(0 0 2px var(--accent-purple)); }
 }
 .nav-highlight-btn { animation: breathe 2s infinite ease-in-out; }
+@keyframes cardIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 
 /* ============== Mobile First Layout (Default) ============== */
 
@@ -228,6 +232,7 @@ body {
     font-size: 0.85rem;
     white-space: normal;
     min-width: 280px;
+    transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .onboarding-card p {
     display: block;
@@ -257,6 +262,8 @@ body {
     line-height: 1;
     font-size: 1rem;
     touch-action: manipulation;
+    position: relative;
+    z-index: 2;
 }
 .onboarding-title {
     margin-bottom: 0.3rem;
@@ -280,6 +287,7 @@ body {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    pointer-events: none;
 }
 .onboarding-ring > span {
     width: 40px;
@@ -361,11 +369,20 @@ body {
     grid-template-columns: repeat(1, minmax(0, 1fr));
     gap: 12px;
 }
-.masonry-item { margin-bottom: 0; }
+.masonry-item {
+    margin-bottom: 0;
+    opacity: 0;
+    transform: translateY(8px);
+    animation: cardIn 0.35s ease-out both;
+    animation-delay: var(--stagger, 0ms);
+    content-visibility: auto;
+    contain-intrinsic-size: 320px;
+}
 
 .post-card {
     border-radius: 16px; border: 1px solid var(--border-color); background: var(--bg-secondary);
     position: relative; overflow: hidden; touch-action: manipulation; transition: transform 0.1s;
+    will-change: transform, opacity;
 }
 .post-card:active { transform: scale(0.98); background: var(--bg-hover); }
 
@@ -709,6 +726,28 @@ textarea.form-input { min-height: 100px; resize: vertical; }
         font-size: 0.64rem;
         padding: 2px 6px;
     }
+}
+
+@media (max-width: 768px) {
+    .glass {
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+    }
+}
+
+body.reduce-motion .masonry-item {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+}
+body.reduce-motion .ghost-fire-container {
+    display: none !important;
+}
+body.reduce-motion .post-card,
+body.reduce-motion .btn,
+body.reduce-motion .modal,
+body.reduce-motion .bottom-sheet {
+    transition: none !important;
 }
 .modal-header { display: flex; justify-content: space-between; margin-bottom: 1.5rem; align-items: center; }
 .modal-close { background: none; border: none; font-size: 1.8rem; color: var(--text-muted); cursor: pointer; transition: color 0.2s; }
