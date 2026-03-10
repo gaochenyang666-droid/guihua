@@ -308,8 +308,9 @@
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <h1 style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                                 <span>${escapeHtml(user.nickname)}</span>
-                                ${user.honor_title ? `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>` : ''}
-                                ${user.equipped_achievement_key ? `<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ${escapeHtml(achievementTitleByKey(user.equipped_achievement_key))}</span>` : ''}
+                                ${user.equipped_achievement_key
+                                    ? `<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ${escapeHtml(achievementTitleByKey(user.equipped_achievement_key))}</span>`
+                                    : (user.honor_title ? `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>` : '')}
                             </h1>
                             ${isMe ? `<div style="display:flex; gap:0.5rem; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" onclick="Achievements.openWall()">🏆 成就墙</button><button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>${currentUser.username ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.openChangePassword()">🔒 修改密码</button>` : ''}</div>` : ''}
                         </div>
@@ -389,34 +390,19 @@
         }
 
         const Achievements = {
-            savedScrollY: 0,
-            lockScroll() {
-                this.savedScrollY = window.scrollY || window.pageYOffset || 0;
-                document.body.style.position = 'fixed';
-                document.body.style.top = `-${this.savedScrollY}px`;
-                document.body.style.width = '100%';
-            },
-            unlockScroll() {
-                const y = Number(this.savedScrollY || 0);
-                document.body.style.position = '';
-                document.body.style.top = '';
-                document.body.style.width = '';
-                window.scrollTo(0, y);
-            },
             openWall() {
                 const modal = document.getElementById('achievementsModal');
                 if (!modal) return;
-                if (!modal.classList.contains('active')) this.lockScroll();
                 modal.classList.add('active');
+                const wallBody = document.getElementById('achievementsWallBody');
+                if (wallBody) wallBody.scrollTop = 0;
                 renderAchievementWallBody();
                 if (!myAchievementsState) loadAchievements();
             },
             closeWall() {
                 const modal = document.getElementById('achievementsModal');
                 if (!modal) return;
-                const wasActive = modal.classList.contains('active');
                 modal.classList.remove('active');
-                if (wasActive) this.unlockScroll();
             },
             async equip(key) {
                 if (!currentUser) return;

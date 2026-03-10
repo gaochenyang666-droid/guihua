@@ -1581,7 +1581,7 @@
                                     <div class="author-info">
                                         ${UI.renderAvatar(author)}
                                         <span>${escapeHtml(author.nickname || '用户')}</span>
-                                        ${UI.renderHonor(author)}
+                                        ${UI.renderAuthorBadge(author)}
                                         ${author.id != null ? formatUserId(author.id) : ''}
                                     </div>
                                     <div class="post-like">
@@ -1602,8 +1602,35 @@
             renderAvatar(user) {
                 return `<div class="user-avatar-emoji post-avatar">${user.avatar || '👻'}</div>`;
             },
-            renderHonor(user) {
-                if (!user || !user.honor_title) return '';
+            equippedTitleByKey(key) {
+                const map = {
+                    report_privilege: '举报权限',
+                    wearable_unlock: '成就佩戴权限',
+                    co_create_group: '共创群资格',
+                    core_group: '核心群资格',
+                    legacy_new_soul: '新魂',
+                    legacy_chain_traveler: '链上旅人',
+                    legacy_wallet_bound: '钱包绑定',
+                    legacy_dual_identity: '双界行者',
+                    legacy_contract_psychic: '结契通灵者',
+                    legacy_first_post: '首帖达成',
+                    legacy_post_10: '十帖异闻录',
+                    legacy_post_100: '百帖引魂者',
+                    legacy_post_1000: '千帖通灵者',
+                    legacy_year_1: '一年见习者',
+                    legacy_year_5: '五年夜巡者',
+                    legacy_year_10: '十年守秘人',
+                    legacy_admin_guardian: '守夜人'
+                };
+                return map[key] || key;
+            },
+            renderAuthorBadge(user) {
+                if (!user) return '';
+                const equippedKey = (user.equipped_achievement_key || '').trim();
+                if (equippedKey) {
+                    return `<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ${escapeHtml(this.equippedTitleByKey(equippedKey))}</span>`;
+                }
+                if (!user.honor_title) return '';
                 return `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>`;
             },
 
@@ -2091,15 +2118,6 @@
         };
 
         let currentDetailPostId = null;
-        function waitForImages(container) {
-            const imgs = container.querySelectorAll('img');
-            if (!imgs.length) return Promise.resolve();
-            return Promise.all(Array.from(imgs).map(img => {
-                if (img.complete) return Promise.resolve();
-                return new Promise(r => { img.onload = r; img.onerror = r; });
-            }));
-        }
-
         const Modal = {
             open(id) { document.getElementById(id).classList.add('active'); },
             close(id) {
@@ -2178,7 +2196,7 @@
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                         ${p.is_special_announcement ? '<span style="color:var(--accent-orange); font-weight:700;">📜 长公告</span> |' : ''}
                         ${p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span> |' : ''}
-                        发布者: ${escapeHtml(p.author.nickname)} ${UI.renderHonor(p.author)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
+                        发布者: ${escapeHtml(p.author.nickname)} ${UI.renderAuthorBadge(p.author)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
                     </div>
                     <div class="post-detail-content">
                         ${contentHtml}
@@ -2226,26 +2244,11 @@
                     im.loading = 'lazy';
                 });
                 const modalScrollEl = document.querySelector('#postDetailModal .modal');
-                const savedScroll = localStorage.getItem('post_scroll_' + id);
-                if (savedScroll !== null && savedScroll !== '' && modalScrollEl) {
-                    waitForImages(body).then(() => {
-                        requestAnimationFrame(() => {
-                            modalScrollEl.scrollTop = parseInt(savedScroll, 10) || 0;
-                            if (typeof Toast !== 'undefined' && Toast.info) Toast.info('已自动跳转到上次阅读位置');
-                        });
-                    });
+                if (modalScrollEl) {
+                    requestAnimationFrame(() => { modalScrollEl.scrollTop = 0; });
                 }
             }
         };
-
-        (function setupDetailScrollSave() {
-            const modalScrollEl = document.querySelector('#postDetailModal .modal');
-            if (modalScrollEl) {
-                modalScrollEl.addEventListener('scroll', function() {
-                    if (currentDetailPostId != null) localStorage.setItem('post_scroll_' + currentDetailPostId, String(modalScrollEl.scrollTop));
-                });
-            }
-        })();
 
         const Interact = {
             currentReplyParentId: null,
