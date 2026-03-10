@@ -128,7 +128,7 @@ db.init_app(app)
 
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
 from models import (User, Post, Vote, Comment, Like, Bookmark, Notification, UsedTransaction,
-    UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog,
+    UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog, AppSetting,
     build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
     calc_level_info, checkin_exp_by_streak)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
@@ -146,6 +146,122 @@ def _new_user(**kwargs):
         next_id = int(max_id) + 1 if max_id else seed
         kwargs['id'] = next_id
     return User(**kwargs)
+
+
+ACHIEVEMENT_DEFINITIONS = [
+    {
+        'key': 'report_xutong',
+        'title': '举报徐桐权限',
+        'description': '等级达到 2 可使用专属举报按钮',
+        'min_level': 2,
+        'wearable': False,
+        'group_key': None
+    },
+    {
+        'key': 'wearable_unlock',
+        'title': '成就佩戴权限',
+        'description': '等级达到 3 可佩戴成就（一次仅 1 个）',
+        'min_level': 3,
+        'wearable': False,
+        'group_key': None
+    },
+    {
+        'key': 'co_create_group',
+        'title': '共创群资格',
+        'description': '等级达到 5 可加入 Telegram 共创群',
+        'min_level': 5,
+        'wearable': True,
+        'group_key': 'co_create'
+    },
+    {
+        'key': 'core_group',
+        'title': '核心群资格',
+        'description': '等级达到 10 可加入 Telegram 核心群',
+        'min_level': 10,
+        'wearable': True,
+        'group_key': 'core'
+    }
+]
+ACHIEVEMENT_MAP = {a['key']: a for a in ACHIEVEMENT_DEFINITIONS}
+TELEGRAM_GROUP_SETTING_KEYS = {
+    'co_create': 'telegram_group_co_create_url',
+    'core': 'telegram_group_core_url'
+}
+
+
+def _get_user_level(user):
+    info = calc_level_info(getattr(user, 'experience_points', 0) or 0)
+    return int(info.get('level', 1) or 1)
+
+
+def _get_setting_value(setting_key, default_value=''):
+    row = AppSetting.query.filter_by(setting_key=setting_key).first()
+    if not row or row.setting_value is None:
+        return default_value
+    return str(row.setting_value).strip()
+
+
+def _set_setting_value(setting_key, setting_value):
+    row = AppSetting.query.filter_by(setting_key=setting_key).first()
+    if not row:
+        row = AppSetting(setting_key=setting_key, setting_value=setting_value)
+        db.session.add(row)
+    else:
+        row.setting_value = setting_value
+
+
+def _build_group_links_for_user(user):
+    level = _get_user_level(user)
+    co_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], '')
+    core_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], '')
+    items = [
+        {
+            'key': 'co_create',
+            'title': '共创群',
+            'required_level': 5,
+            'unlocked': level >= 5,
+            'configured': bool(co_url),
+            'url': co_url if level >= 5 and co_url else None
+        },
+        {
+            'key': 'core',
+            'title': '核心群',
+            'required_level': 10,
+            'unlocked': level >= 10,
+            'configured': bool(core_url),
+            'url': core_url if level >= 10 and core_url else None
+        }
+    ]
+    return {'level': level, 'groups': items}
+
+
+def _build_achievements_for_user(user):
+    level = _get_user_level(user)
+    equipped_key = (getattr(user, 'equipped_achievement_key', None) or '').strip() or None
+    can_equip = level >= 3
+    if equipped_key:
+        equipped_def = ACHIEVEMENT_MAP.get(equipped_key)
+        if not equipped_def or not equipped_def.get('wearable') or level < int(equipped_def.get('min_level', 999)):
+            equipped_key = None
+    items = []
+    for definition in ACHIEVEMENT_DEFINITIONS:
+        min_level = int(definition.get('min_level', 1))
+        unlocked = level >= min_level
+        items.append({
+            'key': definition['key'],
+            'title': definition['title'],
+            'description': definition['description'],
+            'min_level': min_level,
+            'wearable': bool(definition.get('wearable')),
+            'unlocked': unlocked,
+            'equipped': bool(equipped_key and equipped_key == definition['key'])
+        })
+    return {
+        'level': level,
+        'can_equip': can_equip,
+        'equipped_key': equipped_key,
+        'achievements': items
+    }
 
 # ============== Routes ==============
 
@@ -462,6 +578,75 @@ def daily_checkin():
         'gained_exp': gained_exp,
         'status': _build_checkin_status(user)
     })
+
+
+@app.route('/api/achievements', methods=['GET'])
+@token_required
+def get_my_achievements():
+    return jsonify(_build_achievements_for_user(g.current_user))
+
+
+@app.route('/api/achievements/equip', methods=['POST'])
+@token_required
+def equip_achievement():
+    user = g.current_user
+    level = _get_user_level(user)
+    if level < 3:
+        return jsonify({'error': '等级达到 3 才可佩戴成就'}), 403
+    data = request.get_json() or {}
+    key = (data.get('key') or '').strip()
+    if not key:
+        user.equipped_achievement_key = None
+        db.session.commit()
+        return jsonify({'message': '已取消佩戴', 'status': _build_achievements_for_user(user)})
+
+    definition = ACHIEVEMENT_MAP.get(key)
+    if not definition:
+        return jsonify({'error': '成就不存在'}), 404
+    if not definition.get('wearable'):
+        return jsonify({'error': '该成就不可佩戴'}), 400
+    min_level = int(definition.get('min_level', 1))
+    if level < min_level:
+        return jsonify({'error': f'等级达到 {min_level} 才可佩戴该成就'}), 403
+
+    user.equipped_achievement_key = key
+    db.session.commit()
+    return jsonify({'message': f'已佩戴「{definition.get("title")}」', 'status': _build_achievements_for_user(user)})
+
+
+@app.route('/api/group-links', methods=['GET'])
+@token_required
+def get_group_links():
+    return jsonify(_build_group_links_for_user(g.current_user))
+
+
+@app.route('/api/admin/group-links', methods=['GET'])
+@token_required
+@admin_required
+def get_admin_group_links():
+    return jsonify({
+        'co_create_url': _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], ''),
+        'core_url': _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], '')
+    })
+
+
+@app.route('/api/admin/group-links', methods=['PUT'])
+@token_required
+@admin_required
+def set_admin_group_links():
+    data = request.get_json() or {}
+    co_url = (data.get('co_create_url') or '').strip()
+    core_url = (data.get('core_url') or '').strip()
+    for val in (co_url, core_url):
+        if val and not (val.startswith('https://t.me/') or val.startswith('http://t.me/') or val.startswith('https://telegram.me/')):
+            return jsonify({'error': '群链接仅支持 Telegram（t.me / telegram.me）'}), 400
+        if len(val) > 1000:
+            return jsonify({'error': '链接过长'}), 400
+    _set_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], co_url)
+    _set_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], core_url)
+    db.session.commit()
+    _log_admin_action('group_links_update', 'setting', 'telegram_group_links')
+    return jsonify({'message': '群链接已更新'})
 
 @app.route('/api/user/password', methods=['PUT'])
 @token_required
@@ -1858,13 +2043,25 @@ def create_report():
         return jsonify({'error': '请填写举报原因（最多500字）'}), 400
     if not post_id and not reported_user_id:
         return jsonify({'error': '请指定举报的帖子或用户'}), 400
+    target_type = 'user'
+    target_id = 0
     if post_id:
         post = Post.query.get(post_id)
         if not post:
             return jsonify({'error': '帖子不存在'}), 404
         reported_user_id = post.author_id
+        target_type = 'post'
+        target_id = int(post_id)
+    elif reported_user_id:
+        target_type = 'user'
+        try:
+            target_id = int(reported_user_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': '被举报用户 ID 非法'}), 400
     r = Report(
         reporter_id=g.current_user.id,
+        target_type=target_type,
+        target_id=target_id,
         reported_user_id=reported_user_id,
         post_id=post_id,
         reason=reason,
@@ -1873,6 +2070,37 @@ def create_report():
     db.session.add(r)
     db.session.commit()
     return jsonify({'message': '举报已提交，管理员会尽快处理', 'id': r.id}), 201
+
+
+@app.route('/api/reports/xutong', methods=['POST'])
+@token_required
+def report_xutong():
+    level = _get_user_level(g.current_user)
+    if level < 2:
+        return jsonify({'error': '等级达到 2 才能解锁该举报权限'}), 403
+    data = request.get_json(silent=True) or {}
+    extra_reason = (data.get('reason') or '').strip()
+    if len(extra_reason) > 460:
+        return jsonify({'error': '补充说明最多 460 字'}), 400
+    reason = '等级权益举报：徐桐'
+    if extra_reason:
+        reason = f'{reason} | {extra_reason}'
+
+    target_user = User.query.filter(
+        (User.nickname == '徐桐') | (User.username == 'xutong')
+    ).first()
+    row = Report(
+        reporter_id=g.current_user.id,
+        target_type='user',
+        target_id=target_user.id if target_user else 0,
+        reported_user_id=target_user.id if target_user else None,
+        post_id=None,
+        reason=reason,
+        status='pending'
+    )
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'message': '已提交「举报徐桐」', 'id': row.id}), 201
 
 @app.route('/api/admin/reports', methods=['GET'])
 @token_required
@@ -1896,7 +2124,9 @@ def update_report(report_id):
     if data.get('status') in ('resolved', 'dismissed'):
         r.status = data['status']
     if 'admin_notes' in data:
-        r.admin_notes = (data['admin_notes'] or '')[:500]
+        notes = (data['admin_notes'] or '')[:500]
+        r.admin_notes = notes
+        r.admin_note = notes
     db.session.commit()
     _log_admin_action('report_update', 'report', report_id, f"status={r.status}")
     return jsonify({'message': '已更新', 'report': r.to_dict()})
@@ -2057,14 +2287,14 @@ def _ensure_users_withdrawable_balance():
 
 
 def _ensure_users_checkin_columns():
-    """启动时确保 users 表存在签到经验相关列。"""
+    """启动时确保 users 表存在签到经验与成就佩戴相关列。"""
     from sqlalchemy import text
     dialect = db.engine.dialect.name
     try:
         if dialect == 'postgresql':
             cols = db.session.execute(text("""
                 SELECT column_name FROM information_schema.columns
-                WHERE table_name='users' AND column_name IN ('experience_points','checkin_streak','last_checkin_date')
+                WHERE table_name='users' AND column_name IN ('experience_points','checkin_streak','last_checkin_date','equipped_achievement_key')
             """)).fetchall()
             existing = {c[0] for c in cols}
             changed = False
@@ -2079,6 +2309,10 @@ def _ensure_users_checkin_columns():
             if 'last_checkin_date' not in existing:
                 db.session.execute(text("ALTER TABLE users ADD COLUMN last_checkin_date DATE"))
                 print('[Startup] users.last_checkin_date added.')
+                changed = True
+            if 'equipped_achievement_key' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN equipped_achievement_key VARCHAR(64)"))
+                print('[Startup] users.equipped_achievement_key added.')
                 changed = True
             if changed:
                 db.session.commit()
@@ -2099,6 +2333,10 @@ def _ensure_users_checkin_columns():
                 db.session.execute(text("ALTER TABLE users ADD COLUMN last_checkin_date DATE"))
                 print('[Startup] users.last_checkin_date added.')
                 changed = True
+            if 'equipped_achievement_key' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN equipped_achievement_key VARCHAR(64)"))
+                print('[Startup] users.equipped_achievement_key added.')
+                changed = True
             if changed:
                 db.session.commit()
             return
@@ -2114,6 +2352,14 @@ def _ensure_checkin_logs_table():
         CheckinLog.__table__.create(db.engine, checkfirst=True)
     except Exception as e:
         print(f'[Startup] checkin_logs table skip: {e}')
+
+
+def _ensure_app_settings_table():
+    """启动时确保站点配置表存在。"""
+    try:
+        AppSetting.__table__.create(db.engine, checkfirst=True)
+    except Exception as e:
+        print(f'[Startup] app_settings table skip: {e}')
 
 def _ensure_posts_tx_nullable():
     """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
@@ -2211,6 +2457,81 @@ def _ensure_posts_special_column():
         db.session.rollback()
         print(f'[Startup] posts special column skip: {e}')
 
+
+def _ensure_reports_columns():
+    """启动时兼容 reports 历史表结构（补齐新旧字段并避免 NOT NULL 报错）。"""
+    from sqlalchemy import text
+    dialect = db.engine.dialect.name
+    try:
+        if dialect == 'postgresql':
+            cols = db.session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='reports' AND column_name IN ('target_type','target_id','reported_user_id','post_id','admin_note','admin_notes')
+            """)).fetchall()
+            existing = {c[0] for c in cols}
+            changed = False
+            if 'target_type' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_type VARCHAR(20) NOT NULL DEFAULT 'user'"))
+                print('[Startup] reports.target_type added.')
+                changed = True
+            if 'target_id' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_id BIGINT NOT NULL DEFAULT 0"))
+                print('[Startup] reports.target_id added.')
+                changed = True
+            if 'reported_user_id' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN reported_user_id BIGINT NULL"))
+                print('[Startup] reports.reported_user_id added.')
+                changed = True
+            if 'post_id' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN post_id BIGINT NULL"))
+                print('[Startup] reports.post_id added.')
+                changed = True
+            if 'admin_note' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_note VARCHAR(500) NULL"))
+                print('[Startup] reports.admin_note added.')
+                changed = True
+            if 'admin_notes' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_notes VARCHAR(500) NULL"))
+                print('[Startup] reports.admin_notes added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(reports)")).fetchall()
+            existing = {c[1] for c in cols}
+            changed = False
+            if 'target_type' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_type VARCHAR(20) NOT NULL DEFAULT 'user'"))
+                print('[Startup] reports.target_type added.')
+                changed = True
+            if 'target_id' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_id BIGINT NOT NULL DEFAULT 0"))
+                print('[Startup] reports.target_id added.')
+                changed = True
+            if 'reported_user_id' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN reported_user_id BIGINT"))
+                print('[Startup] reports.reported_user_id added.')
+                changed = True
+            if 'post_id' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN post_id BIGINT"))
+                print('[Startup] reports.post_id added.')
+                changed = True
+            if 'admin_note' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_note VARCHAR(500)"))
+                print('[Startup] reports.admin_note added.')
+                changed = True
+            if 'admin_notes' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_notes VARCHAR(500)"))
+                print('[Startup] reports.admin_notes added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+    except Exception as e:
+        db.session.rollback()
+        print(f'[Startup] reports columns skip: {e}')
+
 def _check_receive_address():
     """启动时检查：未配置 RECEIVE_ADDRESS 时打印明确错误提示（发帖费与站长赞赏需要）。"""
     addr = app.config.get('BSC', {}).get('RECEIVE_ADDRESS')
@@ -2234,9 +2555,11 @@ def _run_startup_tasks():
     _ensure_users_withdrawable_balance()
     _ensure_users_checkin_columns()
     _ensure_checkin_logs_table()
+    _ensure_app_settings_table()
     _ensure_posts_tx_nullable()
     _ensure_posts_pin_columns()
     _ensure_posts_special_column()
+    _ensure_reports_columns()
     if _should_run_init_db():
         init_db_data()
     _check_receive_address()

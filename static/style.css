@@ -260,7 +260,8 @@ body.page-motion.page-leaving {
 }
 .sidebar-card p { display: none; } /* Hide long card copy in mobile horizontal sidebar */
 .onboarding-card p,
-.checkin-card p { display: block; }
+.checkin-card p,
+.group-links-card p { display: block; }
 .nav-item {
     margin: 0; padding: 6px 16px; background: var(--bg-card); border: 1px solid var(--border-color);
     border-radius: 20px; font-size: 14px; flex-shrink: 0; color: var(--text-secondary);
@@ -358,6 +359,12 @@ body.page-motion.page-leaving {
 }
 
 .checkin-card {
+    display: block;
+    min-width: 280px;
+    white-space: normal;
+    padding: 12px;
+}
+.group-links-card {
     display: block;
     min-width: 280px;
     white-space: normal;
@@ -740,6 +747,9 @@ body.page-motion.page-leaving {
         min-width: 0;
     }
     .checkin-card {
+        min-width: 0;
+    }
+    .group-links-card {
         min-width: 0;
     }
     .nav-item {

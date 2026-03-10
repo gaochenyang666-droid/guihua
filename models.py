@@ -69,6 +69,7 @@ class User(db.Model):
     experience_points = db.Column(db.Integer, default=0)
     checkin_streak = db.Column(db.Integer, default=0)
     last_checkin_date = db.Column(db.Date, nullable=True, index=True)
+    equipped_achievement_key = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic', foreign_keys='Post.author_id')
@@ -155,6 +156,7 @@ class User(db.Model):
             'level_next_exp': level_info['level_next_exp'],
             'level_progress': level_info['level_progress'],
             'checkin_streak': int(getattr(self, 'checkin_streak', 0) or 0),
+            'equipped_achievement_key': getattr(self, 'equipped_achievement_key', None),
         }
 
 
@@ -402,14 +404,25 @@ class CheckinLog(db.Model):
     __table_args__ = (db.UniqueConstraint('user_id', 'checkin_date', name='uniq_user_checkin_date'),)
 
 
+class AppSetting(db.Model):
+    __tablename__ = 'app_settings'
+    id = db.Column(db.Integer, primary_key=True)
+    setting_key = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    setting_value = db.Column(db.String(2000), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class Report(db.Model):
     __tablename__ = 'reports'
     id = db.Column(db.Integer, primary_key=True)
     reporter_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False)
+    target_type = db.Column(db.String(20), nullable=False, default='user')
+    target_id = db.Column(db.BigInteger, nullable=False, default=0)
     reported_user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     reason = db.Column(db.String(500), nullable=False)
     status = db.Column(db.String(20), default='pending')
+    admin_note = db.Column(db.String(500), nullable=True)
     admin_notes = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reporter = db.relationship('User', foreign_keys=[reporter_id])
@@ -420,11 +433,13 @@ class Report(db.Model):
         return {
             'id': self.id,
             'reporter_id': self.reporter_id,
+            'target_type': self.target_type,
+            'target_id': self.target_id,
             'reported_user_id': self.reported_user_id,
             'post_id': self.post_id,
             'reason': self.reason,
             'status': self.status,
-            'admin_notes': self.admin_notes,
+            'admin_notes': self.admin_notes or self.admin_note,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'reporter_nickname': self.reporter.nickname if self.reporter else None,
             'reported_nickname': self.reported_user.nickname if self.reported_user else None,

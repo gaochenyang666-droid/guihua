@@ -110,6 +110,11 @@
                     <span class="checkin-tip" id="checkinTip">经验规则：连续第 N 天 = min(12, N*2)</span>
                 </div>
             </div>
+            <div class="sidebar-card glass group-links-card" id="groupLinksCard" hidden>
+                <p class="checkin-title">🛰️ 社群入口</p>
+                <p class="checkin-subtitle" id="groupLinksHint">达到等级后自动解锁 Telegram 群链接</p>
+                <div id="groupLinksList" class="onboarding-task-list"></div>
+            </div>
             <div class="sidebar-card glass" style="font-size: 0.85rem; color: var(--text-secondary); display: block;">
                 <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
                 <p>内容均由创作者共建。通过 Arweave 实现分布式永存，支付少量 USDT，让你的故事在赛博世界长生不老。</p>
@@ -161,7 +166,7 @@
         <a href="#" onclick="Auth.checkAndGoStudio(); return false;" class="bottom-nav-item">
             <i class="fas fa-plus-circle nav-highlight-btn" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
         </a>
-        <a href="#" onclick="if(currentUser) navigateWithTransition('/profile?user='+currentUser.username); else Modal.open('loginModal'); return false;" class="bottom-nav-item">
+        <a href="#" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else Modal.open('loginModal'); return false;" class="bottom-nav-item">
             <i class="fas fa-user"></i>
             <span>我的</span>
         </a>
@@ -429,6 +434,7 @@
                 SiteNotice.load();
                 Onboarding.load();
                 Checkin.load();
+                GroupLinks.load();
                 if (localStorage.getItem('token') && typeof Notification !== 'undefined' && Notification.load) {
                     setInterval(function() {
                         if (document.visibilityState === 'visible') Notification.load();
@@ -1130,6 +1136,68 @@
         };
         window.Checkin = Checkin;
 
+        const GroupLinks = {
+            hideCard() {
+                const card = document.getElementById('groupLinksCard');
+                if (card) card.hidden = true;
+            },
+            showCard() {
+                const card = document.getElementById('groupLinksCard');
+                if (card) card.hidden = false;
+            },
+            render(payload) {
+                const listEl = document.getElementById('groupLinksList');
+                const hintEl = document.getElementById('groupLinksHint');
+                if (!listEl || !payload || !Array.isArray(payload.groups)) {
+                    this.hideCard();
+                    return;
+                }
+                const level = Number(payload.level || 1);
+                if (hintEl) hintEl.textContent = `当前等级 Lv.${Math.max(1, level)}，达标后自动解锁`;
+                listEl.innerHTML = payload.groups.map((g) => {
+                    const required = Number(g.required_level || 1);
+                    if (g.unlocked && g.url) {
+                        const safeUrl = escapeAttr(g.url);
+                        return `<div class="onboarding-task-item">
+                            <span>✅</span>
+                            <a href="${safeUrl}" target="_blank" rel="noopener" style="color:var(--accent-green); text-decoration:underline;">加入${escapeHtml(g.title || '')}</a>
+                        </div>`;
+                    }
+                    if (g.unlocked && !g.configured) {
+                        return `<div class="onboarding-task-item"><span>🛠️</span><span>${escapeHtml(g.title || '')} 链接待管理员配置</span></div>`;
+                    }
+                    return `<div class="onboarding-task-item"><span>🔒</span><span>Lv.${required} 解锁 ${escapeHtml(g.title || '')}</span></div>`;
+                }).join('');
+                this.showCard();
+            },
+            async load() {
+                if (!currentUser) {
+                    this.hideCard();
+                    return;
+                }
+                try {
+                    const token = localStorage.getItem('token');
+                    if (!token) {
+                        this.hideCard();
+                        return;
+                    }
+                    const res = await fetch(`${API_BASE}/group-links`, {
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        cache: 'no-store'
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        this.hideCard();
+                        return;
+                    }
+                    this.render(data);
+                } catch (_) {
+                    this.hideCard();
+                }
+            }
+        };
+        window.GroupLinks = GroupLinks;
+
         const Post = {
             currentPage: 1,
             totalPages: 1,
@@ -1388,6 +1456,13 @@
                             annBtn.style.borderColor = 'var(--accent-orange)';
                             annBtn.textContent = '📣 公告';
                             annBtn.onclick = Admin.openAnnouncements;
+                            const groupBtn = document.createElement('button');
+                            groupBtn.id = 'adminGroupLinksBtn';
+                            groupBtn.className = 'btn btn-ghost';
+                            groupBtn.style.color = 'var(--accent-green)';
+                            groupBtn.style.borderColor = 'var(--accent-green)';
+                            groupBtn.textContent = '🛰️ 群链接';
+                            groupBtn.onclick = Admin.editGroupLinks;
                             const auditBtn = document.createElement('button');
                             auditBtn.id = 'adminAuditBtn';
                             auditBtn.className = 'btn btn-ghost';
@@ -1398,6 +1473,7 @@
                             logoutBtn.parentNode.insertBefore(usersBtn, logoutBtn);
                             logoutBtn.parentNode.insertBefore(reportsBtn, logoutBtn);
                             logoutBtn.parentNode.insertBefore(annBtn, logoutBtn);
+                            logoutBtn.parentNode.insertBefore(groupBtn, logoutBtn);
                             logoutBtn.parentNode.insertBefore(auditBtn, logoutBtn);
                             logoutBtn.parentNode.insertBefore(statsBtn, logoutBtn);
                         }
@@ -1413,6 +1489,7 @@
                 }
                 Onboarding.load();
                 Checkin.load();
+                GroupLinks.load();
             },
 
             resolveCoverUrl(post) {
@@ -1769,6 +1846,44 @@
                     `).join('');
                 } catch (e) {
                     body.innerHTML = `<div style="color:var(--accent-red);">${e.message || '加载失败'}</div>`;
+                }
+            },
+            async editGroupLinks() {
+                try {
+                    const res = await fetch(`${API_BASE}/admin/group-links`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        Toast.error(data.error || '读取群链接失败');
+                        return;
+                    }
+                    const currentCo = data.co_create_url || '';
+                    const currentCore = data.core_url || '';
+                    const co = prompt('设置「共创群」Telegram 链接（留空=清空）', currentCo);
+                    if (co === null) return;
+                    const core = prompt('设置「核心群」Telegram 链接（留空=清空）', currentCore);
+                    if (core === null) return;
+                    const saveRes = await fetch(`${API_BASE}/admin/group-links`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({
+                            co_create_url: (co || '').trim(),
+                            core_url: (core || '').trim()
+                        })
+                    });
+                    const saveData = await saveRes.json().catch(() => ({}));
+                    if (!saveRes.ok) {
+                        Toast.error(saveData.error || '保存失败');
+                        return;
+                    }
+                    Toast.success(saveData.message || '群链接已更新');
+                    GroupLinks.load();
+                } catch (_) {
+                    Toast.error('网络错误');
                 }
             }
         };

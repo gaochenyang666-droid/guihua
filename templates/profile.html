@@ -27,6 +27,7 @@
 
     <div class="container" style="max-width: 800px; margin: 2rem auto; padding: 0 1rem;">
         <div id="profileArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 2rem;">加载中...</div>
+        <div id="achievementsArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 2rem; padding: 1rem;" hidden></div>
         
         <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">发布的灵异事件</h3>
         <div id="postsArea" class="post-list"></div>
@@ -82,12 +83,26 @@
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
         let displayedUser = null;
+        let displayedPosts = [];
         let tempAvatar = null;
+        let myAchievementsState = null;
+        const ACHIEVEMENT_META = {
+            report_xutong: { title: '举报徐桐权限', min_level: 2, wearable: false },
+            wearable_unlock: { title: '成就佩戴权限', min_level: 3, wearable: false },
+            co_create_group: { title: '共创群资格', min_level: 5, wearable: true },
+            core_group: { title: '核心群资格', min_level: 10, wearable: true }
+        };
         const escapeAttr = (s) => (s == null ? '' : String(s))
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
+
+        function achievementTitleByKey(key) {
+            if (!key) return '';
+            const m = ACHIEVEMENT_META[key];
+            return m ? m.title : key;
+        }
 
         function resolvePostCoverUrl(post) {
             const normalize = (val) => {
@@ -139,6 +154,8 @@
                 if(!currentUser) { navigateWithTransition('/'); return; }
                 displayedUser = currentUser;
                 renderProfile(currentUser, []);
+                renderAchievementWall(true, currentUser);
+                loadAchievements();
                 loadUserPosts(currentUser.username || currentUser.address);
             } else {
                 try {
@@ -150,6 +167,9 @@
                     }
                     displayedUser = data.user;
                     renderProfile(data.user, data.posts);
+                    if (currentUser && data.user && data.user.id === currentUser.id) {
+                        loadAchievements();
+                    }
                 } catch(e) {
                     showProfileError(e.message || '加载失败', true);
                 }
@@ -160,8 +180,95 @@
             const backHtml = showBack ? '<p style="margin-top:1rem;"><a href="/" class="btn btn-primary">返回首页</a></p>' : '';
             document.getElementById('profileArea').innerHTML = `<div style="text-align:center; padding: 2rem; color: var(--text-secondary);"><p style="color:var(--accent-red); margin-bottom:0.5rem;">${msg}</p>${backHtml}</div>`;
         }
+
+        function renderAchievementWall(isMe, user) {
+            const wall = document.getElementById('achievementsArea');
+            if (!wall) return;
+            if (!isMe) {
+                const equippedTitle = achievementTitleByKey(user && user.equipped_achievement_key);
+                if (!equippedTitle) {
+                    wall.hidden = true;
+                    wall.innerHTML = '';
+                    return;
+                }
+                wall.hidden = false;
+                wall.innerHTML = `
+                    <h3 style="margin-bottom:0.8rem;">🏆 成就墙</h3>
+                    <div style="color:var(--text-secondary);">当前佩戴：<span style="color:var(--accent-gold);">${escapeHtml(equippedTitle)}</span></div>
+                `;
+                return;
+            }
+
+            const state = myAchievementsState;
+            if (!state || !Array.isArray(state.achievements)) {
+                wall.hidden = true;
+                wall.innerHTML = '';
+                return;
+            }
+            const canEquip = !!state.can_equip;
+            const cards = state.achievements.map((a) => {
+                const unlocked = !!a.unlocked;
+                const wearable = !!a.wearable;
+                const lockedText = unlocked ? '已解锁' : `Lv.${a.min_level} 解锁`;
+                let actionHtml = '';
+                if (a.key === 'report_xutong') {
+                    actionHtml = unlocked
+                        ? '<button class="btn btn-ghost btn-sm" style="border-color:var(--accent-red); color:var(--accent-red);" onclick="Achievements.reportXuTong()">举报徐桐</button>'
+                        : '<span style="font-size:0.78rem; color:var(--text-muted);">等级不足，无法举报</span>';
+                } else if (wearable) {
+                    if (!unlocked) {
+                        actionHtml = '<span style="font-size:0.78rem; color:var(--text-muted);">未达佩戴等级</span>';
+                    } else if (!canEquip) {
+                        actionHtml = '<span style="font-size:0.78rem; color:var(--text-muted);">Lv.3 解锁佩戴按钮</span>';
+                    } else if (a.equipped) {
+                        actionHtml = `<button class="btn btn-primary btn-sm" onclick="Achievements.equip('')">取消佩戴</button>`;
+                    } else {
+                        actionHtml = `<button class="btn btn-ghost btn-sm" onclick="Achievements.equip('${escapeAttr(a.key)}')">佩戴</button>`;
+                    }
+                } else if (a.key === 'wearable_unlock') {
+                    actionHtml = unlocked
+                        ? '<span style="font-size:0.78rem; color:var(--accent-green);">已解锁佩戴能力</span>'
+                        : '<span style="font-size:0.78rem; color:var(--text-muted);">Lv.3 解锁</span>';
+                }
+                return `
+                    <div style="padding:0.75rem; border:1px solid ${unlocked ? 'rgba(16,185,129,0.35)' : 'var(--border-color)'}; border-radius:12px; background:${unlocked ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)'};">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">
+                            <b>${escapeHtml(a.title || '')}</b>
+                            <span style="font-size:0.74rem; color:${unlocked ? 'var(--accent-green)' : 'var(--text-muted)'};">${lockedText}</span>
+                        </div>
+                        <div style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:0.55rem;">${escapeHtml(a.description || '')}</div>
+                        <div>${actionHtml}</div>
+                    </div>
+                `;
+            }).join('');
+            const equippedTitle = achievementTitleByKey(state.equipped_key);
+            wall.hidden = false;
+            wall.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.8rem; flex-wrap:wrap;">
+                    <h3>🏆 我的成就安装墙</h3>
+                    <span style="font-size:0.8rem; color:var(--text-secondary);">当前佩戴：${equippedTitle ? `<span style="color:var(--accent-gold);">${escapeHtml(equippedTitle)}</span>` : '未佩戴'}</span>
+                </div>
+                <div style="display:grid; gap:0.7rem;">${cards}</div>
+            `;
+        }
+
+        async function loadAchievements() {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`${API_BASE}/achievements`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) return;
+                myAchievementsState = data;
+                if (displayedUser && currentUser && displayedUser.id === currentUser.id) {
+                    renderAchievementWall(true, displayedUser);
+                }
+            } catch (_) {}
+        }
         
         function renderProfile(user, posts) {
+            displayedPosts = Array.isArray(posts) ? posts : [];
             // Always render emoji avatar
             let avatarHtml = `<div class="avatar-lg">${user.avatar || '👻'}</div>`;
             
@@ -175,6 +282,7 @@
                             <h1 style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                                 <span>${escapeHtml(user.nickname)}</span>
                                 ${user.honor_title ? `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>` : ''}
+                                ${user.equipped_achievement_key ? `<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ${escapeHtml(achievementTitleByKey(user.equipped_achievement_key))}</span>` : ''}
                             </h1>
                             ${isMe ? `<div style="display:flex; gap:0.5rem;"><button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>${currentUser.username ? `<button class="btn btn-ghost btn-sm" onclick="EditProfile.openChangePassword()">🔒 修改密码</button>` : ''}</div>` : ''}
                         </div>
@@ -207,15 +315,16 @@
                     </div>
                 </div>
             `;
+            renderAchievementWall(!!isMe, user);
             
-            if(posts && posts.length > 0) {
+            if(displayedPosts && displayedPosts.length > 0) {
                 const proofLink = (p) => {
                     const parts = [];
                     if (p.tx_hash) parts.push('<a href="https://bscscan.com/tx/' + p.tx_hash + '" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证</a>');
                     if (p.ipfs_cid) parts.push('<a href="https://arweave.net/' + p.ipfs_cid + '" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>');
                     return parts.length ? '<div style="margin-top:0.4rem; font-size:0.75rem;">链上证据: ' + parts.join(' · ') + '</div>' : '';
                 };
-                document.getElementById('postsArea').innerHTML = posts.map(p => `
+                document.getElementById('postsArea').innerHTML = displayedPosts.map(p => `
                     <div class="post-item glass" onclick="navigateWithTransition('/?post=${p.id}')"> 
                         ${renderPostCover(p)}
                         <div style="flex:1;">
@@ -245,11 +354,73 @@
                 if(data.user) {
                     displayedUser = data.user;
                     renderProfile(data.user, data.posts || []);
+                    if (currentUser && data.user && data.user.id === currentUser.id) {
+                        loadAchievements();
+                    }
                 }
             } catch(e) {
                 showProfileError('加载帖子失败', true);
             }
         }
+
+        const Achievements = {
+            async equip(key) {
+                if (!currentUser) return;
+                try {
+                    const res = await fetch(`${API_BASE}/achievements/equip`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({ key: key || '' })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        if (typeof Toast !== 'undefined') Toast.error(data.error || '操作失败');
+                        return;
+                    }
+                    myAchievementsState = data.status || null;
+                    if (myAchievementsState && myAchievementsState.equipped_key !== undefined) {
+                        currentUser.equipped_achievement_key = myAchievementsState.equipped_key || null;
+                        if (displayedUser && displayedUser.id === currentUser.id) {
+                            displayedUser.equipped_achievement_key = currentUser.equipped_achievement_key;
+                        }
+                    }
+                    if (displayedUser && displayedUser.id === currentUser.id) {
+                        renderProfile(displayedUser, displayedPosts);
+                    } else if (displayedUser) {
+                        renderAchievementWall(true, displayedUser);
+                    }
+                    if (typeof Toast !== 'undefined') Toast.success(data.message || '佩戴状态已更新');
+                } catch (_) {
+                    if (typeof Toast !== 'undefined') Toast.error('网络错误');
+                }
+            },
+            async reportXuTong() {
+                if (!currentUser) return;
+                const reason = prompt('可选：补充举报说明（最多 460 字）') || '';
+                try {
+                    const res = await fetch(`${API_BASE}/reports/xutong`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({ reason: reason.trim() })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        if (typeof Toast !== 'undefined') Toast.error(data.error || '提交失败');
+                        return;
+                    }
+                    if (typeof Toast !== 'undefined') Toast.success(data.message || '已提交举报');
+                } catch (_) {
+                    if (typeof Toast !== 'undefined') Toast.error('网络错误');
+                }
+            }
+        };
+        window.Achievements = Achievements;
 
         const EditProfile = {
             open() {
