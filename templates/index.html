@@ -106,42 +106,60 @@
                 </div>
                 <div id="onboardingTaskList" class="onboarding-task-list"></div>
             </div>
-            <div class="sidebar-card glass checkin-card" id="checkinCard" hidden>
-                <div class="checkin-head">
-                    <div>
-                        <p class="checkin-title">📅 每日签到</p>
-                        <p class="checkin-subtitle" id="checkinSubtitle">连续签到 0 天</p>
+            <div class="sidebar-card glass checkin-card utility-accordion-card" id="checkinCard" data-utility-key="checkin" hidden>
+                <button class="utility-card-trigger" type="button" data-utility-trigger="checkin">
+                    <span class="utility-card-title">📅 每日签到</span>
+                    <span class="utility-card-meta" id="checkinHeaderMeta">显示详情</span>
+                    <span class="utility-card-trigger-icon">▼</span>
+                </button>
+                <div class="utility-card-detail" id="checkinCardDetail">
+                    <div class="checkin-head">
+                        <div>
+                            <p class="checkin-subtitle" id="checkinSubtitle">连续签到 0 天</p>
+                        </div>
+                        <span class="checkin-pill" id="checkinState">未签到</span>
                     </div>
-                    <span class="checkin-pill" id="checkinState">未签到</span>
-                </div>
-                <div class="checkin-stats">
-                    <div class="checkin-stat">
-                        <div class="checkin-stat-key">等级</div>
-                        <div class="checkin-stat-val" id="checkinLevel">Lv.1</div>
+                    <div class="checkin-stats">
+                        <div class="checkin-stat">
+                            <div class="checkin-stat-key">等级</div>
+                            <div class="checkin-stat-val" id="checkinLevel">Lv.1</div>
+                        </div>
+                        <div class="checkin-stat">
+                            <div class="checkin-stat-key">经验</div>
+                            <div class="checkin-stat-val" id="checkinExp">0</div>
+                        </div>
+                        <div class="checkin-stat">
+                            <div class="checkin-stat-key">今日奖励</div>
+                            <div class="checkin-stat-val" id="checkinReward">+2</div>
+                        </div>
                     </div>
-                    <div class="checkin-stat">
-                        <div class="checkin-stat-key">经验</div>
-                        <div class="checkin-stat-val" id="checkinExp">0</div>
+                    <div class="checkin-progress"><span id="checkinProgressBar"></span></div>
+                    <div class="checkin-actions">
+                        <button class="btn btn-ghost btn-sm" id="checkinBtn" type="button" onclick="Checkin.sign()">立即签到</button>
+                        <span class="checkin-tip" id="checkinTip">经验规则：连续第 N 天 = min(12, N*2)，每 3 天额外 +3</span>
                     </div>
-                    <div class="checkin-stat">
-                        <div class="checkin-stat-key">今日奖励</div>
-                        <div class="checkin-stat-val" id="checkinReward">+2</div>
-                    </div>
-                </div>
-                <div class="checkin-progress"><span id="checkinProgressBar"></span></div>
-                <div class="checkin-actions">
-                    <button class="btn btn-ghost btn-sm" id="checkinBtn" type="button" onclick="Checkin.sign()">立即签到</button>
-                    <span class="checkin-tip" id="checkinTip">经验规则：连续第 N 天 = min(12, N*2)，每 3 天额外 +3</span>
                 </div>
             </div>
-            <div class="sidebar-card glass group-links-card" id="groupLinksCard" hidden>
-                <p class="checkin-title">🛰️ 社群入口</p>
-                <p class="checkin-subtitle" id="groupLinksHint">达到等级后自动解锁 Telegram 群链接</p>
-                <div id="groupLinksList" class="onboarding-task-list"></div>
+            <div class="sidebar-card glass group-links-card utility-accordion-card" id="groupLinksCard" data-utility-key="group" hidden>
+                <button class="utility-card-trigger" type="button" data-utility-trigger="group">
+                    <span class="utility-card-title">🛰️ 社群入口</span>
+                    <span class="utility-card-meta">显示详情</span>
+                    <span class="utility-card-trigger-icon">▼</span>
+                </button>
+                <div class="utility-card-detail">
+                    <p class="checkin-subtitle" id="groupLinksHint">达到等级后自动解锁 Telegram 群链接</p>
+                    <div id="groupLinksList" class="onboarding-task-list"></div>
+                </div>
             </div>
-            <div class="sidebar-card glass sidebar-web3-note" id="web3NoteCard" style="display: block;">
-                <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
-                <p>内容均由创作者共建。通过 Arweave 实现分布式永存，支付少量 USDT，让你的故事在赛博世界长生不老。</p>
+            <div class="sidebar-card glass sidebar-web3-note utility-accordion-card" id="web3NoteCard" data-utility-key="web3" style="display: block;">
+                <button class="utility-card-trigger" type="button" data-utility-trigger="web3">
+                    <span class="utility-card-title">👻 Web3 内容映射</span>
+                    <span class="utility-card-meta">显示详情</span>
+                    <span class="utility-card-trigger-icon">▼</span>
+                </button>
+                <div class="utility-card-detail">
+                    <p>内容均由创作者共建。通过 Arweave 实现分布式永存，支付少量 USDT，让你的故事在赛博世界长生不老。</p>
+                </div>
             </div>
                 </div>
             </div>

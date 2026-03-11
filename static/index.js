@@ -728,11 +728,17 @@
                 const card = document.getElementById('checkinCard');
                 if (!card) return;
                 card.hidden = true;
+                if (window.UtilityPanels && typeof window.UtilityPanels.onCardVisibilityChange === 'function') {
+                    window.UtilityPanels.onCardVisibilityChange('checkin', false);
+                }
             },
             showCard() {
                 const card = document.getElementById('checkinCard');
                 if (!card) return;
                 card.hidden = false;
+                if (window.UtilityPanels && typeof window.UtilityPanels.onCardVisibilityChange === 'function') {
+                    window.UtilityPanels.onCardVisibilityChange('checkin', true);
+                }
             },
             applyToCurrentUser(status) {
                 if (!currentUser || !status) return;
@@ -771,6 +777,7 @@
                 const barEl = document.getElementById('checkinProgressBar');
                 const btn = document.getElementById('checkinBtn');
                 const tipEl = document.getElementById('checkinTip');
+                const headerMetaEl = document.getElementById('checkinHeaderMeta');
 
                 if (subtitleEl) subtitleEl.textContent = adminExempt ? '管理员免签到' : `连续签到 ${streak} 天`;
                 if (stateEl) {
@@ -790,6 +797,9 @@
                     if (adminExempt) tipEl.textContent = '管理员拥有全部签到权益（免签到）';
                     else if (bonusReward > 0) tipEl.textContent = `当前等级进度 ${cur}/${next} · 下次连签奖励 +${bonusReward}`;
                     else tipEl.textContent = `当前等级进度 ${cur}/${next}`;
+                }
+                if (headerMetaEl) {
+                    headerMetaEl.textContent = adminExempt ? '管理员免签到' : (already ? '今日已签到' : '显示详情');
                 }
 
                 this.showCard();
@@ -860,10 +870,16 @@
             hideCard() {
                 const card = document.getElementById('groupLinksCard');
                 if (card) card.hidden = true;
+                if (window.UtilityPanels && typeof window.UtilityPanels.onCardVisibilityChange === 'function') {
+                    window.UtilityPanels.onCardVisibilityChange('group', false);
+                }
             },
             showCard() {
                 const card = document.getElementById('groupLinksCard');
                 if (card) card.hidden = false;
+                if (window.UtilityPanels && typeof window.UtilityPanels.onCardVisibilityChange === 'function') {
+                    window.UtilityPanels.onCardVisibilityChange('group', true);
+                }
             },
             render(payload) {
                 const listEl = document.getElementById('groupLinksList');
@@ -919,6 +935,80 @@
             }
         };
         window.GroupLinks = GroupLinks;
+
+        const UtilityPanels = {
+            _cards: {},
+            _expandedKey: '',
+            init() {
+                this._cards = {
+                    checkin: document.getElementById('checkinCard'),
+                    group: document.getElementById('groupLinksCard'),
+                    web3: document.getElementById('web3NoteCard')
+                };
+                const triggers = Array.from(document.querySelectorAll('[data-utility-trigger]'));
+                triggers.forEach((trigger) => {
+                    trigger.addEventListener('click', (ev) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        const key = trigger.getAttribute('data-utility-trigger') || '';
+                        if (!key) return;
+                        this.toggle(key);
+                    });
+                });
+                this.collapseAll();
+            },
+            _isVisibleCard(key) {
+                const card = this._cards[key];
+                return !!(card && !card.hidden);
+            },
+            setExpanded(key, expanded) {
+                const card = this._cards[key];
+                if (!card || card.hidden) return false;
+                if (expanded) {
+                    Object.keys(this._cards).forEach((otherKey) => {
+                        const other = this._cards[otherKey];
+                        if (!other || other.hidden) return;
+                        other.classList.toggle('is-expanded', otherKey === key);
+                    });
+                    this._expandedKey = key;
+                    if (typeof window.__setUtilityQuickActive === 'function') window.__setUtilityQuickActive(key);
+                    return true;
+                }
+                card.classList.remove('is-expanded');
+                if (this._expandedKey === key) this._expandedKey = '';
+                if (typeof window.__setUtilityQuickActive === 'function') window.__setUtilityQuickActive('');
+                return true;
+            },
+            toggle(key) {
+                const card = this._cards[key];
+                if (!card || card.hidden) {
+                    if ((key === 'checkin' || key === 'group') && !currentUser) Toast.info('登录后可查看详情');
+                    return false;
+                }
+                const nextExpanded = !card.classList.contains('is-expanded');
+                return this.setExpanded(key, nextExpanded);
+            },
+            expand(key) {
+                return this.setExpanded(key, true);
+            },
+            collapseAll() {
+                Object.values(this._cards).forEach((card) => {
+                    if (!card || card.hidden) return;
+                    card.classList.remove('is-expanded');
+                });
+                this._expandedKey = '';
+                if (typeof window.__setUtilityQuickActive === 'function') window.__setUtilityQuickActive('');
+            },
+            onCardVisibilityChange(key, visible) {
+                if (!visible) {
+                    const card = this._cards[key];
+                    if (card) card.classList.remove('is-expanded');
+                    if (this._expandedKey === key) this._expandedKey = '';
+                    if (typeof window.__setUtilityQuickActive === 'function' && !this._expandedKey) window.__setUtilityQuickActive('');
+                }
+            }
+        };
+        window.UtilityPanels = UtilityPanels;
 
         const Post = {
             currentPage: 1,
@@ -2290,43 +2380,15 @@
             const sidebarEl = document.querySelector('.sidebar');
             const navSortCard = sidebarEl ? sidebarEl.querySelector('.nav-sort-card') : null;
             let mobileUtilityOpen = false;
-            let mobileUtilityFocus = '';
-            const utilityPanels = {
-                checkin: document.getElementById('checkinCard'),
-                group: document.getElementById('groupLinksCard'),
-                web3: document.getElementById('web3NoteCard')
-            };
             const quickActionButtons = mobileQuickActions ? Array.from(mobileQuickActions.querySelectorAll('.mobile-quick-btn[data-panel]')) : [];
-            const syncQuickActionActive = (panel) => {
+            const setQuickButtonActive = (panel) => {
                 if (!quickActionButtons.length) return;
                 quickActionButtons.forEach((btn) => {
                     btn.classList.toggle('is-active', !!panel && btn.getAttribute('data-panel') === panel);
                 });
             };
-            const setMobileUtilityFocus = (panel) => {
-                mobileUtilityFocus = panel || '';
-                if (!mobileUtilityStack) return;
-                if (mobileUtilityFocus) mobileUtilityStack.setAttribute('data-focus', mobileUtilityFocus);
-                else mobileUtilityStack.removeAttribute('data-focus');
-                syncQuickActionActive(mobileUtilityFocus);
-            };
-            const openMobileUtilityPanel = (panel) => {
-                if (!mobileUtilityStack) return;
-                mobileUtilityOpen = true;
-                setMobileUtilityFocus(panel);
-                applyMobileUtilityState();
-                const target = utilityPanels[panel];
-                if (target && !target.hidden) {
-                    requestAnimationFrame(() => {
-                        try {
-                            target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        } catch (_) {}
-                    });
-                    return;
-                }
-                if (panel === 'checkin' && !currentUser) Toast.info('登录后可查看签到详情');
-                if (panel === 'group' && !currentUser) Toast.info('登录后可查看社群解锁进度');
-            };
+            window.__setUtilityQuickActive = setQuickButtonActive;
+            UtilityPanels.init();
             const relocateMobileUtility = () => {
                 if (!mobileUtilityHost || !sidebarEl || !navSortCard) return;
                 const isMobileView = window.matchMedia('(max-width: 768px)').matches;
@@ -2349,17 +2411,20 @@
                 if (!isMobileView) {
                     mobileUtilityStack.classList.add('is-open');
                     mobileUtilityToggleBtn.setAttribute('aria-expanded', 'true');
-                    setMobileUtilityFocus('');
+                    setQuickButtonActive('');
                     return;
                 }
                 mobileUtilityStack.classList.toggle('is-open', mobileUtilityOpen);
                 mobileUtilityToggleBtn.setAttribute('aria-expanded', String(!!mobileUtilityOpen));
-                if (!mobileUtilityOpen) setMobileUtilityFocus('');
+                if (!mobileUtilityOpen) {
+                    UtilityPanels.collapseAll();
+                    setQuickButtonActive('');
+                }
             };
             if (mobileUtilityToggleBtn && mobileUtilityStack) {
                 mobileUtilityToggleBtn.onclick = () => {
                     mobileUtilityOpen = !mobileUtilityOpen;
-                    if (!mobileUtilityOpen) setMobileUtilityFocus('');
+                    if (mobileUtilityOpen) UtilityPanels.collapseAll();
                     applyMobileUtilityState();
                 };
                 const syncMobileUtility = () => {
@@ -2374,13 +2439,26 @@
                     btn.onclick = () => {
                         const panel = btn.getAttribute('data-panel') || '';
                         if (!panel) return;
-                        if (mobileUtilityOpen && mobileUtilityFocus === panel) {
-                            mobileUtilityOpen = false;
-                            setMobileUtilityFocus('');
+                        if (!mobileUtilityOpen) {
+                            mobileUtilityOpen = true;
                             applyMobileUtilityState();
+                        }
+                        const card = document.querySelector(`[data-utility-key="${panel}"]`);
+                        const alreadyOpen = !!(card && card.classList.contains('is-expanded'));
+                        if (alreadyOpen) {
+                            UtilityPanels.collapseAll();
                             return;
                         }
-                        openMobileUtilityPanel(panel);
+                        const ok = UtilityPanels.expand(panel);
+                        if (!ok) return;
+                        const target = document.querySelector(`[data-utility-key="${panel}"]`);
+                        if (target) {
+                            requestAnimationFrame(() => {
+                                try {
+                                    target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                } catch (_) {}
+                            });
+                        }
                     };
                 });
             }
