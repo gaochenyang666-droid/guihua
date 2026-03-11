@@ -42,6 +42,27 @@
     var PAGE_TRANSITION_MS = 260;
     var isNavigating = false;
     var NAV_SCROLL_FLAG = '__gh_nav_scroll_top';
+    var PAGE_STATE_INIT_KEY = 'pageStateInit';
+
+    function forceScrollTopSoon() {
+        if (window.location.hash) return;
+        window.scrollTo(0, 0);
+        window.setTimeout(function () {
+            if (!window.location.hash) window.scrollTo(0, 0);
+        }, 60);
+        window.setTimeout(function () {
+            if (!window.location.hash) window.scrollTo(0, 0);
+        }, 220);
+    }
+
+    function resetPageVisualState() {
+        var body = document.body;
+        if (!body) return;
+        body.classList.remove('page-leaving');
+        body.classList.add('page-motion');
+        body.classList.add('page-ready');
+        isNavigating = false;
+    }
 
     window.navigateWithTransition = function (url) {
         if (!url || isNavigating) {
@@ -64,13 +85,16 @@
     function setupPageTransitions() {
         var body = document.body;
         if (!body) return;
+        if (body.dataset[PAGE_STATE_INIT_KEY] === '1') {
+            resetPageVisualState();
+            return;
+        }
+        body.dataset[PAGE_STATE_INIT_KEY] = '1';
         try {
             if (window.history && 'scrollRestoration' in window.history) {
                 window.history.scrollRestoration = 'manual';
             }
-            if (!window.location.hash) {
-                window.scrollTo(0, 0);
-            }
+            forceScrollTopSoon();
         } catch (e) {}
         if (!body.classList.contains('reduce-motion')) {
             body.classList.add('page-motion');
@@ -105,12 +129,23 @@
     }
 
     window.addEventListener('pageshow', function () {
+        resetPageVisualState();
         try {
             if (sessionStorage.getItem(NAV_SCROLL_FLAG) === '1') {
                 sessionStorage.removeItem(NAV_SCROLL_FLAG);
-                if (!window.location.hash) window.scrollTo(0, 0);
+                forceScrollTopSoon();
             }
         } catch (e) {}
+    });
+
+    window.addEventListener('popstate', function () {
+        resetPageVisualState();
+        forceScrollTopSoon();
+    });
+
+    window.addEventListener('load', function () {
+        resetPageVisualState();
+        forceScrollTopSoon();
     });
 
     if (document.readyState === 'loading') {
