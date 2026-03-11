@@ -43,10 +43,6 @@ body {
     overscroll-behavior-y: contain;
     padding-bottom: 80px; /* Space for bottom nav */
 }
-body.modal-open {
-    overflow: hidden;
-}
-
 body.page-motion {
     opacity: 0;
     transform: translateY(10px);
