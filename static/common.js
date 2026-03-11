@@ -41,19 +41,7 @@
 
     var PAGE_TRANSITION_MS = 260;
     var isNavigating = false;
-    var NAV_SCROLL_FLAG = '__gh_nav_scroll_top';
     var PAGE_STATE_INIT_KEY = 'pageStateInit';
-
-    function forceScrollTopSoon() {
-        if (window.location.hash) return;
-        window.scrollTo(0, 0);
-        window.setTimeout(function () {
-            if (!window.location.hash) window.scrollTo(0, 0);
-        }, 60);
-        window.setTimeout(function () {
-            if (!window.location.hash) window.scrollTo(0, 0);
-        }, 220);
-    }
 
     function resetPageVisualState() {
         var body = document.body;
@@ -69,7 +57,6 @@
             return;
         }
         isNavigating = true;
-        try { sessionStorage.setItem(NAV_SCROLL_FLAG, '1'); } catch (e) {}
         var body = document.body;
         if (!body || body.classList.contains('reduce-motion')) {
             window.location.href = url;
@@ -92,9 +79,9 @@
         body.dataset[PAGE_STATE_INIT_KEY] = '1';
         try {
             if (window.history && 'scrollRestoration' in window.history) {
-                window.history.scrollRestoration = 'manual';
+                // Allow browser-native restoration; do not force global scroll-to-top.
+                window.history.scrollRestoration = 'auto';
             }
-            forceScrollTopSoon();
         } catch (e) {}
         if (!body.classList.contains('reduce-motion')) {
             body.classList.add('page-motion');
@@ -130,22 +117,14 @@
 
     window.addEventListener('pageshow', function () {
         resetPageVisualState();
-        try {
-            if (sessionStorage.getItem(NAV_SCROLL_FLAG) === '1') {
-                sessionStorage.removeItem(NAV_SCROLL_FLAG);
-                forceScrollTopSoon();
-            }
-        } catch (e) {}
     });
 
     window.addEventListener('popstate', function () {
         resetPageVisualState();
-        forceScrollTopSoon();
     });
 
     window.addEventListener('load', function () {
         resetPageVisualState();
-        forceScrollTopSoon();
     });
 
     if (document.readyState === 'loading') {
