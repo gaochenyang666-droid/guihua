@@ -1076,6 +1076,8 @@
                     if(params.sort || params.q !== undefined || params.filters) {
                         this.currentPage = 1;
                         document.getElementById('postGrid').innerHTML = '';
+                        if (UI && UI.expandedPostIds) UI.expandedPostIds.clear();
+                        if (UI) UI.renderedPosts = [];
                         this.currentSort = params.sort || 'new';
                         if (params.q !== undefined) this.currentQuery = params.q || '';
                         if (params.filters) {
@@ -1202,6 +1204,8 @@
         };
 
         const UI = {
+            expandedPostIds: new Set(),
+            renderedPosts: [],
             updateAuth() {
                 const authBtns = document.getElementById('authButtons');
                 const userMenu = document.getElementById('userMenu');
@@ -1321,9 +1325,55 @@
                     authBtns.style.display = 'flex';
                     userMenu.style.display = 'none';
                 }
+                this.syncLeftProfile();
                 Onboarding.load();
                 Checkin.load();
                 GroupLinks.load();
+            },
+            syncLeftProfile() {
+                const avatarEl = document.getElementById('leftProfileAvatar');
+                const nameEl = document.getElementById('leftProfileName');
+                const subEl = document.getElementById('leftProfileSub');
+                const btnEl = document.getElementById('leftProfileBtn');
+                if (!avatarEl || !nameEl || !subEl || !btnEl) return;
+                if (!currentUser) {
+                    avatarEl.textContent = '👻';
+                    nameEl.textContent = '游客';
+                    subEl.textContent = '登录后可查看个人中心';
+                    btnEl.textContent = '登录 / 进入个人页';
+                    return;
+                }
+                avatarEl.textContent = currentUser.avatar || '👻';
+                nameEl.textContent = currentUser.nickname || currentUser.username || '用户';
+                const lv = currentUser.level_label || (currentUser.level ? `Lv.${currentUser.level}` : 'Lv.1');
+                subEl.textContent = `${lv} · ${currentUser.experience_points || 0} EXP`;
+                btnEl.textContent = '查看个人页';
+            },
+            getPostSummaryText(post) {
+                const title = (post && post.title) ? String(post.title).trim() : '';
+                const body = stripHtml((post && post.content) || '');
+                const text = body && title ? `${title}\n${body}` : (title || body || '');
+                return text.trim();
+            },
+            shouldCollapseSummary(text) {
+                return !!(text && text.length > 220);
+            },
+            formatSummaryHtml(text) {
+                return escapeHtml(text || '').replace(/\n/g, '<br>');
+            },
+            togglePostExpand(ev, postId) {
+                if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+                if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+                const id = Number(postId);
+                if (!Number.isFinite(id)) return;
+                if (this.expandedPostIds.has(id)) this.expandedPostIds.delete(id);
+                else this.expandedPostIds.add(id);
+                if (!Array.isArray(this.renderedPosts) || !this.renderedPosts.length) return;
+                const y = window.scrollY || window.pageYOffset || 0;
+                this.renderPosts(this.renderedPosts, false);
+                requestAnimationFrame(() => {
+                    if (window.scrollY !== y) window.scrollTo(0, y);
+                });
             },
 
             resolveCoverUrl(post) {
@@ -1378,49 +1428,60 @@
 
             renderPostCard(p, idx, append=false) {
                 const stagger = append ? 0 : Math.min((idx % 8) * 18, 126);
-                const itemClass = append ? 'masonry-item' : 'masonry-item is-entering';
+                const itemClass = append ? 'masonry-item timeline-item-wrap' : 'masonry-item is-entering timeline-item-wrap';
                 const imgUrl = this.resolveCoverUrl(p);
                 const coverHtml = this.renderCover(imgUrl);
                 const author = p.author || { nickname: '用户', avatar: '👻' };
+                const summaryText = this.getPostSummaryText(p);
+                const shouldCollapse = this.shouldCollapseSummary(summaryText);
+                const expanded = this.expandedPostIds.has(Number(p.id));
+                const summaryVisible = shouldCollapse && !expanded ? `${summaryText.slice(0, 220).trimEnd()}...` : summaryText;
+                const summaryHtml = this.formatSummaryHtml(summaryVisible);
 
                 const isWeb3 = p.post_type === 1 || p.tx_hash;
                 const isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
                 const isSpecial = !!p.is_special_announcement;
-                const cardClasses = ['post-card', 'glass'];
-                if (isWeb3) cardClasses.push('post-card--web3');
-                const badge = isWeb3 ? '<div class="post-badge post-badge-web3">Web3</div>' : '';
-                const permanentBadge = isPermanent ? '<div class="post-badge post-badge-permanent">已永存</div>' : '';
-                const specialBadge = isSpecial ? '<div class="post-badge post-badge-special">📜 长公告</div>' : '';
-                const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
+                const badges = [
+                    p.is_pinned ? '<span class="timeline-tag tag-pin">📌 置顶</span>' : '',
+                    isSpecial ? '<span class="timeline-tag tag-special">📜 长公告</span>' : '',
+                    isWeb3 ? '<span class="timeline-tag tag-web3">Web3</span>' : '',
+                    isPermanent ? '<span class="timeline-tag tag-permanent">已永存</span>' : ''
+                ].filter(Boolean).join('');
 
                 return `
                 <div class="${itemClass}" style="--stagger:${stagger}ms;">
-                    <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(event, ${p.id})">
-                        ${pinBadge}
-                        ${badge}
-                        ${permanentBadge}
-                        ${specialBadge}
-                        ${coverHtml}
-                        <div class="post-content">
-                            <div class="post-title">${escapeHtml(p.title)}</div>
-                            <div class="post-meta">
-                                <div class="author-info">
-                                    ${this.renderAvatar(author)}
-                                    <span>${escapeHtml(author.nickname || '用户')}</span>
-                                    ${this.renderAuthorBadge(author)}
-                                    ${author.id != null ? formatUserId(author.id) : ''}
-                                </div>
-                                <div class="post-like">
-                                    <span><i class="fas fa-heart" style="${p.is_liked ? 'color:var(--accent-red)' : ''}"></i> ${p.likes_count}</span>
+                    <article class="timeline-item glass">
+                        <div class="timeline-head">
+                            <div class="timeline-author">
+                                ${this.renderAvatar(author)}
+                                <div class="timeline-author-meta">
+                                    <div class="timeline-author-line">
+                                        <span class="timeline-author-name">${escapeHtml(author.nickname || '用户')}</span>
+                                        ${this.renderAuthorBadge(author)}
+                                        ${author.id != null ? formatUserId(author.id) : ''}
+                                    </div>
+                                    <div class="timeline-author-sub">浏览 ${Number(p.view_count || 0)} · 恐惧 ${Number(p.likes_count || 0)}</div>
                                 </div>
                             </div>
+                            <button class="btn btn-ghost btn-sm timeline-open-btn" onclick="Modal.openDetail(event, ${p.id})">查看</button>
                         </div>
-                    </div>
+                        ${badges ? `<div class="timeline-tags">${badges}</div>` : ''}
+                        <div class="timeline-body" onclick="Modal.openDetail(event, ${p.id})">${summaryHtml || '（无正文）'}</div>
+                        ${shouldCollapse ? `<button class="timeline-expand-btn" onclick="UI.togglePostExpand(event, ${p.id})">${expanded ? '收起' : '展开全文'}</button>` : ''}
+                        ${imgUrl ? `<div class="timeline-cover" onclick="Modal.openDetail(event, ${p.id})">${coverHtml}</div>` : ''}
+                        <div class="timeline-actions">
+                            <button class="btn btn-ghost btn-sm" onclick="Interact.like(${p.id}); event.stopPropagation();">😰 ${Number(p.likes_count || 0)}</button>
+                            <button class="btn btn-ghost btn-sm" onclick="Interact.bookmark(${p.id}); event.stopPropagation();">${p.is_bookmarked ? '★ 已收' : '⭐ 收藏'}</button>
+                            <button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${p.id}); event.stopPropagation();">💬 详情</button>
+                        </div>
+                    </article>
                 </div>`;
             },
 
             renderPosts(posts, append=false) {
                 const grid = document.getElementById('postGrid');
+                if (!append) this.renderedPosts = Array.isArray(posts) ? posts.slice() : [];
+                else if (Array.isArray(posts) && posts.length) this.renderedPosts = (this.renderedPosts || []).concat(posts);
                 const html = posts.map((p, idx) => this.renderPostCard(p, idx, append)).join('');
 
                 if(append) grid.insertAdjacentHTML('beforeend', html);
@@ -2395,8 +2456,9 @@
             const mobileUtilityStack = document.getElementById('mobileUtilityStack');
             const mobileUtilityHost = document.getElementById('mobileUtilityHost');
             const mobileQuickActions = document.getElementById('mobileQuickActions');
-            const sidebarEl = document.querySelector('.sidebar');
-            const navSortCard = sidebarEl ? sidebarEl.querySelector('.nav-sort-card') : null;
+            const leftSidebarEl = document.querySelector('.sidebar-left');
+            const rightSidebarEl = document.getElementById('rightSidebar');
+            const navSortCard = leftSidebarEl ? leftSidebarEl.querySelector('.nav-sort-card') : null;
             let mobileUtilityOpen = false;
             const quickActionButtons = mobileQuickActions ? Array.from(mobileQuickActions.querySelectorAll('.mobile-quick-btn[data-panel]')) : [];
             const setQuickButtonActive = (panel) => {
@@ -2408,19 +2470,26 @@
             window.__setUtilityQuickActive = setQuickButtonActive;
             UtilityPanels.init();
             const relocateMobileUtility = () => {
-                if (!mobileUtilityHost || !sidebarEl || !navSortCard) return;
+                if (!mobileUtilityHost || !navSortCard) return;
                 const isMobileView = window.matchMedia('(max-width: 768px)').matches;
+                if (!isMobileView) {
+                    if (rightSidebarEl && mobileUtilityHost.parentElement !== rightSidebarEl) {
+                        rightSidebarEl.appendChild(mobileUtilityHost);
+                    }
+                    return;
+                }
+                if (!leftSidebarEl) return;
                 const anchorNode = isMobileView
-                    ? (mobileQuickActions && mobileQuickActions.parentElement === sidebarEl ? mobileQuickActions : navSortCard)
+                    ? (mobileQuickActions && mobileQuickActions.parentElement === leftSidebarEl ? mobileQuickActions : navSortCard)
                     : navSortCard;
-                if (mobileUtilityHost.parentElement !== sidebarEl) {
-                    if (anchorNode && anchorNode.nextSibling) sidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
-                    else sidebarEl.appendChild(mobileUtilityHost);
+                if (mobileUtilityHost.parentElement !== leftSidebarEl) {
+                    if (anchorNode && anchorNode.nextSibling) leftSidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
+                    else leftSidebarEl.appendChild(mobileUtilityHost);
                     return;
                 }
                 if (anchorNode && mobileUtilityHost.previousSibling !== anchorNode) {
-                    if (anchorNode.nextSibling) sidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
-                    else sidebarEl.appendChild(mobileUtilityHost);
+                    if (anchorNode.nextSibling) leftSidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
+                    else leftSidebarEl.appendChild(mobileUtilityHost);
                 }
             };
             const applyMobileUtilityState = () => {

@@ -25,7 +25,7 @@
             <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
             <span>诡话</span>
         </a>
-
+        
         <div class="search-container" id="searchContainer">
             <button class="search-icon search-icon-btn" type="button" id="searchToggleBtn" aria-label="展开搜索筛选">🔍</button>
             <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
@@ -74,7 +74,17 @@
         </div>
     </div>
     <div class="main-container">
-        <aside class="sidebar">
+        <aside class="sidebar sidebar-left">
+            <div class="sidebar-card glass profile-quick-card" id="leftProfileCard">
+                <div class="profile-quick-head">
+                    <div class="user-avatar-emoji profile-quick-avatar" id="leftProfileAvatar">👻</div>
+                    <div class="profile-quick-meta">
+                        <div class="profile-quick-name" id="leftProfileName">游客</div>
+                        <div class="profile-quick-sub" id="leftProfileSub">登录后可查看个人中心</div>
+                    </div>
+                </div>
+                <button class="btn btn-ghost btn-sm profile-quick-btn" id="leftProfileBtn" type="button" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else Modal.open('loginModal');">查看个人页</button>
+            </div>
             <div class="sidebar-card nav-sort-card glass">
                 <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')"><span class="nav-item-icon">🔥</span><span class="nav-item-label">热门</span></div>
                 <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')"><span class="nav-item-icon">✨</span><span class="nav-item-label">最新</span></div>
@@ -85,6 +95,32 @@
                 <button class="mobile-quick-btn" type="button" data-panel="group">🛰️ 社群</button>
                 <button class="mobile-quick-btn" type="button" data-panel="web3">👻 Web3</button>
             </div>
+        </aside>
+
+        <main class="feed-main">
+            <div id="pinnedGuideBanner" class="pinned-guide glass" hidden>
+                <div class="pinned-guide-head">
+                    <div class="pinned-guide-title-wrap">
+                        <span class="pinned-guide-prefix">📌 置顶指南</span>
+                        <span id="pinnedGuideTitle" class="pinned-guide-title"></span>
+                    </div>
+                    <div class="pinned-guide-actions">
+                        <button class="btn btn-ghost pinned-guide-toggle" id="pinnedGuideToggleBtn" type="button">展开简介</button>
+                        <button class="btn btn-ghost pinned-guide-open" id="pinnedGuideOpenBtn" type="button">查看原帖</button>
+                    </div>
+                </div>
+                <div id="pinnedGuidePreview" class="pinned-guide-preview"></div>
+                <div id="pinnedGuideExtra" class="pinned-guide-extra" hidden></div>
+            </div>
+            <div class="masonry-grid" id="postGrid"></div>
+            <div id="loadingArea" style="text-align: center; padding: 2rem; color: var(--text-muted);">正在召唤灵体...</div>
+            <div id="loadMoreArea" style="text-align: center; padding: 1rem; display: none;">
+                <span style="font-size:0.85rem; color:var(--text-secondary);">继续下滑自动加载更多...</span>
+            </div>
+            <div id="mobileUtilityMount"></div>
+        </main>
+
+        <aside class="sidebar sidebar-right" id="rightSidebar">
             <div class="mobile-utility-host" id="mobileUtilityHost">
                 <button class="mobile-utility-toggle btn btn-ghost btn-sm" id="mobileUtilityToggleBtn" type="button" aria-expanded="false">
                     <span>🧰 任务 / 福利</span>
@@ -164,29 +200,6 @@
                 </div>
             </div>
         </aside>
-
-        <main>
-            <div id="pinnedGuideBanner" class="pinned-guide glass" hidden>
-                <div class="pinned-guide-head">
-                    <div class="pinned-guide-title-wrap">
-                        <span class="pinned-guide-prefix">📌 置顶指南</span>
-                        <span id="pinnedGuideTitle" class="pinned-guide-title"></span>
-                    </div>
-                    <div class="pinned-guide-actions">
-                        <button class="btn btn-ghost pinned-guide-toggle" id="pinnedGuideToggleBtn" type="button">展开简介</button>
-                        <button class="btn btn-ghost pinned-guide-open" id="pinnedGuideOpenBtn" type="button">查看原帖</button>
-                    </div>
-                </div>
-                <div id="pinnedGuidePreview" class="pinned-guide-preview"></div>
-                <div id="pinnedGuideExtra" class="pinned-guide-extra" hidden></div>
-            </div>
-            <div class="masonry-grid" id="postGrid"></div>
-            <div id="loadingArea" style="text-align: center; padding: 2rem; color: var(--text-muted);">正在召唤灵体...</div>
-            <div id="loadMoreArea" style="text-align: center; padding: 1rem; display: none;">
-                <span style="font-size:0.85rem; color:var(--text-secondary);">继续下滑自动加载更多...</span>
-            </div>
-            <div id="mobileUtilityMount"></div>
-        </main>
     </div>
 
     <!-- Footer with Legal Warning -->
@@ -226,7 +239,7 @@
                 <h3>🚪 入境方式 </h3>
                 <button class="modal-close" onclick="Modal.close('loginModal')">&times;</button>
             </div>
-
+            
             <div id="authForms">
                 <!-- Login Form -->
                 <div id="loginFormContainer">
@@ -240,7 +253,7 @@
                             <input type="password" class="form-input" id="loginPassword" required />
                         </div>
                         <button type="submit" class="btn btn-primary" style="width: 100%;">登录</button>
-
+                        
                         <div class="auth-divider">
                             <span>或</span>
                         </div>
@@ -391,7 +404,7 @@
                 如果您喜欢这个平台，欢迎打赏支持服务器和开发费用。<br>
                 您的支持是我们坚持下去的动力！
             </p>
-
+            
             <div class="donate-address-block">
                 <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC USDT)</p>
                 <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
@@ -454,7 +467,7 @@
             <div id="postDetailBody"></div>
         </div>
     </div>
-
+    
     <div class="modal-overlay" id="noticeCenterModal" onclick="Modal.close('noticeCenterModal')">
         <div class="modal glass" style="max-width:760px; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;" onclick="event.stopPropagation()">
             <div class="modal-header">
