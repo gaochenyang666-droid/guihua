@@ -1843,9 +1843,22 @@
         let currentDetailPostId = null;
         let currentDetailRequestSeq = 0;
         const Modal = {
-            open(id) {
+            open(id, opts = {}) {
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
+                if (id === 'postDetailModal') {
+                    const anchorY = (opts && Number.isFinite(opts.anchorY)) ? Number(opts.anchorY) : null;
+                    let offset = 0;
+                    if (anchorY !== null) {
+                        const overlayStyle = window.getComputedStyle(overlay);
+                        const padTop = parseFloat(overlayStyle.paddingTop || '0') || 0;
+                        const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+                        const desired = anchorY - padTop - 72;
+                        const maxOffset = Math.max(0, viewportH - padTop - 220);
+                        offset = Math.max(0, Math.min(desired, maxOffset));
+                    }
+                    overlay.style.setProperty('--detail-open-offset', `${Math.round(offset)}px`);
+                }
                 overlay.classList.add('active');
                 overlay.scrollTop = 0;
                 const modalEl = overlay.querySelector('.modal');
@@ -1866,10 +1879,24 @@
                 }
                 overlay.classList.remove('active');
                 overlay.scrollTop = 0;
+                if (id === 'postDetailModal') {
+                    overlay.style.removeProperty('--detail-open-offset');
+                }
             },
 
             async openDetail(evtOrId, idMaybe) {
+                let anchorY = null;
                 if (evtOrId && typeof evtOrId === 'object' && typeof evtOrId.preventDefault === 'function') {
+                    if (Number.isFinite(evtOrId.clientY) && Number(evtOrId.clientY) > 0) {
+                        anchorY = Number(evtOrId.clientY);
+                    } else {
+                        const targetEl = evtOrId.currentTarget || evtOrId.target;
+                        if (targetEl && typeof targetEl.getBoundingClientRect === 'function') {
+                            const rect = targetEl.getBoundingClientRect();
+                            const approx = rect.top + Math.min(rect.height * 0.42, 140);
+                            if (Number.isFinite(approx)) anchorY = approx;
+                        }
+                    }
                     evtOrId.preventDefault();
                     evtOrId.stopPropagation();
                 }
@@ -1877,7 +1904,7 @@
                 if (id == null || id === undefined) return;
                 currentDetailPostId = id;
                 const reqSeq = ++currentDetailRequestSeq;
-                this.open('postDetailModal');
+                this.open('postDetailModal', { anchorY });
                 const body = document.getElementById('postDetailBody');
                 body.innerHTML = '加载中...';
                 const modalScrollEl = document.querySelector('#postDetailModal .modal');
@@ -1950,8 +1977,8 @@
                     <div class="series-block">
                         <div style="margin-bottom:0.35rem;">📚 所属系列：<a href="/series/${s.series_id}" data-no-transition="1" style="color:var(--accent-purple-light); text-decoration:underline;">${escapeHtml(s.title || '')}</a> · 第 ${s.order_index} 篇</div>
                         <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                            ${s.prev_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(${s.prev_post_id})">⬅️ 上一篇</button>` : ''}
-                            ${s.next_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(${s.next_post_id})">➡️ 下一篇</button>` : ''}
+                            ${s.prev_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${s.prev_post_id})">⬅️ 上一篇</button>` : ''}
+                            ${s.next_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${s.next_post_id})">➡️ 下一篇</button>` : ''}
                         </div>
                     </div>
                 `).join('') : '';
