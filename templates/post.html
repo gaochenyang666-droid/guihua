@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#7c3aed">
+    <title>帖子详情 - 诡话</title>
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <nav class="navbar glass">
+        <a href="/" class="logo" data-no-transition="1">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
+            <span>诡话</span>
+        </a>
+        <div class="nav-actions">
+            <a href="/" class="btn btn-ghost" data-no-transition="1">返回首页</a>
+            <a href="/notifications" class="btn btn-ghost" data-no-transition="1">通知</a>
+        </div>
+    </nav>
+
+    <main class="post-page-shell" data-post-id="{{ post_id }}">
+        <section class="post-page-main glass">
+            <div id="postPageBody" class="post-page-body">加载中...</div>
+        </section>
+    </main>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/common.js?v={{ asset_version }}"></script>
+    <script src="/static/toast.js?v={{ asset_version }}"></script>
+    <script src="/static/post.js?v={{ asset_version }}"></script>
+</body>
+</html>

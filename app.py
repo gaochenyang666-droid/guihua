@@ -448,6 +448,21 @@ def profile():
 def series_page(series_id):
     return render_template('series.html', series_id=series_id)
 
+@app.route('/post/<int:post_id>')
+def post_page(post_id):
+    return render_template('post.html', post_id=post_id)
+
+@app.route('/notices')
+def notices_page():
+    notice_type = (request.args.get('type') or 'announcement').strip().lower()
+    if notice_type not in ('announcement', 'activity'):
+        notice_type = 'announcement'
+    return render_template('notice_center.html', notice_type=notice_type)
+
+@app.route('/notifications')
+def notifications_page():
+    return render_template('notifications.html')
+
 # --- Auth ---
 
 @app.route('/api/auth/nonce', methods=['GET'])
@@ -489,7 +504,7 @@ def verify_signature():
         address = Web3.to_checksum_address(address)
     except (ValueError, AttributeError):
         return jsonify({'error': 'Invalid address format'}), 400
-
+    
     # In production, verify signature here using web3
     from eth_account.messages import encode_defunct
     from eth_account import Account
@@ -577,7 +592,7 @@ def register():
             return jsonify({'error': '密码至少 6 位'}), 400
         if User.query.filter_by(username=username).first():
             return jsonify({'error': '该用户名已被注册，请换一个或直接登录'}), 400
-
+            
         try:
             user = _new_user(username=username, nickname=username, avatar=get_random_avatar())
             user.set_password(password)
@@ -875,7 +890,7 @@ def bind_wallet():
     # Only Web2 users (without address) can bind
     if g.current_user.address:
         return jsonify({'error': 'Wallet already bound'}), 400
-
+        
     data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -1348,7 +1363,7 @@ def admin_stats():
     fee_usdt = round(fee_usdt_raw / (10 ** decimals), 4)
     total_revenue_raw = web3_posts * fee_usdt_raw
     total_revenue_usdt = total_revenue_raw / (10 ** decimals)
-
+    
     return jsonify({
         'users': {
             'total': total_users,
@@ -1380,7 +1395,7 @@ def get_user_profile(username):
         user = User.query.filter(func.lower(User.nickname) == token.lower()).first()
     if not user:
         return jsonify({'error': 'User not found'}), 404
-
+        
     payload = _get_optional_jwt_payload()
     current_user_id = payload.get('user_id') if payload else None
 
@@ -1799,7 +1814,7 @@ def create_post():
     # 3. Logic Branching（is_paid 仅由后端校验结果决定，绝不信任客户端传入）
     is_paid = False
     is_on_chain = False
-
+    
     if g.current_user.is_admin:
         # 管理员直接发帖：不上链、不支付，仅普通论坛帖；确保 tx_hash/ipfs_cid 为 None 避免 DB NOT NULL 报错
         tx_hash = None
@@ -1926,7 +1941,7 @@ def create_post():
         print(f"Create Post DB Error: {e}")
         traceback.print_exc()
         return jsonify({'error': 'Database error'}), 500
-
+    
     return jsonify({'message': 'Post created', 'post': post.to_dict()}), 201
 
 # 浏览量防刷：同一 IP 对同一帖子 60 秒内只计一次
@@ -1985,7 +2000,7 @@ def get_post_detail(post_id):
                 db.session.commit()
         except Exception:
             db.session.rollback()
-
+            
         post_data = post.to_dict(current_user_id)
         if post_data.get('cover_image') and str(post_data['cover_image']).strip() == '/static/images/hua_cover.jpg':
             post_data['cover_image'] = None
@@ -2021,7 +2036,7 @@ def get_post_detail(post_id):
                 'next_post_id': next_row.post_id if next_row else None
             })
         post_data['series'] = series_items
-
+            
         return jsonify(post_data)
     except Exception as e:
         print(f"Post Detail Error: {e}")
@@ -2156,7 +2171,7 @@ def add_comment(post_id):
         parent_comment = Comment.query.get(parent_id)
         if not parent_comment or parent_comment.post_id != post_id:
             return jsonify({'error': 'Invalid parent comment'}), 400
-
+    
     comment = Comment(content=clean_content, author_id=g.current_user.id, post_id=post.id, parent_id=parent_id)
     db.session.add(comment)
     db.session.commit()
@@ -2374,8 +2389,8 @@ def verify_tip():
     if not author_address or not Web3.is_address(author_address):
         return jsonify({'error': '作者未绑定钱包，暂无法打赏'}), 400
     is_valid, result = verify_transaction(
-        tx_hash,
-        g.current_user.address,
+        tx_hash, 
+        g.current_user.address, 
         expected_recipient=author_address,
         min_amount=TIP_MIN_USDT_RAW,
         payment_type='usdt'
@@ -2470,7 +2485,7 @@ def update_post(post_id):
     # Cannot edit if on-chain (immutable)
     if post.is_on_chain:
         return jsonify({'error': 'Cannot edit on-chain content'}), 400
-
+        
     data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400

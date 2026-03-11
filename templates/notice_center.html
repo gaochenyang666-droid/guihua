@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#7c3aed">
+    <title>{% if notice_type == 'activity' %}活动{% else %}公告{% endif %} - 诡话</title>
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body>
+    <nav class="navbar glass">
+        <a href="/" class="logo" data-no-transition="1">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
+            <span>诡话</span>
+        </a>
+        <div class="nav-actions">
+            <a href="/" class="btn btn-ghost" data-no-transition="1">返回首页</a>
+            <a href="/notices?type=announcement" class="btn btn-ghost {% if notice_type == 'announcement' %}active{% endif %}" data-no-transition="1">公告</a>
+            <a href="/notices?type=activity" class="btn btn-ghost {% if notice_type == 'activity' %}active{% endif %}" data-no-transition="1">活动</a>
+        </div>
+    </nav>
+
+    <main class="list-page-shell" data-notice-type="{{ notice_type }}">
+        <section class="list-page-main glass">
+            <h2 class="list-page-title">{% if notice_type == 'activity' %}🎉 活动{% else %}📣 公告{% endif %}</h2>
+            <div id="noticeListBody" class="list-page-list">加载中...</div>
+        </section>
+    </main>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/static/common.js?v={{ asset_version }}"></script>
+    <script src="/static/toast.js?v={{ asset_version }}"></script>
+    <script src="/static/notices.js?v={{ asset_version }}"></script>
+</body>
+</html>

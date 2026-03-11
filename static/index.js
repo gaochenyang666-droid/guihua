@@ -518,7 +518,6 @@
                     method: 'PUT', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
                 this.load();
-                Modal.close('notificationModal');
                 if (postId != null && postId !== undefined) Modal.openDetail(postId);
             },
 
@@ -542,6 +541,8 @@
                     const ann = data && data.announcement;
                     if (!res.ok || !ann) {
                         bar.hidden = true;
+                        bar.onclick = null;
+                        bar.style.cursor = '';
                         return;
                     }
                     const levelMap = {
@@ -558,6 +559,13 @@
                     bar.classList.add(levelClassMap[ann.level] || 'is-info');
                     titleEl.textContent = levelMap[ann.level] || '📣 公告';
                     contentEl.textContent = `${ann.title}：${ann.content}`;
+                    bar.style.cursor = 'pointer';
+                    bar.onclick = () => {
+                        const t = (ann.entry_type === 'activity') ? 'activity' : 'announcement';
+                        const next = `/notices?type=${encodeURIComponent(t)}`;
+                        if (typeof navigateWithTransition === 'function') navigateWithTransition(next);
+                        else window.location.href = next;
+                    };
                     bar.hidden = false;
                 } catch (_) {}
             }
@@ -566,33 +574,9 @@
         const NoticeCenter = {
             async open(type) {
                 const safeType = (type === 'activity') ? 'activity' : 'announcement';
-                const titleEl = document.getElementById('noticeCenterTitle');
-                const body = document.getElementById('noticeCenterBody');
-                if (titleEl) titleEl.textContent = safeType === 'activity' ? '🎉 活动' : '📣 公告';
-                if (body) body.innerHTML = '加载中...';
-                Modal.open('noticeCenterModal');
-                try {
-                    const qs = new URLSearchParams({ type: safeType, is_active: '1', page: '1', per_page: '30' });
-                    const res = await fetch(`${API_BASE}/announcements?${qs.toString()}`);
-                    const data = await parseJsonSafe(res, {});
-                    const items = (data && data.announcements) || [];
-                    if (!res.ok) throw new Error((data && data.error) || '加载失败');
-                    if (!items.length) {
-                        if (body) body.innerHTML = `<div style="text-align:center; color:var(--text-muted); padding:1.5rem;">暂无${safeType === 'activity' ? '活动' : '公告'}</div>`;
-                        return;
-                    }
-                    if (body) body.innerHTML = items.map((a) => `
-                        <div class="glass" style="padding:0.75rem; border-radius:10px; margin-bottom:0.7rem;">
-                            <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:center; margin-bottom:0.3rem;">
-                                <b>${escapeHtml(a.title || '')}</b>
-                                <span style="font-size:0.72rem; color:var(--text-muted);">${a.created_at ? new Date(a.created_at).toLocaleDateString() : ''}</span>
-                            </div>
-                            <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.7;">${escapeHtml(a.content || '')}</div>
-                        </div>
-                    `).join('');
-                } catch (e) {
-                    if (body) body.innerHTML = `<div style="text-align:center; color:var(--accent-red); padding:1.5rem;">${escapeHtml((e && e.message) || '加载失败')}</div>`;
-                }
+                const next = `/notices?type=${encodeURIComponent(safeType)}`;
+                if (typeof navigateWithTransition === 'function') navigateWithTransition(next);
+                else window.location.href = next;
             }
         };
         window.NoticeCenter = NoticeCenter;
@@ -1223,7 +1207,10 @@
                         notifBtn.style.cursor = 'pointer';
                         notifBtn.style.marginRight = '0.5rem';
                         notifBtn.innerHTML = '<span style="font-size:1.2rem;">🔔</span><div id="notifBadge" style="position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:var(--accent-red); border-radius:50%; display:none;"></div>';
-                        notifBtn.onclick = () => { Modal.open('notificationModal'); Notification.load(); };
+                        notifBtn.onclick = () => {
+                            if (typeof navigateWithTransition === 'function') navigateWithTransition('/notifications');
+                            else window.location.href = '/notifications';
+                        };
                         const avatarBtn = document.getElementById('userAvatarEmoji');
                         avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
                     }
@@ -2068,6 +2055,20 @@
             },
 
             async openDetail(evtOrId, idMaybe) {
+                const isEventLike = !!(evtOrId && typeof evtOrId === 'object' && typeof evtOrId.preventDefault === 'function');
+                if (isEventLike) {
+                    evtOrId.preventDefault();
+                    evtOrId.stopPropagation();
+                }
+                const targetIdRaw = isEventLike ? idMaybe : evtOrId;
+                const targetId = Number(targetIdRaw);
+                if (Number.isFinite(targetId) && targetId > 0) {
+                    const next = `/post/${targetId}`;
+                    if (typeof navigateWithTransition === 'function') navigateWithTransition(next);
+                    else window.location.href = next;
+                }
+                return;
+
                 let anchorY = null;
                 if (evtOrId && typeof evtOrId === 'object' && typeof evtOrId.preventDefault === 'function') {
                     if (Number.isFinite(evtOrId.clientY) && Number(evtOrId.clientY) > 0) {
@@ -2445,7 +2446,9 @@
             Post.initAutoLoad();
             const postId = new URLSearchParams(window.location.search).get('post');
             if (postId && /^\d+$/.test(postId)) {
-                setTimeout(() => Modal.openDetail(parseInt(postId, 10)), 300);
+                const next = `/post/${parseInt(postId, 10)}`;
+                window.location.replace(next);
+                return;
             }
             document.getElementById('loginForm').onsubmit = (e) => {
                 e.preventDefault();
