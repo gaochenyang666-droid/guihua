@@ -70,6 +70,7 @@ class User(db.Model):
     checkin_streak = db.Column(db.Integer, default=0)
     last_checkin_date = db.Column(db.Date, nullable=True, index=True)
     equipped_achievement_key = db.Column(db.String(64), nullable=True)
+    show_tip_thanks = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     posts = db.relationship('Post', backref='author', lazy='dynamic', foreign_keys='Post.author_id')
@@ -172,6 +173,7 @@ class User(db.Model):
             'level_progress': level_info['level_progress'],
             'checkin_streak': int(getattr(self, 'checkin_streak', 0) or 0),
             'equipped_achievement_key': getattr(self, 'equipped_achievement_key', None),
+            'show_tip_thanks': bool(getattr(self, 'show_tip_thanks', False)),
         }
 
 
@@ -182,6 +184,7 @@ class Post(db.Model):
     content = db.Column(db.Text)
     cover_image = db.Column(db.String(500), nullable=True)
     images = db.Column(db.Text)
+    tags = db.Column(db.Text, nullable=True)
     author_id = db.Column(db.BigInteger, db.ForeignKey('users.id'))
     view_count = db.Column(db.Integer, default=0)
     tx_hash = db.Column(db.String(66), unique=True, nullable=True)
@@ -211,6 +214,12 @@ class Post(db.Model):
             images_list = json.loads(self.images) if self.images else []
         except (TypeError, ValueError):
             images_list = []
+        try:
+            tags_list = json.loads(self.tags) if self.tags else []
+        except (TypeError, ValueError):
+            tags_list = []
+        if not isinstance(tags_list, list):
+            tags_list = []
         is_liked = False
         is_bookmarked = False
         if current_user_id:
@@ -232,12 +241,14 @@ class Post(db.Model):
         cover_image = self.cover_image
         if cover_image and str(cover_image).strip() == '/static/images/hua_cover.jpg':
             cover_image = None  # 该占位图已移除，不再返回避免 404
+        is_permanent = bool(self.tx_hash or self.ipfs_cid or self.is_on_chain or self.post_type == 1)
         return {
             'id': self.id,
             'title': self.title,
             'content': self.content,
             'cover_image': cover_image,
             'images': images_list,
+            'tags': tags_list,
             'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻', 'honor_title': '新魂'},
             'view_count': self.view_count,
             'likes_count': lc,
@@ -248,6 +259,7 @@ class Post(db.Model):
             'tx_hash': self.tx_hash,
             'ipfs_cid': self.ipfs_cid,
             'post_type': self.post_type,
+            'is_permanent': is_permanent,
             'created_at': self.created_at.isoformat(),
             'is_repost': self.is_repost,
             'original_post_id': self.original_post_id,
@@ -356,6 +368,8 @@ class Notification(db.Model):
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
     type = db.Column(db.String(20))
+    content = db.Column(db.String(500), nullable=True)
+    link = db.Column(db.String(500), nullable=True)
     is_read = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -368,6 +382,8 @@ class Notification(db.Model):
             'id': self.id,
             'type': self.type,
             'sender': self.sender.to_dict() if self.sender else None,
+            'content': self.content,
+            'link': self.link,
             'post_id': self.post_id,
             'post_title': self.post.title if self.post else None,
             'is_read': self.is_read,
@@ -439,6 +455,7 @@ class Report(db.Model):
     status = db.Column(db.String(20), default='pending')
     admin_note = db.Column(db.String(500), nullable=True)
     admin_notes = db.Column(db.String(500), nullable=True)
+    result_notified_at = db.Column(db.DateTime, nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     reporter = db.relationship('User', foreign_keys=[reporter_id])
     reported_user = db.relationship('User', foreign_keys=[reported_user_id])
@@ -455,6 +472,7 @@ class Report(db.Model):
             'reason': self.reason,
             'status': self.status,
             'admin_notes': self.admin_notes or self.admin_note,
+            'result_notified_at': self.result_notified_at.isoformat() if self.result_notified_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'reporter_nickname': self.reporter.nickname if self.reporter else None,
             'reported_nickname': self.reported_user.nickname if self.reported_user else None,
@@ -467,8 +485,10 @@ class Announcement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
     content = db.Column(db.String(1000), nullable=False)
+    entry_type = db.Column(db.String(20), default='announcement', index=True)  # announcement|activity
     level = db.Column(db.String(20), default='info')  # info|warning|critical
     is_active = db.Column(db.Boolean, default=True, index=True)
+    starts_at = db.Column(db.DateTime, nullable=True, index=True)
     expires_at = db.Column(db.DateTime, nullable=True, index=True)
     created_by = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
@@ -480,11 +500,72 @@ class Announcement(db.Model):
             'id': self.id,
             'title': self.title,
             'content': self.content,
+            'entry_type': self.entry_type,
             'level': self.level,
             'is_active': self.is_active,
+            'starts_at': self.starts_at.isoformat() if self.starts_at else None,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class Series(db.Model):
+    __tablename__ = 'series'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.String(1000), nullable=True)
+    cover_image = db.Column(db.String(500), nullable=True)
+    author_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False, index=True)
+    is_public = db.Column(db.Boolean, default=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+    author = db.relationship('User', foreign_keys=[author_id])
+
+    def to_dict(self, include_posts=False):
+        payload = {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'cover_image': self.cover_image,
+            'author_id': self.author_id,
+            'is_public': bool(self.is_public),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+        if include_posts:
+            links = SeriesPost.query.filter_by(series_id=self.id).order_by(SeriesPost.order_index.asc(), SeriesPost.id.asc()).all()
+            payload['posts'] = [row.to_dict() for row in links]
+        return payload
+
+
+class SeriesPost(db.Model):
+    __tablename__ = 'series_posts'
+    id = db.Column(db.Integer, primary_key=True)
+    series_id = db.Column(db.Integer, db.ForeignKey('series.id'), nullable=False, index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False, index=True)
+    order_index = db.Column(db.Integer, nullable=False, default=1, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    series = db.relationship('Series', backref=db.backref('series_posts', lazy='dynamic', cascade='all, delete-orphan'))
+    post = db.relationship('Post', backref=db.backref('series_links', lazy='dynamic', cascade='all, delete-orphan'))
+    __table_args__ = (db.UniqueConstraint('series_id', 'post_id', name='uniq_series_post'),)
+
+    def to_dict(self):
+        p = self.post
+        return {
+            'id': self.id,
+            'series_id': self.series_id,
+            'post_id': self.post_id,
+            'order_index': self.order_index,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'post': {
+                'id': p.id,
+                'title': p.title,
+                'cover_image': p.cover_image,
+                'created_at': p.created_at.isoformat() if p and p.created_at else None,
+            } if p else None
         }
 
 

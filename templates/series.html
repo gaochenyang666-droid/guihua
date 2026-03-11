@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#7c3aed">
+    <title>系列目录 - 诡话</title>
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/common.js"></script>
+    <script src="/static/toast.js"></script>
+</head>
+<body>
+    <nav class="navbar glass">
+        <a href="/" class="logo">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
+            <span>诡话</span>
+        </a>
+        <div class="nav-actions">
+            <button class="btn btn-ghost btn-sm" onclick="navigateWithTransition('/')">返回首页</button>
+        </div>
+    </nav>
+
+    <div class="container" style="max-width: 920px; margin: 1.2rem auto; padding: 0 1rem;">
+        <div id="seriesMeta" class="glass" style="padding:1rem; border-radius:12px; margin-bottom:1rem;">加载中...</div>
+        <div id="seriesList" class="glass" style="padding:1rem; border-radius:12px;">加载中...</div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api';
+
+        async function loadSeriesPage() {
+            const parts = location.pathname.split('/').filter(Boolean);
+            const id = Number(parts[parts.length - 1] || 0);
+            if (!id) {
+                document.getElementById('seriesMeta').textContent = '系列不存在';
+                document.getElementById('seriesList').innerHTML = '';
+                return;
+            }
+            const token = localStorage.getItem('token');
+            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+            try {
+                const res = await fetch(`${API_BASE}/series/${id}`, { headers });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    document.getElementById('seriesMeta').innerHTML = `<div style="color:var(--accent-red);">${(data && data.error) || '加载失败'}</div>`;
+                    document.getElementById('seriesList').innerHTML = '';
+                    return;
+                }
+                const s = data.series || {};
+                const items = data.items || [];
+                document.title = `${s.title || '系列目录'} - 诡话`;
+                document.getElementById('seriesMeta').innerHTML = `
+                    <h2 style="margin-bottom:0.4rem;">📚 ${escapeHtml(s.title || '')}</h2>
+                    <div style="color:var(--text-secondary);">${escapeHtml(s.description || '暂无系列简介')}</div>
+                `;
+                if (!items.length) {
+                    document.getElementById('seriesList').innerHTML = '<div style="color:var(--text-muted);">该系列暂无可见帖子</div>';
+                    return;
+                }
+                document.getElementById('seriesList').innerHTML = `
+                    <h3 style="margin-bottom:0.8rem;">目录</h3>
+                    <div style="display:grid; gap:0.5rem;">
+                        ${items.map((it) => {
+                            const p = it.post || {};
+                            return `<button class="btn btn-ghost" style="justify-content:space-between; width:100%;" onclick="navigateWithTransition('/?post=${p.id}')"><span>第 ${it.order_index} 篇 · ${escapeHtml(p.title || '')}</span><span style="font-size:0.76rem; color:var(--text-muted);">查看</span></button>`;
+                        }).join('')}
+                    </div>
+                `;
+            } catch (_) {
+                document.getElementById('seriesMeta').innerHTML = '<div style="color:var(--accent-red);">网络错误</div>';
+                document.getElementById('seriesList').innerHTML = '';
+            }
+        }
+
+        window.addEventListener('load', loadSeriesPage);
+    </script>
+</body>
+</html>

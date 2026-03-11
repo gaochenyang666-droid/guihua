@@ -35,6 +35,53 @@
             }
             return { res, data };
         };
+        const mentionifyText = (text) => {
+            const safe = escapeHtml(text || '');
+            return safe.replace(/(^|[\s(（\[【])@([A-Za-z0-9_\u4e00-\u9fff]{2,32})/g, '$1<a class="mention-link" href="/profile?user=$2" data-no-transition="1">@$2</a>');
+        };
+        const detailScrollStore = {
+            _timer: null,
+            key(postId) {
+                const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
+                return `post_scroll_${uid}_${postId}`;
+            },
+            save(postId, scrollTop, maxScroll) {
+                if (!postId || maxScroll <= 0) return;
+                const pct = Math.max(0, Math.min(100, Math.round((scrollTop / maxScroll) * 100)));
+                const payload = { top: Math.max(0, Math.round(scrollTop)), pct: pct, t: Date.now() };
+                try { localStorage.setItem(this.key(postId), JSON.stringify(payload)); } catch (_) {}
+            },
+            read(postId) {
+                try {
+                    const raw = localStorage.getItem(this.key(postId));
+                    if (!raw) return null;
+                    const obj = JSON.parse(raw);
+                    if (!obj || typeof obj.top !== 'number') return null;
+                    return obj;
+                } catch (_) {
+                    return null;
+                }
+            },
+            bind(postId, scrollEl) {
+                if (!scrollEl || !postId) return;
+                const handler = () => {
+                    if (this._timer) clearTimeout(this._timer);
+                    this._timer = setTimeout(() => {
+                        const maxScroll = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+                        this.save(postId, scrollEl.scrollTop, maxScroll);
+                    }, 120);
+                };
+                scrollEl.addEventListener('scroll', handler, { passive: true });
+                scrollEl.dataset.scrollTrackPost = String(postId);
+                scrollEl.__ghScrollTrackHandler = handler;
+            },
+            unbind(scrollEl) {
+                if (!scrollEl || !scrollEl.__ghScrollTrackHandler) return;
+                scrollEl.removeEventListener('scroll', scrollEl.__ghScrollTrackHandler);
+                delete scrollEl.__ghScrollTrackHandler;
+                delete scrollEl.dataset.scrollTrackPost;
+            }
+        };
 
         const Auth = {
             async init() {
@@ -420,12 +467,23 @@
                 if(data.notifications && data.notifications.length > 0) {
                     const badgeEl = document.getElementById('notifBadge');
                     if (badgeEl) badgeEl.style.display = data.notifications.some(n => !n.is_read) ? 'block' : 'none';
+                    const typeText = (n) => {
+                        if (n && n.content) return n.content;
+                        if (!n) return '有新动态';
+                        if (n.type === 'like') return '点赞了你的帖子';
+                        if (n.type === 'reply') return '回复了你的评论';
+                        if (n.type === 'comment') return '评论了你的帖子';
+                        if (n.type === 'mention') return '提到了你';
+                        if (n.type === 'report_result') return '你的举报有了处理结果';
+                        if (n.type === 'tip') return '打赏了你的帖子';
+                        return '有新动态';
+                    };
                     list.innerHTML = data.notifications.map(n => `
                         <div style="padding:0.8rem; border-bottom:1px solid var(--border-color); ${!n.is_read ? 'background:rgba(124,58,237,0.1);' : ''} cursor:pointer;" onclick="Notification.read(${n.id}, ${n.post_id != null ? n.post_id : 'null'})">
                             <div style="font-size:0.9rem; margin-bottom:0.2rem;">
-                                <b>${escapeHtml(n.sender.nickname)}</b> ${n.type === 'like' ? '点赞了你的帖子' : (n.type === 'reply' ? '回复了你的评论' : '评论了你的帖子')}
+                                <b>${escapeHtml((n.sender && n.sender.nickname) || '系统')}</b> ${escapeHtml(typeText(n))}
                             </div>
-                            <div style="font-size:0.8rem; color:var(--text-muted);">${escapeHtml(n.post_title)}</div>
+                            <div style="font-size:0.8rem; color:var(--text-muted);">${escapeHtml(n.post_title || '')}</div>
                             <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:0.3rem;">${new Date(n.created_at).toLocaleString()}</div>
                         </div>
                     `).join('');
@@ -485,6 +543,40 @@
                 } catch (_) {}
             }
         };
+
+        const NoticeCenter = {
+            async open(type) {
+                const safeType = (type === 'activity') ? 'activity' : 'announcement';
+                const titleEl = document.getElementById('noticeCenterTitle');
+                const body = document.getElementById('noticeCenterBody');
+                if (titleEl) titleEl.textContent = safeType === 'activity' ? '🎉 活动' : '📣 公告';
+                if (body) body.innerHTML = '加载中...';
+                Modal.open('noticeCenterModal');
+                try {
+                    const qs = new URLSearchParams({ type: safeType, is_active: '1', page: '1', per_page: '30' });
+                    const res = await fetch(`${API_BASE}/announcements?${qs.toString()}`);
+                    const data = await parseJsonSafe(res, {});
+                    const items = (data && data.announcements) || [];
+                    if (!res.ok) throw new Error((data && data.error) || '加载失败');
+                    if (!items.length) {
+                        if (body) body.innerHTML = `<div style="text-align:center; color:var(--text-muted); padding:1.5rem;">暂无${safeType === 'activity' ? '活动' : '公告'}</div>`;
+                        return;
+                    }
+                    if (body) body.innerHTML = items.map((a) => `
+                        <div class="glass" style="padding:0.75rem; border-radius:10px; margin-bottom:0.7rem;">
+                            <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:center; margin-bottom:0.3rem;">
+                                <b>${escapeHtml(a.title || '')}</b>
+                                <span style="font-size:0.72rem; color:var(--text-muted);">${a.created_at ? new Date(a.created_at).toLocaleDateString() : ''}</span>
+                            </div>
+                            <div style="font-size:0.85rem; color:var(--text-secondary); line-height:1.7;">${escapeHtml(a.content || '')}</div>
+                        </div>
+                    `).join('');
+                } catch (e) {
+                    if (body) body.innerHTML = `<div style="text-align:center; color:var(--accent-red); padding:1.5rem;">${escapeHtml((e && e.message) || '加载失败')}</div>`;
+                }
+            }
+        };
+        window.NoticeCenter = NoticeCenter;
 
         const Onboarding = {
             dismissedInMemory: false,
@@ -816,10 +908,20 @@
             totalPages: 1,
             currentSort: 'new',
             currentQuery: '',
+            currentFilters: {
+                from_date: '',
+                to_date: '',
+                permanent_only: false,
+                tags: ''
+            },
             isLoading: false,
             isFetching: false,
             pinnedPostId: null,
             autoLoadObserver: null,
+            hasAdvancedFilters() {
+                const f = this.currentFilters || {};
+                return !!((f.from_date || '').trim() || (f.to_date || '').trim() || (f.tags || '').trim() || f.permanent_only);
+            },
 
             async loadPinnedGuide() {
                 try {
@@ -862,24 +964,36 @@
                 this.isFetching = true;
 
                 try {
-                    if(params.sort || params.q !== undefined) {
+                    if(params.sort || params.q !== undefined || params.filters) {
                         this.currentPage = 1;
                         document.getElementById('postGrid').innerHTML = '';
                         this.currentSort = params.sort || 'new';
-                        this.currentQuery = params.q || '';
+                        if (params.q !== undefined) this.currentQuery = params.q || '';
+                        if (params.filters) {
+                            this.currentFilters = {
+                                from_date: (params.filters.from_date || '').trim(),
+                                to_date: (params.filters.to_date || '').trim(),
+                                permanent_only: !!params.filters.permanent_only,
+                                tags: (params.filters.tags || '').trim()
+                            };
+                        }
                     }
 
                     const qParams = new URLSearchParams();
                     qParams.append('page', this.currentPage);
                     qParams.append('sort', this.currentSort);
                     if(this.currentQuery) qParams.append('q', this.currentQuery);
+                    if (this.currentFilters.from_date) qParams.append('from_date', this.currentFilters.from_date);
+                    if (this.currentFilters.to_date) qParams.append('to_date', this.currentFilters.to_date);
+                    if (this.currentFilters.permanent_only) qParams.append('permanent_only', '1');
+                    if (this.currentFilters.tags) qParams.append('tags', this.currentFilters.tags);
 
                     const headers = {};
                     const token = localStorage.getItem('token');
                     if (token) headers['Authorization'] = `Bearer ${token}`;
 
                     let endpoint = `${API_BASE}/posts`;
-                    if (this.currentQuery) endpoint = `${API_BASE}/search`;
+                    if (this.currentQuery || this.hasAdvancedFilters()) endpoint = `${API_BASE}/search`;
 
                     const res = await fetch(`${endpoint}?${qParams.toString()}`, { headers });
                 const data = await parseJsonSafe(res, {});
@@ -1161,10 +1275,12 @@
                     const author = p.author || { nickname: '用户', avatar: '👻' };
 
                     const isWeb3 = p.post_type === 1 || p.tx_hash;
+                    const isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
                     const isSpecial = !!p.is_special_announcement;
                     const cardClasses = ['post-card', 'glass'];
                     if (isWeb3) cardClasses.push('post-card--web3');
                     const badge = isWeb3 ? '<div class="post-badge post-badge-web3">Web3</div>' : '';
+                    const permanentBadge = isPermanent ? '<div class="post-badge post-badge-permanent">已永存</div>' : '';
                     const specialBadge = isSpecial ? '<div class="post-badge post-badge-special">📜 长公告</div>' : '';
                     const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
 
@@ -1173,6 +1289,7 @@
                         <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(${p.id})">
                             ${pinBadge}
                             ${badge}
+                            ${permanentBadge}
                             ${specialBadge}
                             ${coverHtml}
                             <div class="post-content">
@@ -1395,10 +1512,11 @@
                     body.innerHTML = list.map(a => `
                         <div class="glass" style="padding:0.7rem; margin-bottom:0.7rem; border-radius:8px;">
                             <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:center;">
-                                <b>${escapeHtml(a.title || '')}</b>
+                                <b>${a.entry_type === 'activity' ? '🎉 ' : '📣 '}${escapeHtml(a.title || '')}</b>
                                 <span style="font-size:0.78rem; color:${a.is_active ? 'var(--accent-green)' : 'var(--text-muted)'};">${a.is_active ? '生效中' : '未生效'}</span>
                             </div>
                             <div style="font-size:0.86rem; margin:0.45rem 0;">${escapeHtml(a.content || '')}</div>
+                            <div style="font-size:0.74rem; color:var(--text-muted); margin-bottom:0.45rem;">类型: ${escapeHtml(a.entry_type || 'announcement')} ${a.starts_at ? (' · 开始: ' + new Date(a.starts_at).toLocaleString()) : ''} ${a.expires_at ? (' · 结束: ' + new Date(a.expires_at).toLocaleString()) : ''}</div>
                             <div style="display:flex; gap:0.45rem; flex-wrap:wrap;">
                                 <button class="btn btn-ghost btn-sm" onclick="Admin.toggleAnnouncementActive(${a.id}, ${a.is_active ? 'false' : 'true'})">${a.is_active ? '停用' : '启用'}</button>
                                 <button class="btn btn-ghost btn-sm" style="color:var(--accent-red);" onclick="Admin.deleteAnnouncement(${a.id})">删除</button>
@@ -1414,12 +1532,15 @@
                 if (!title || !title.trim()) return;
                 const content = prompt('公告内容（1000字内）');
                 if (!content || !content.trim()) return;
+                const entryType = ((prompt('类型：announcement(公告) / activity(活动)', 'announcement') || 'announcement').trim().toLowerCase() === 'activity') ? 'activity' : 'announcement';
                 const level = (prompt('级别：info / warning / critical', 'info') || 'info').trim().toLowerCase();
+                const startsAt = (prompt('开始时间（可空，格式 YYYY-MM-DDTHH:mm:ss）', '') || '').trim();
+                const expiresAt = (prompt('结束时间（可空，格式 YYYY-MM-DDTHH:mm:ss）', '') || '').trim();
                 try {
                     const res = await fetch(`${API_BASE}/admin/announcements`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                        body: JSON.stringify({ title: title.trim(), content: content.trim(), level, activate: true })
+                        body: JSON.stringify({ title: title.trim(), content: content.trim(), entry_type: entryType, level, starts_at: startsAt || null, expires_at: expiresAt || null, activate: true })
                     });
                     const data = await parseJsonSafe(res, {});
                     if (res.ok) {
@@ -1720,7 +1841,23 @@
         const Modal = {
             open(id) { document.getElementById(id).classList.add('active'); },
             close(id) {
-                if (id === 'postDetailModal') currentDetailPostId = null;
+                if (id === 'postDetailModal') {
+                    const modalScrollEl = document.querySelector('#postDetailModal .modal');
+                    if (modalScrollEl && currentDetailPostId) {
+                        const maxScroll = Math.max(0, modalScrollEl.scrollHeight - modalScrollEl.clientHeight);
+                        detailScrollStore.save(currentDetailPostId, modalScrollEl.scrollTop, maxScroll);
+                        detailScrollStore.unbind(modalScrollEl);
+                    }
+                    currentDetailPostId = null;
+                    try {
+                        const u = new URL(window.location.href);
+                        if (u.searchParams.has('post')) {
+                            u.searchParams.delete('post');
+                            const nextUrl = u.pathname + (u.search ? u.search : '') + (u.hash || '');
+                            window.history.replaceState({}, '', nextUrl);
+                        }
+                    } catch (_) {}
+                }
                 document.getElementById(id).classList.remove('active');
             },
 
@@ -1730,32 +1867,41 @@
                 this.open('postDetailModal');
                 const body = document.getElementById('postDetailBody');
                 body.innerHTML = '加载中...';
-                const headers = {};
-                const token = localStorage.getItem('token');
-                if (token) headers['Authorization'] = `Bearer ${token}`;
-                const res = await fetch(`${API_BASE}/posts/${id}`, { headers });
-                const p = await parseJsonSafe(res, {});
-                if (!res.ok) {
-                    if (res.status === 401) {
-                        localStorage.removeItem('token');
-                        currentUser = null;
-                        UI.updateAuth();
+                try {
+                    const u = new URL(window.location.href);
+                    if (u.searchParams.get('post') !== String(id)) {
+                        u.searchParams.set('post', String(id));
+                        window.history.replaceState({}, '', u.pathname + '?' + u.searchParams.toString() + (u.hash || ''));
                     }
-                    body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${p.error || '加载失败'}</div>`;
-                    return;
-                }
+                } catch (_) {}
+                try {
+                    const headers = {};
+                    const token = localStorage.getItem('token');
+                    if (token) headers['Authorization'] = `Bearer ${token}`;
+                    const res = await fetch(`${API_BASE}/posts/${id}`, { headers });
+                    const p = await parseJsonSafe(res, {});
+                    if (!res.ok) {
+                        if (res.status === 401) {
+                            localStorage.removeItem('token');
+                            currentUser = null;
+                            UI.updateAuth();
+                        }
+                        body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${p.error || '加载失败'}</div>`;
+                        return;
+                    }
 
-                let contentHtml = p.content;
-                let repostHtml = '';
-                if (p.original_post_id && p.original_post) {
-                    contentHtml = p.repost_comment || '';
-                    repostHtml = `
-                        <div style="margin:1rem 0; padding:1rem; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-secondary);">
-                            <div style="font-weight:600; margin-bottom:0.5rem;">${p.original_post.title}</div>
-                            <div style="font-size:0.9rem; color:var(--text-secondary);">${p.original_post.content}</div>
-                        </div>
-                    `;
-                }
+                    const isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
+                    let contentHtml = p.content;
+                    let repostHtml = '';
+                    if (p.original_post_id && p.original_post) {
+                        contentHtml = p.repost_comment || '';
+                        repostHtml = `
+                            <div style="margin:1rem 0; padding:1rem; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-secondary);">
+                                <div style="font-weight:600; margin-bottom:0.5rem;">${p.original_post.title}</div>
+                                <div style="font-size:0.9rem; color:var(--text-secondary);">${p.original_post.content}</div>
+                            </div>
+                        `;
+                    }
 
                 const escapeDataAttr = (s) => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const renderComments = (comments, depth=0) => {
@@ -1766,7 +1912,7 @@
                                 <span>${escapeHtml((c.author && c.author.nickname) || '匿名')}</span>
                                 <span>${new Date(c.created_at).toLocaleDateString()}</span>
                             </div>
-                            <div style="margin-bottom: 0.5rem;">${escapeHtml(c.content || '')}</div>
+                            <div style="margin-bottom: 0.5rem;">${mentionifyText(c.content || '')}</div>
                             <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, this.getAttribute('data-nickname'))" data-nickname="${escapeDataAttr((c.author && c.author.nickname) || '')}">↩ 回复</button>
                             ${c.replies ? renderComments(c.replies, depth + 1) : ''}
                         </div>
@@ -1790,33 +1936,61 @@
                     `;
                 }
 
-                body.innerHTML = `
+                const series = Array.isArray(p.series) ? p.series : [];
+                const seriesHtml = series.length ? series.map((s) => `
+                    <div class="series-block">
+                        <div style="margin-bottom:0.35rem;">📚 所属系列：<a href="/series/${s.series_id}" data-no-transition="1" style="color:var(--accent-purple-light); text-decoration:underline;">${escapeHtml(s.title || '')}</a> · 第 ${s.order_index} 篇</div>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                            ${s.prev_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(${s.prev_post_id})">⬅️ 上一篇</button>` : ''}
+                            ${s.next_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(${s.next_post_id})">➡️ 下一篇</button>` : ''}
+                        </div>
+                    </div>
+                `).join('') : '';
+                const readState = detailScrollStore.read(p.id);
+                const showResume = !!(readState && Number(readState.top || 0) > 100);
+                const resumeHtml = showResume ? `
+                    <div class="resume-strip">
+                        <span class="resume-strip-text">上次阅读进度约 ${Number(readState.pct || 0)}%，可一键续读</span>
+                        <div style="display:flex; gap:0.45rem;">
+                            <button class="btn btn-ghost btn-sm" id="resumeReadBtn">恢复位置</button>
+                            <button class="btn btn-ghost btn-sm" id="resumeReadResetBtn">从头开始</button>
+                        </div>
+                    </div>
+                ` : '';
+
+                    const authorWallet = escapeDataAttr((p.author && (p.author.wallet_address || p.author.address)) || '');
+                    body.innerHTML = `
                     <h2 style="margin-bottom:0.5rem;">${escapeHtml(p.title)}</h2>
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                         ${p.is_special_announcement ? '<span style="color:var(--accent-orange); font-weight:700;">📜 长公告</span> |' : ''}
                         ${p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span> |' : ''}
                         发布者: ${escapeHtml(p.author.nickname)} ${UI.renderAuthorBadge(p.author)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
                     </div>
+                    ${resumeHtml}
                     <div class="post-detail-content">
                         ${contentHtml}
                         ${repostHtml}
                     </div>
-
                     <div class="on-chain-evidence" style="margin-top:1rem; padding:0.75rem; background:var(--bg-secondary); border-radius:8px; font-size:0.85rem;">
-                        <div style="color:var(--text-muted); margin-bottom:0.5rem;">🔗 链上证据（可在链上查询）</div>
+                        <div style="color:var(--text-muted); margin-bottom:0.5rem;">${isPermanent ? '✅ 已永久保存 · 链上可验' : 'ℹ️ 当前帖子暂未永存'}</div>
                         <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">
                             ${p.tx_hash ? `<a href="https://bscscan.com/tx/${p.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证 BSCScan</a>` : '<span style="color:var(--text-muted);">无支付凭证</span>'}
                             ${p.ipfs_cid ? `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>` : ''}
                         </div>
                     </div>
+                    ${seriesHtml}
 
                     <div style="display:flex; gap:1rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem; flex-wrap:wrap;">
                         <button class="btn btn-ghost" onclick="Interact.like(${p.id})">😰 恐惧 (${p.likes_count})</button>
                         <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
                         <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
                         ${currentUser && currentUser.id !== p.author.id ? `<button class="btn btn-ghost" style="color:var(--text-muted); font-size:0.85rem;" onclick="Interact.report(${p.id})">🚩 举报</button>` : ''}
-                        ${currentUser && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="TipAuthor.open(${p.id}, ${JSON.stringify((p.author && (p.author.wallet_address || p.author.address)) || '')})">💰 打赏作者</button>` : ''}
+                        ${currentUser && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" data-wallet="${authorWallet}" onclick="TipAuthor.open(${p.id}, this.getAttribute('data-wallet') || '')">💰 打赏作者</button>` : ''}
                         ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
+                    </div>
+                    <div class="series-block">
+                        <div style="margin-bottom:0.35rem;">🙏 打赏感谢名单</div>
+                        <div id="postTipsThanksList" style="font-size:0.82rem; color:var(--text-secondary);">加载中...</div>
                     </div>
 
                     ${adminControls}
@@ -1835,16 +2009,57 @@
                         </div>
                     </div>
                 `;
-                body.classList.remove('detail-body-enter');
-                void body.offsetWidth;
-                body.classList.add('detail-body-enter');
-                body.querySelectorAll('.post-detail-content img').forEach(function(im) {
-                    im.setAttribute('referrerpolicy', 'no-referrer');
-                    im.loading = 'lazy';
-                });
-                const modalScrollEl = document.querySelector('#postDetailModal .modal');
-                if (modalScrollEl) {
-                    requestAnimationFrame(() => { modalScrollEl.scrollTop = 0; });
+                    body.classList.remove('detail-body-enter');
+                    void body.offsetWidth;
+                    body.classList.add('detail-body-enter');
+                    body.querySelectorAll('.post-detail-content img').forEach(function(im) {
+                        im.setAttribute('referrerpolicy', 'no-referrer');
+                        im.loading = 'lazy';
+                    });
+                    const modalScrollEl = document.querySelector('#postDetailModal .modal');
+                    if (modalScrollEl) {
+                        detailScrollStore.unbind(modalScrollEl);
+                        requestAnimationFrame(() => {
+                            modalScrollEl.scrollTop = 0;
+                            detailScrollStore.bind(p.id, modalScrollEl);
+                        });
+                    }
+                    const resumeBtn = document.getElementById('resumeReadBtn');
+                    const resetBtn = document.getElementById('resumeReadResetBtn');
+                    if (resumeBtn && modalScrollEl && readState) {
+                        resumeBtn.onclick = () => {
+                            const maxScroll = Math.max(0, modalScrollEl.scrollHeight - modalScrollEl.clientHeight);
+                            modalScrollEl.scrollTop = Math.min(maxScroll, Math.max(0, Number(readState.top || 0)));
+                            Toast.info('已恢复到上次阅读位置');
+                        };
+                    }
+                    if (resetBtn && modalScrollEl) {
+                        resetBtn.onclick = () => {
+                            modalScrollEl.scrollTop = 0;
+                            detailScrollStore.save(p.id, 0, Math.max(0, modalScrollEl.scrollHeight - modalScrollEl.clientHeight));
+                        };
+                    }
+                    const tipsWrap = document.getElementById('postTipsThanksList');
+                    if (tipsWrap) {
+                        try {
+                            const tipRes = await fetch(`${API_BASE}/posts/${p.id}/tips?page=1&per_page=12`);
+                            const tipData = await parseJsonSafe(tipRes, {});
+                            const tipItems = (tipData && tipData.items) || [];
+                            if (!tipRes.ok || !tipItems.length) {
+                                tipsWrap.textContent = '暂无打赏记录';
+                            } else {
+                                tipsWrap.innerHTML = tipItems.map((t) => {
+                                    const nick = (t.from_user && t.from_user.nickname) || '匿名用户';
+                                    const dateText = t.created_at ? new Date(t.created_at).toLocaleDateString() : '';
+                                    return `<span style="display:inline-block; margin-right:0.45rem; margin-bottom:0.35rem; padding:0.18rem 0.42rem; border:1px solid var(--border-color); border-radius:999px;">${escapeHtml(nick)} ${escapeHtml(dateText)}</span>`;
+                                }).join('');
+                            }
+                        } catch (_) {
+                            tipsWrap.textContent = '加载失败';
+                        }
+                    }
+                } catch (e) {
+                    body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${escapeHtml((e && e.message) || '加载失败')}</div>`;
                 }
             }
         };
@@ -2011,9 +2226,36 @@
                 searchTimeout = setTimeout(() => {
                     const q = e.target.value.trim();
                     if (q) Post.load({q});
-                    else Post.load();
+                    else Post.load({ q: '' });
                 }, 300);
             });
+
+            const applyFilterBtn = document.getElementById('searchFilterApplyBtn');
+            const resetFilterBtn = document.getElementById('searchFilterResetBtn');
+            if (applyFilterBtn) {
+                applyFilterBtn.onclick = () => {
+                    const filters = {
+                        from_date: (document.getElementById('searchFromDate') || {}).value || '',
+                        to_date: (document.getElementById('searchToDate') || {}).value || '',
+                        permanent_only: !!((document.getElementById('searchPermanentOnly') || {}).checked),
+                        tags: (document.getElementById('searchTags') || {}).value || ''
+                    };
+                    Post.load({ q: (document.getElementById('searchInput') || {}).value || '', filters: filters });
+                };
+            }
+            if (resetFilterBtn) {
+                resetFilterBtn.onclick = () => {
+                    const fromEl = document.getElementById('searchFromDate');
+                    const toEl = document.getElementById('searchToDate');
+                    const perEl = document.getElementById('searchPermanentOnly');
+                    const tagsEl = document.getElementById('searchTags');
+                    if (fromEl) fromEl.value = '';
+                    if (toEl) toEl.value = '';
+                    if (perEl) perEl.checked = false;
+                    if (tagsEl) tagsEl.value = '';
+                    Post.load({ q: (document.getElementById('searchInput') || {}).value || '', filters: { from_date: '', to_date: '', permanent_only: false, tags: '' } });
+                };
+            }
 
             // Mobile: Close keyboard on 'Enter' or 'Search'
             document.getElementById('searchInput').addEventListener('keyup', (e) => {

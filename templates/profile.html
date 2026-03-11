@@ -27,7 +27,8 @@
 
     <div class="container" style="max-width: 800px; margin: 2rem auto; padding: 0 1rem;">
         <div id="profileArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 2rem;">加载中...</div>
-        
+        <div id="tipThanksArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 1.2rem; padding: 1rem; display:none;"></div>
+        <div id="seriesArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 1.2rem; padding: 1rem; display:none;"></div>
         <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">发布的灵异事件</h3>
         <div id="postsArea" class="post-list"></div>
     </div>
@@ -93,6 +94,7 @@
         let currentUser = null;
         let displayedUser = null;
         let displayedPosts = [];
+        let displayedSeries = [];
         let tempAvatar = null;
         let myAchievementsState = null;
         const ACHIEVEMENT_META = {
@@ -190,7 +192,7 @@
             if(!userParam) {
                 if(!currentUser) { navigateWithTransition('/'); return; }
                 displayedUser = currentUser;
-                renderProfile(currentUser, []);
+                renderProfile(currentUser, [], []);
                 loadAchievements();
                 loadUserPosts(currentUser.username || currentUser.address);
             } else {
@@ -202,7 +204,7 @@
                         return;
                     }
                     displayedUser = data.user;
-                    renderProfile(data.user, data.posts);
+                    renderProfile(data.user, data.posts, data.series || []);
                     if (currentUser && data.user && data.user.id === currentUser.id) {
                         loadAchievements();
                     }
@@ -290,8 +292,74 @@
             } catch (_) {}
         }
         
-        function renderProfile(user, posts) {
+        async function loadTipThanks(userId, canShow, showAmount) {
+            const area = document.getElementById('tipThanksArea');
+            if (!area) return;
+            if (!canShow) {
+                area.style.display = 'none';
+                area.innerHTML = '';
+                return;
+            }
+            area.style.display = 'block';
+            area.innerHTML = '加载感谢名单...';
+            try {
+                const qs = new URLSearchParams({ page: '1', per_page: '24' });
+                if (showAmount) qs.append('show_amount', '1');
+                const token = localStorage.getItem('token');
+                const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+                const res = await fetch(`${API_BASE}/users/${userId}/tips-received?${qs.toString()}`, { headers });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    area.innerHTML = `<div style="color:var(--text-muted);">${escapeHtml(data.error || '该用户未公开感谢名单')}</div>`;
+                    return;
+                }
+                const items = data.items || [];
+                if (!items.length) {
+                    area.innerHTML = '<div style="color:var(--text-muted);">暂无打赏记录</div>';
+                    return;
+                }
+                area.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">
+                        <b>🙏 感谢名单</b>
+                        <span style="font-size:0.78rem; color:var(--text-muted);">最近 ${items.length} 条</span>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:0.4rem;">
+                        ${items.map((it) => {
+                            const nick = (it.from_user && it.from_user.nickname) || '匿名用户';
+                            const amount = (typeof it.amount_usdt !== 'undefined') ? ` · ${Number(it.amount_usdt).toFixed(2)} USDT` : '';
+                            return `<span style="padding:0.2rem 0.45rem; border:1px solid var(--border-color); border-radius:999px; font-size:0.8rem;">${escapeHtml(nick)}${escapeHtml(amount)}</span>`;
+                        }).join('')}
+                    </div>
+                `;
+            } catch (_) {
+                area.innerHTML = '<div style="color:var(--text-muted);">加载失败</div>';
+            }
+        }
+
+        function renderSeriesList(seriesList) {
+            const area = document.getElementById('seriesArea');
+            if (!area) return;
+            const list = Array.isArray(seriesList) ? seriesList : [];
+            if (!list.length) {
+                area.style.display = 'none';
+                area.innerHTML = '';
+                return;
+            }
+            area.style.display = 'block';
+            area.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">
+                    <b>📚 系列 / 合集</b>
+                    <span style="font-size:0.78rem; color:var(--text-muted);">${list.length} 个系列</span>
+                </div>
+                <div style="display:grid; gap:0.5rem;">
+                    ${list.map((s) => `<a href="/series/${s.id}" class="btn btn-ghost btn-sm" data-no-transition="1" style="justify-content:space-between; text-decoration:none;"><span>${escapeHtml(s.title || '')}</span><span style="font-size:0.74rem; color:var(--text-muted);">查看目录</span></a>`).join('')}
+                </div>
+            `;
+        }
+
+        function renderProfile(user, posts, seriesList) {
             displayedPosts = Array.isArray(posts) ? posts : [];
+            displayedSeries = Array.isArray(seriesList) ? seriesList : displayedSeries;
             // Always render emoji avatar
             let avatarHtml = `<div class="avatar-lg">${user.avatar || '👻'}</div>`;
             const walletAddress = ((user.wallet_address || user.address || '') + '').trim();
@@ -300,6 +368,7 @@
                 : '';
             
             const isMe = currentUser && currentUser.id === user.id;
+            const showTipThanks = !!user.show_tip_thanks;
             
             document.getElementById('profileArea').innerHTML = `
                 <div class="profile-header" style="border:none; margin:0; background:transparent;">
@@ -321,6 +390,7 @@
                         </div>
                         ${user.bio ? `<div style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-primary); background:rgba(255,255,255,0.05); padding:0.5rem; border-radius:8px;">${escapeHtml(user.bio)}</div>` : ''}
                         <div style="color:var(--text-secondary); font-size:0.82rem; margin-bottom:0.8rem;">${user.admin_infinite_level ? '🛡️ 管理员免签到（无限等级）' : ('📅 连续签到 ' + Number(user.checkin_streak || 0) + ' 天')}</div>
+                        ${isMe ? `<label style="display:flex; align-items:center; gap:0.45rem; margin-bottom:0.8rem; color:var(--text-secondary); font-size:0.82rem;"><input type="checkbox" id="showTipThanksToggle" ${showTipThanks ? 'checked' : ''}> 公开展示感谢名单</label>` : ''}
                         
                         <div class="stats">
                             <div class="stat-item">
@@ -343,6 +413,34 @@
                     </div>
                 </div>
             `;
+            if (isMe) {
+                const toggle = document.getElementById('showTipThanksToggle');
+                if (toggle) {
+                    toggle.onchange = async function () {
+                        try {
+                            const res = await fetch(`${API_BASE}/user/settings`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                                body: JSON.stringify({ show_tip_thanks: !!toggle.checked })
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok) {
+                                if (typeof Toast !== 'undefined') Toast.error(data.error || '保存失败');
+                                toggle.checked = !toggle.checked;
+                                return;
+                            }
+                            if (currentUser) currentUser.show_tip_thanks = !!toggle.checked;
+                            if (displayedUser) displayedUser.show_tip_thanks = !!toggle.checked;
+                            loadTipThanks(user.id, true, true);
+                        } catch (_) {
+                            if (typeof Toast !== 'undefined') Toast.error('网络错误');
+                            toggle.checked = !toggle.checked;
+                        }
+                    };
+                }
+            }
+            loadTipThanks(user.id, isMe || showTipThanks, isMe);
+            renderSeriesList(displayedSeries);
             if(displayedPosts && displayedPosts.length > 0) {
                 const proofLink = (p) => {
                     const parts = [];
@@ -379,7 +477,7 @@
                 }
                 if(data.user) {
                     displayedUser = data.user;
-                    renderProfile(data.user, data.posts || []);
+                    renderProfile(data.user, data.posts || [], data.series || []);
                     if (currentUser && data.user && data.user.id === currentUser.id) {
                         loadAchievements();
                     }

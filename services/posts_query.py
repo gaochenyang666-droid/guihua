@@ -42,7 +42,7 @@ def get_posts_fallback(page, per_page, current_user_id):
             rows = db.session.execute(text("""
                 SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
                        tx_hash, ipfs_cid, is_paid, region, is_on_chain, post_type, is_hidden, allow_comments,
-                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment
+                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment, tags
                 FROM posts WHERE is_hidden = false
             """ + _order_sql() + " LIMIT :lim OFFSET :off"), {'lim': per_page, 'off': off}).fetchall()
             total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
@@ -92,6 +92,7 @@ def get_posts_fallback(page, per_page, current_user_id):
                 view_count = getattr(p, 'view_count', 0)
                 tx_hash = getattr(p, 'tx_hash', None)
                 ipfs_cid = getattr(p, 'ipfs_cid', None)
+                tags_raw = getattr(p, 'tags', None)
                 post_type = getattr(p, 'post_type', 0)
                 is_repost = getattr(p, 'is_repost', False)
                 original_post_id = getattr(p, 'original_post_id', None)
@@ -128,6 +129,7 @@ def get_posts_fallback(page, per_page, current_user_id):
                 is_repost = r[20] if len(r) > 20 else False
                 original_post_id = r[21] if len(r) > 21 else None
                 repost_comment = r[22] if len(r) > 22 else None
+                tags_raw = r[23] if len(r) > 23 else None
 
             images_list = []
             if images_raw:
@@ -135,6 +137,15 @@ def get_posts_fallback(page, per_page, current_user_id):
                     images_list = json.loads(images_raw) if isinstance(images_raw, str) else (images_raw or [])
                 except (TypeError, ValueError):
                     pass
+            tags_list = []
+            if tags_raw:
+                try:
+                    tags_list = json.loads(tags_raw) if isinstance(tags_raw, str) else (tags_raw or [])
+                except (TypeError, ValueError):
+                    pass
+            if not isinstance(tags_list, list):
+                tags_list = []
+            is_permanent = bool(tx_hash or ipfs_cid or is_on_chain or post_type == 1)
             likes_count = 0
             comments_count = 0
             votes_list = []
@@ -154,6 +165,7 @@ def get_posts_fallback(page, per_page, current_user_id):
                 'content': content,
                 'cover_image': cover_image,
                 'images': images_list,
+                'tags': tags_list,
                 'author': authors_map.get(author_id, {'id': author_id, 'nickname': '用户', 'avatar': '👻', 'honor_title': '新魂'}),
                 'view_count': view_count,
                 'likes_count': likes_count,
@@ -164,6 +176,7 @@ def get_posts_fallback(page, per_page, current_user_id):
                 'tx_hash': tx_hash,
                 'ipfs_cid': ipfs_cid,
                 'post_type': post_type,
+                'is_permanent': is_permanent,
                 'created_at': created_at,
                 'is_repost': is_repost,
                 'original_post_id': original_post_id,

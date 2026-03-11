@@ -9,6 +9,7 @@ web3==6.0.0
 eth-account==0.8.0
 arweave-python-client==1.0.19
 requests==2.31.0
+redis==5.0.8
 python-dotenv==1.0.1
 PyJWT==2.6.0
 bleach==6.0.0

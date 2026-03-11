@@ -184,6 +184,22 @@
                         <label class="form-label">标题</label>
                         <input type="text" class="form-input" id="studioPostTitle" placeholder="请输入引人入胜的标题...">
                     </div>
+                    <div class="form-group" style="display:grid; gap:0.8rem;">
+                        <div>
+                            <label class="form-label">标签（可选）</label>
+                            <input type="text" class="form-input" id="studioPostTags" placeholder="示例：灵异, 都市传说, 夜谈">
+                            <div style="font-size:0.76rem; color:var(--text-muted); margin-top:0.3rem;">多个标签请用英文逗号分隔，最多 8 个。</div>
+                        </div>
+                        <div>
+                            <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                                <span>加入系列（可选）</span>
+                                <button type="button" class="btn btn-ghost btn-sm" id="createSeriesBtn" onclick="Studio.quickCreateSeries()">+ 新建系列</button>
+                            </label>
+                            <select id="studioSeriesSelect" class="form-input">
+                                <option value="">不加入系列</option>
+                            </select>
+                        </div>
+                    </div>
                     <div class="form-group">
                         <label class="form-label" style="display:flex; justify-content:space-between;">
                             <span>正文内容</span>
@@ -390,8 +406,10 @@
                 if (!studioQuill) return;
                 const title = document.getElementById('studioPostTitle').value;
                 const content = studioQuill.root.innerHTML;
-                if(title || content) {
-                    localStorage.setItem('studio_draft', JSON.stringify({title, content, time: Date.now()}));
+                const tagsRaw = ((document.getElementById('studioPostTags') || {}).value || '').trim();
+                const seriesId = ((document.getElementById('studioSeriesSelect') || {}).value || '').trim();
+                if(title || content || tagsRaw || seriesId) {
+                    localStorage.setItem('studio_draft', JSON.stringify({title, content, tags: tagsRaw, series_id: seriesId || null, time: Date.now()}));
                     const status = document.getElementById('draftStatus');
                     if(status) {
                         status.textContent = '已自动保存 ' + new Date().toLocaleTimeString();
@@ -407,7 +425,14 @@
                     if(d && (Date.now() - d.time < 24*60*60*1000)) {
                         if(d.title) document.getElementById('studioPostTitle').value = d.title;
                         if(d.content) studioQuill.clipboard.dangerouslyPasteHTML(d.content || '');
-                        if(d.title || d.content) Toast.info('已自动恢复上次的草稿 📝');
+                        if (typeof d.tags === 'string') {
+                            const tagsInput = document.getElementById('studioPostTags');
+                            if (tagsInput) tagsInput.value = d.tags;
+                        }
+                        if (window.Studio && typeof window.Studio.loadSeriesOptions === 'function') {
+                            window.Studio.loadSeriesOptions(d.series_id || '');
+                        }
+                        if(d.title || d.content || d.tags || d.series_id) Toast.info('已自动恢复上次的草稿 📝');
                     }
                 } catch(e) {}
             },
@@ -427,8 +452,13 @@
                 Draft.load();
                 if (window.Studio) Studio.loadPendingPost();
                 Studio.updateFeeDisplay();
+                Studio.loadSeriesOptions();
 
                 document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
+                const tagsInput = document.getElementById('studioPostTags');
+                if (tagsInput) tagsInput.addEventListener('input', () => Draft.save());
+                const seriesSelect = document.getElementById('studioSeriesSelect');
+                if (seriesSelect) seriesSelect.addEventListener('change', () => Draft.save());
                 if (studioQuill) studioQuill.on('text-change', () => Draft.save());
             },
 
@@ -459,6 +489,7 @@
             logInterval: null,
             timeoutId: null,
             pendingTxHash: null,
+            seriesItems: [],
 
             nextStep(step) {
                 if (this.currentStep === 1) {
@@ -523,6 +554,83 @@
                     }
                 } catch (e) {
                     el.textContent = '以支付时为准';
+                }
+            },
+
+            seriesSelectValue() {
+                const select = document.getElementById('studioSeriesSelect');
+                if (!select) return '';
+                return (select.value || '').trim();
+            },
+
+            parseTagsInput() {
+                const raw = ((document.getElementById('studioPostTags') || {}).value || '').trim();
+                if (!raw) return [];
+                const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+                const seen = new Set();
+                const tags = [];
+                for (const p of parts) {
+                    if (seen.has(p)) continue;
+                    seen.add(p);
+                    tags.push(p);
+                    if (tags.length >= 8) break;
+                }
+                return tags;
+            },
+
+            async loadSeriesOptions(preferId) {
+                const select = document.getElementById('studioSeriesSelect');
+                if (!select || !currentUser) return;
+                const token = localStorage.getItem('token');
+                if (!token) return;
+                try {
+                    const res = await fetch(`${API_BASE}/series?mine=1&page=1&per_page=80`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    const items = (data && (data.items || data.series)) || [];
+                    this.seriesItems = Array.isArray(items) ? items : [];
+                    const currentVal = (preferId != null && preferId !== '') ? String(preferId) : this.seriesSelectValue();
+                    select.innerHTML = `<option value="">不加入系列</option>${
+                        this.seriesItems.map((s) => `<option value="${String(s.id)}">${escapeHtml(s.title || ('系列 #' + s.id))}</option>`).join('')
+                    }`;
+                    if (currentVal && this.seriesItems.some((s) => String(s.id) === currentVal)) {
+                        select.value = currentVal;
+                    } else {
+                        select.value = '';
+                    }
+                } catch (_) {
+                    if (select.options.length <= 1) {
+                        select.innerHTML = '<option value="">不加入系列</option>';
+                    }
+                }
+            },
+
+            async quickCreateSeries() {
+                if (!currentUser) return;
+                const title = (prompt('请输入系列标题（120字内）') || '').trim();
+                if (!title) return;
+                const description = (prompt('可选：系列简介（可留空）') || '').trim();
+                try {
+                    const res = await fetch(`${API_BASE}/series`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+                        },
+                        body: JSON.stringify({ title, description, is_public: true })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        Toast.error(data.error || '创建系列失败');
+                        return;
+                    }
+                    Toast.success(data.message || '系列已创建');
+                    const sid = data && data.series ? data.series.id : '';
+                    await this.loadSeriesOptions(sid ? String(sid) : '');
+                    Draft.save();
+                } catch (e) {
+                    Toast.error('创建系列失败: ' + ((e && e.message) || '网络错误'));
                 }
             },
 
@@ -595,11 +703,15 @@
                 const title = document.getElementById('studioPostTitle').value;
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
                 const coverImage = document.getElementById('studioPostImage').value;
+                const tags = this.parseTagsInput();
+                const seriesId = this.seriesSelectValue();
                 const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const data = {
                     title,
                     content,
                     cover_image: coverImage,
+                    tags,
+                    series_id: seriesId || null,
                     tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null),
                     is_special_announcement: specialChecked,
                     time: Date.now()
@@ -619,6 +731,12 @@
                     if (p.title) document.getElementById('studioPostTitle').value = p.title;
                     if (p.content && studioQuill) studioQuill.clipboard.dangerouslyPasteHTML(p.content);
                     if (p.cover_image) document.getElementById('studioPostImage').value = p.cover_image;
+                    if (Array.isArray(p.tags)) {
+                        const tagsInput = document.getElementById('studioPostTags');
+                        if (tagsInput) tagsInput.value = p.tags.join(', ');
+                    }
+                    const seriesVal = (p.series_id == null ? '' : String(p.series_id));
+                    this.loadSeriesOptions(seriesVal);
                     if (typeof Editor !== 'undefined' && Editor.previewCover) Editor.previewCover(p.cover_image);
                     const specialBox = document.getElementById('adminSpecialPostCheckbox');
                     if (specialBox) specialBox.checked = !!p.is_special_announcement;
@@ -773,6 +891,8 @@
                 const title = document.getElementById('studioPostTitle').value;
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
                 const coverImage = document.getElementById('studioPostImage').value;
+                const tags = this.parseTagsInput();
+                const seriesId = this.seriesSelectValue();
                 const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const btn = document.getElementById('publishBtn');
 
@@ -875,6 +995,8 @@
                             content,
                             tx_hash: txHash,
                             cover_image: coverImage,
+                            tags: tags,
+                            series_id: seriesId || null,
                             is_special_announcement: specialChecked,
                             images: [],
                             region: '其他'
@@ -938,6 +1060,8 @@
                 const title = document.getElementById('studioPostTitle').value.trim();
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
                 const textContent = studioQuill ? studioQuill.getText().trim() : '';
+                const tags = this.parseTagsInput();
+                const seriesId = this.seriesSelectValue();
                 if (!title) {
                     Toast.error('请填写标题');
                     return;
@@ -961,6 +1085,8 @@
                             title,
                             content,
                             cover_image: coverImage || null,
+                            tags: tags,
+                            series_id: seriesId || null,
                             is_special_announcement: specialChecked,
                             images: [],
                             region: '其他'

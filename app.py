@@ -14,7 +14,7 @@ from functools import wraps
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, g, render_template
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -186,7 +186,7 @@ db.init_app(app)
 
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
 from models import (User, Post, Vote, Comment, Like, Bookmark, Notification, UsedTransaction,
-    UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog, AppSetting,
+    UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog, AppSetting, Series, SeriesPost,
     build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
     calc_level_info, checkin_exp_by_streak)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
@@ -415,6 +415,11 @@ def studio():
 def profile():
     return render_template('profile.html')
 
+
+@app.route('/series/<int:series_id>')
+def series_page(series_id):
+    return render_template('series.html', series_id=series_id)
+
 # --- Auth ---
 
 @app.route('/api/auth/nonce', methods=['GET'])
@@ -638,6 +643,8 @@ def user_me():
     bio = data.get('bio')
     avatar = data.get('avatar')
     refresh_avatar = data.get('refresh_avatar', False)
+    if 'show_tip_thanks' in data:
+        g.current_user.show_tip_thanks = bool(data.get('show_tip_thanks'))
     
     if nickname:
         if len(nickname) > 50: return jsonify({'error': 'Nickname too long'}), 400
@@ -656,6 +663,20 @@ def user_me():
         
     db.session.commit()
     return jsonify({'message': 'Profile updated', 'user': g.current_user.to_dict()})
+
+
+@app.route('/api/user/settings', methods=['GET', 'PUT'])
+@token_required
+def user_settings():
+    if request.method == 'GET':
+        return jsonify({
+            'show_tip_thanks': bool(getattr(g.current_user, 'show_tip_thanks', False))
+        })
+    data = request.get_json(silent=True) or {}
+    if 'show_tip_thanks' in data:
+        g.current_user.show_tip_thanks = bool(data.get('show_tip_thanks'))
+        db.session.commit()
+    return jsonify({'message': '设置已更新', 'show_tip_thanks': bool(getattr(g.current_user, 'show_tip_thanks', False))})
 
 
 @app.route('/api/checkin/status', methods=['GET'])
@@ -1029,6 +1050,84 @@ def _build_post_precheck(user, data):
     }
 
 
+_MENTION_PATTERN = re.compile(r'@([A-Za-z0-9_\u4e00-\u9fff]{2,32})')
+
+
+def _normalize_tags(raw):
+    values = []
+    if isinstance(raw, str):
+        parts = re.split(r'[,\s，、]+', raw)
+        values.extend(parts)
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str):
+                values.append(item)
+    clean = []
+    seen = set()
+    for tag in values:
+        t = bleach.clean((tag or '').strip(), tags=[], strip=True)
+        t = t.lstrip('#').strip()
+        if not t:
+            continue
+        if len(t) > 20:
+            t = t[:20]
+        key = t.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        clean.append(t)
+        if len(clean) >= 12:
+            break
+    return clean
+
+
+def _is_post_permanent(post_obj):
+    if not post_obj:
+        return False
+    tx_hash = getattr(post_obj, 'tx_hash', None)
+    ipfs_cid = getattr(post_obj, 'ipfs_cid', None)
+    is_on_chain = bool(getattr(post_obj, 'is_on_chain', False))
+    post_type = int(getattr(post_obj, 'post_type', 0) or 0)
+    return bool(tx_hash or ipfs_cid or is_on_chain or post_type == 1)
+
+
+def _extract_mention_tokens(text_value):
+    text = (text_value or '').strip()
+    if not text:
+        return []
+    found = _MENTION_PATTERN.findall(text)
+    result = []
+    seen = set()
+    for token in found:
+        name = token.strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(name)
+    return result
+
+
+def _resolve_mentioned_users(tokens, exclude_user_id=None):
+    users = []
+    if not tokens:
+        return users
+    for token in tokens:
+        user = User.query.filter(func.lower(User.username) == token.lower()).first()
+        if not user:
+            user = User.query.filter(func.lower(User.nickname) == token.lower()).first()
+        if not user:
+            continue
+        if exclude_user_id and user.id == exclude_user_id:
+            continue
+        if any(u.id == user.id for u in users):
+            continue
+        users.append(user)
+    return users
+
+
 @app.route('/api/posts/precheck', methods=['POST'])
 @token_required
 def precheck_post():
@@ -1061,32 +1160,96 @@ def onboarding_tasks():
 def get_active_announcement():
     now = datetime.utcnow()
     ann = Announcement.query.filter(
+        Announcement.entry_type == 'announcement',
         Announcement.is_active == True,
+        ((Announcement.starts_at == None) | (Announcement.starts_at <= now)),
         ((Announcement.expires_at == None) | (Announcement.expires_at > now))
     ).order_by(Announcement.created_at.desc()).first()
     return jsonify({'announcement': ann.to_dict() if ann else None})
+
+
+@app.route('/api/announcements', methods=['GET'])
+def list_public_announcements():
+    now = datetime.utcnow()
+    entry_type = (request.args.get('type') or '').strip().lower()
+    active_only = request.args.get('is_active')
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(max(1, request.args.get('per_page', 20, type=int)), 50)
+    query = Announcement.query
+    if entry_type in ('announcement', 'activity'):
+        query = query.filter(Announcement.entry_type == entry_type)
+    if active_only in ('1', 'true', 'yes'):
+        query = query.filter(
+            Announcement.is_active == True,
+            ((Announcement.starts_at == None) | (Announcement.starts_at <= now)),
+            ((Announcement.expires_at == None) | (Announcement.expires_at > now))
+        )
+    query = query.order_by(Announcement.created_at.desc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify({
+        'announcements': [a.to_dict() for a in pagination.items],
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page
+    })
 
 # --- Posts ---
 
 @app.route('/api/search', methods=['GET'])
 def search_posts():
     q = request.args.get('q', '').strip()
-    if not q:
-        return jsonify({'posts': []})
     if len(q) > 200:
         return jsonify({'error': 'Search query too long', 'posts': []}), 400
-    # 转义 LIKE 通配符，防止 %/_ 导致全表扫描或注入
-    escaped_q = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-    posts = Post.query.filter(
-        (Post.title.ilike(f'%{escaped_q}%', escape='\\')) |
-        (Post.content.ilike(f'%{escaped_q}%', escape='\\'))
-    ).filter_by(is_hidden=False).order_by(
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(max(1, request.args.get('per_page', 20, type=int)), 50)
+    from_date_raw = (request.args.get('from_date') or '').strip()
+    to_date_raw = (request.args.get('to_date') or '').strip()
+    permanent_only = (request.args.get('permanent_only') or request.args.get('on_chain') or '').strip().lower() in ('1', 'true', 'yes')
+    tags = _normalize_tags(request.args.get('tags') or '')
+    if not q and not from_date_raw and not to_date_raw and not permanent_only and not tags:
+        return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
+
+    query = Post.query.filter_by(is_hidden=False)
+    if q:
+        escaped_q = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        query = query.filter(
+            (Post.title.ilike(f'%{escaped_q}%', escape='\\')) |
+            (Post.content.ilike(f'%{escaped_q}%', escape='\\'))
+        )
+
+    if from_date_raw:
+        dt = _parse_iso_datetime(from_date_raw) or _parse_iso_datetime(f"{from_date_raw}T00:00:00")
+        if dt:
+            query = query.filter(Post.created_at >= dt)
+    if to_date_raw:
+        dt = _parse_iso_datetime(to_date_raw) or _parse_iso_datetime(f"{to_date_raw}T23:59:59")
+        if dt:
+            query = query.filter(Post.created_at <= dt)
+    if permanent_only:
+        query = query.filter(or_(Post.tx_hash != None, Post.ipfs_cid != None, Post.is_on_chain == True, Post.post_type == 1))
+    if tags:
+        tag_filters = []
+        for tag in tags:
+            escaped = tag.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            tag_filters.append(Post.tags.ilike(f'%"{escaped}"%', escape='\\'))
+            tag_filters.append(Post.tags.ilike(f'%{escaped}%', escape='\\'))
+        if tag_filters:
+            query = query.filter(or_(*tag_filters))
+
+    query = query.order_by(
         Post.is_special_announcement.desc(),
         Post.is_pinned.desc(),
         Post.pinned_at.desc(),
         Post.created_at.desc()
-    ).limit(20).all()
-    return jsonify({'posts': [p.to_dict() for p in posts]})
+    )
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    posts = pagination.items
+    return jsonify({
+        'posts': [p.to_dict() for p in posts],
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page
+    })
 
 @app.route('/api/posts/check_tx', methods=['GET'])
 def check_tx_status():
@@ -1169,6 +1332,11 @@ def get_user_profile(username):
 
     user_data = user.to_dict()
     user_data['posts_count'] = len(posts)
+    try:
+        tips_count = Tip.query.filter_by(to_user_id=user.id).count()
+    except Exception:
+        tips_count = 0
+    user_data['tips_received_count'] = tips_count
     posts_data = []
     for p in posts:
         p_dict = p.to_dict(
@@ -1180,10 +1348,234 @@ def get_user_profile(username):
         p_dict['is_bookmarked'] = p.id in user_bookmarks
         posts_data.append(p_dict)
 
+    series_rows = Series.query.filter_by(author_id=user.id).order_by(Series.updated_at.desc()).limit(50).all()
     return jsonify({
         'user': user_data,
-        'posts': posts_data
+        'posts': posts_data,
+        'series': [s.to_dict() for s in series_rows]
     })
+
+
+def _series_can_view(series_obj, viewer=None):
+    if not series_obj:
+        return False
+    if getattr(series_obj, 'is_public', False):
+        return True
+    if not viewer:
+        return False
+    if getattr(viewer, 'is_admin', False):
+        return True
+    return viewer.id == series_obj.author_id
+
+
+def _series_can_edit(series_obj, viewer):
+    if not series_obj or not viewer:
+        return False
+    if getattr(viewer, 'is_admin', False):
+        return True
+    return viewer.id == series_obj.author_id
+
+
+def _reindex_series_posts(series_id):
+    rows = SeriesPost.query.filter_by(series_id=series_id).order_by(SeriesPost.order_index.asc(), SeriesPost.id.asc()).all()
+    changed = False
+    for idx, row in enumerate(rows, start=1):
+        if row.order_index != idx:
+            row.order_index = idx
+            changed = True
+    if changed:
+        db.session.flush()
+
+
+@app.route('/api/series', methods=['GET'])
+def list_series():
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(max(1, request.args.get('per_page', 20, type=int)), 50)
+    creator_id = request.args.get('creator_id', type=int)
+    payload = _get_optional_jwt_payload()
+    viewer = User.query.get(payload.get('user_id')) if payload and payload.get('user_id') else None
+    mine = (request.args.get('mine') or '').strip().lower() in ('1', 'true', 'yes')
+    query = Series.query
+    if creator_id:
+        query = query.filter(Series.author_id == creator_id)
+    if mine and viewer:
+        query = query.filter(Series.author_id == viewer.id)
+    if not (viewer and getattr(viewer, 'is_admin', False)):
+        if mine and viewer:
+            pass
+        else:
+            query = query.filter(Series.is_public == True)
+    query = query.order_by(Series.updated_at.desc(), Series.created_at.desc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    items = []
+    for s in pagination.items:
+        d = s.to_dict()
+        d['posts_count'] = SeriesPost.query.filter_by(series_id=s.id).count()
+        items.append(d)
+    return jsonify({'items': items, 'total': pagination.total, 'pages': pagination.pages, 'current_page': page})
+
+
+@app.route('/api/series', methods=['POST'])
+@token_required
+def create_series():
+    data = request.get_json(silent=True) or {}
+    title = bleach.clean((data.get('title') or '').strip(), tags=[], strip=True)
+    if not title:
+        return jsonify({'error': '系列标题不能为空'}), 400
+    if len(title) > 120:
+        return jsonify({'error': '系列标题不能超过120字'}), 400
+    desc = bleach.clean((data.get('description') or '').strip(), tags=[], strip=True)
+    cover_image = (data.get('cover_image') or '').strip() or None
+    row = Series(
+        title=title,
+        description=desc[:1000] if desc else None,
+        cover_image=cover_image,
+        author_id=g.current_user.id,
+        is_public=bool(data.get('is_public', True))
+    )
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'message': '系列已创建', 'series': row.to_dict()}), 201
+
+
+@app.route('/api/series/<int:series_id>', methods=['GET'])
+def get_series_detail(series_id):
+    row = Series.query.get_or_404(series_id)
+    payload = _get_optional_jwt_payload()
+    viewer = User.query.get(payload.get('user_id')) if payload and payload.get('user_id') else None
+    if not _series_can_view(row, viewer):
+        return jsonify({'error': '该系列不可见'}), 403
+    links = SeriesPost.query.filter_by(series_id=series_id).order_by(SeriesPost.order_index.asc(), SeriesPost.id.asc()).all()
+    posts = []
+    for link in links:
+        p = link.post
+        if not p:
+            continue
+        if p.is_hidden and not (viewer and (viewer.is_admin or viewer.id == p.author_id)):
+            continue
+        posts.append({
+            'order_index': link.order_index,
+            'post': p.to_dict(payload.get('user_id') if payload else None)
+        })
+    return jsonify({'series': row.to_dict(), 'items': posts})
+
+
+@app.route('/api/series/<int:series_id>', methods=['PATCH'])
+@token_required
+def update_series(series_id):
+    row = Series.query.get_or_404(series_id)
+    if not _series_can_edit(row, g.current_user):
+        return jsonify({'error': '无权限编辑该系列'}), 403
+    data = request.get_json(silent=True) or {}
+    if 'title' in data:
+        title = bleach.clean((data.get('title') or '').strip(), tags=[], strip=True)
+        if not title:
+            return jsonify({'error': '系列标题不能为空'}), 400
+        row.title = title[:120]
+    if 'description' in data:
+        row.description = bleach.clean((data.get('description') or '').strip(), tags=[], strip=True)[:1000]
+    if 'cover_image' in data:
+        row.cover_image = (data.get('cover_image') or '').strip() or None
+    if 'is_public' in data:
+        row.is_public = bool(data.get('is_public'))
+    db.session.commit()
+    return jsonify({'message': '系列已更新', 'series': row.to_dict()})
+
+
+@app.route('/api/series/<int:series_id>', methods=['DELETE'])
+@token_required
+def delete_series(series_id):
+    row = Series.query.get_or_404(series_id)
+    if not _series_can_edit(row, g.current_user):
+        return jsonify({'error': '无权限删除该系列'}), 403
+    SeriesPost.query.filter_by(series_id=series_id).delete(synchronize_session=False)
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({'message': '系列已删除'})
+
+
+@app.route('/api/series/<int:series_id>/posts', methods=['POST'])
+@token_required
+def add_post_to_series(series_id):
+    series = Series.query.get_or_404(series_id)
+    if not _series_can_edit(series, g.current_user):
+        return jsonify({'error': '无权限操作该系列'}), 403
+    data = request.get_json(silent=True) or {}
+    post_id = data.get('post_id')
+    if not post_id:
+        return jsonify({'error': '缺少 post_id'}), 400
+    post = Post.query.get_or_404(int(post_id))
+    if not g.current_user.is_admin and post.author_id != g.current_user.id:
+        return jsonify({'error': '仅可加入自己的帖子'}), 403
+    existed = SeriesPost.query.filter_by(series_id=series_id, post_id=post.id).first()
+    if existed:
+        return jsonify({'error': '该帖子已在系列中'}), 400
+    order_index = data.get('order_index')
+    if order_index is None:
+        max_order = db.session.query(func.max(SeriesPost.order_index)).filter(SeriesPost.series_id == series_id).scalar() or 0
+        order_index = int(max_order) + 1
+    else:
+        try:
+            order_index = max(1, int(order_index))
+        except Exception:
+            return jsonify({'error': 'order_index 非法'}), 400
+        SeriesPost.query.filter(
+            SeriesPost.series_id == series_id,
+            SeriesPost.order_index >= order_index
+        ).update({'order_index': SeriesPost.order_index + 1}, synchronize_session=False)
+    row = SeriesPost(series_id=series_id, post_id=post.id, order_index=order_index)
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'message': '已加入系列', 'item': row.to_dict()})
+
+
+@app.route('/api/series/<int:series_id>/posts/<int:post_id>', methods=['DELETE'])
+@token_required
+def remove_post_from_series(series_id, post_id):
+    series = Series.query.get_or_404(series_id)
+    if not _series_can_edit(series, g.current_user):
+        return jsonify({'error': '无权限操作该系列'}), 403
+    row = SeriesPost.query.filter_by(series_id=series_id, post_id=post_id).first()
+    if not row:
+        return jsonify({'error': '该帖子不在系列中'}), 404
+    db.session.delete(row)
+    db.session.flush()
+    _reindex_series_posts(series_id)
+    db.session.commit()
+    return jsonify({'message': '已移出系列'})
+
+
+@app.route('/api/series/<int:series_id>/order', methods=['PATCH'])
+@token_required
+def reorder_series_posts(series_id):
+    series = Series.query.get_or_404(series_id)
+    if not _series_can_edit(series, g.current_user):
+        return jsonify({'error': '无权限操作该系列'}), 403
+    data = request.get_json(silent=True) or {}
+    items = data.get('items') or data.get('post_ids') or []
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items 不能为空'}), 400
+    if items and isinstance(items[0], dict):
+        mapping = []
+        for it in items:
+            pid = int(it.get('post_id', 0) or 0)
+            order = int(it.get('order_index', 0) or 0)
+            if pid > 0 and order > 0:
+                mapping.append((pid, order))
+        for pid, order in mapping:
+            row = SeriesPost.query.filter_by(series_id=series_id, post_id=pid).first()
+            if row:
+                row.order_index = order
+    else:
+        for idx, pid in enumerate(items, start=1):
+            row = SeriesPost.query.filter_by(series_id=series_id, post_id=int(pid)).first()
+            if row:
+                row.order_index = idx
+    db.session.flush()
+    _reindex_series_posts(series_id)
+    db.session.commit()
+    rows = SeriesPost.query.filter_by(series_id=series_id).order_by(SeriesPost.order_index.asc()).all()
+    return jsonify({'message': '排序已更新', 'items': [r.to_dict() for r in rows]})
 
 @app.route('/api/notifications', methods=['GET'])
 @token_required
@@ -1297,7 +1689,8 @@ def create_post():
             'ipfs_cid': request.form.get('ipfs_cid'),
             'images': [],
             'region': region,
-            'vote_options': vote_options
+            'vote_options': vote_options,
+            'tags': request.form.get('tags')
         }
     else:
         # JSON fallback（避免 get_json() 为 None 时 .get 报错）
@@ -1307,6 +1700,19 @@ def create_post():
     ipfs_cid = data.get('ipfs_cid')
     region = data.get('region', '其他')
     vote_options = data.get('vote_options', [])
+    normalized_tags = _normalize_tags(data.get('tags') or data.get('tag_names'))
+    series_id_raw = data.get('series_id')
+    target_series = None
+    if series_id_raw not in (None, '', 0, '0'):
+        try:
+            series_id_int = int(series_id_raw)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'series_id 非法'}), 400
+        target_series = Series.query.get(series_id_int)
+        if not target_series:
+            return jsonify({'error': '系列不存在'}), 404
+        if not _series_can_edit(target_series, g.current_user):
+            return jsonify({'error': '无权限将帖子加入该系列'}), 403
     if vote_options is None:
         vote_options = []
     if not isinstance(vote_options, list):
@@ -1346,6 +1752,7 @@ def create_post():
             'title': data.get('title'),
             'content': clean_content,
             'cover_image': data.get('cover_image'),
+            'tags': normalized_tags,
             'author': g.current_user.address,
             'timestamp': datetime.utcnow().isoformat(),
             'tx_hash': tx_hash,
@@ -1387,6 +1794,7 @@ def create_post():
         content=clean_content,
         cover_image=cover_image,
         images=json.dumps(data.get('images', [])),
+        tags=json.dumps(normalized_tags, ensure_ascii=False),
         author_id=g.current_user.id,
         tx_hash=tx_hash,
         ipfs_cid=ipfs_cid,
@@ -1408,11 +1816,30 @@ def create_post():
                     clean_opt = bleach.clean(opt.strip(), strip=True)
                     vote = Vote(post_id=post.id, option_text=clean_opt)
                     db.session.add(vote)
+
+        if target_series:
+            max_order = db.session.query(func.max(SeriesPost.order_index)).filter(SeriesPost.series_id == target_series.id).scalar() or 0
+            db.session.add(SeriesPost(series_id=target_series.id, post_id=post.id, order_index=int(max_order) + 1))
         
         # 6. Record Transaction (Prevent Replay)
         if tx_hash and not g.current_user.is_admin:
             used_tx = UsedTransaction(tx_hash=tx_hash, user_id=g.current_user.id)
             db.session.add(used_tx)
+
+        # Mentions in post content (optional enhancement)
+        mention_source = re.sub(r'<[^>]+>', ' ', clean_content or '')
+        mention_tokens = _extract_mention_tokens(mention_source)
+        mention_users = _resolve_mentioned_users(mention_tokens, exclude_user_id=g.current_user.id)
+        for u in mention_users:
+            db.session.add(Notification(
+                user_id=u.id,
+                sender_id=g.current_user.id,
+                post_id=post.id,
+                comment_id=None,
+                type='mention',
+                content='在帖子中提到了你',
+                link=f"/?post={post.id}"
+            ))
             
         db.session.commit()
     except Exception as e:
@@ -1486,6 +1913,7 @@ def get_post_detail(post_id):
             db.session.rollback()
         payload = _get_optional_jwt_payload()
         current_user_id = payload.get('user_id') if payload else None
+        viewer = User.query.get(current_user_id) if current_user_id else None
 
         post_data = post.to_dict(current_user_id)
         if post_data.get('cover_image') and str(post_data['cover_image']).strip() == '/static/images/hua_cover.jpg':
@@ -1497,6 +1925,31 @@ def get_post_detail(post_id):
         ).order_by(Comment.created_at.asc()).all()
         post_data['comments'] = build_comment_tree(all_comments)
         post_data['comments_count'] = len(all_comments)
+
+        series_items = []
+        link_rows = SeriesPost.query.filter_by(post_id=post_id).order_by(SeriesPost.order_index.asc()).all()
+        for link in link_rows:
+            s = link.series
+            if not s:
+                continue
+            if not _series_can_view(s, viewer):
+                continue
+            prev_row = SeriesPost.query.filter(
+                SeriesPost.series_id == s.id,
+                SeriesPost.order_index < link.order_index
+            ).order_by(SeriesPost.order_index.desc()).first()
+            next_row = SeriesPost.query.filter(
+                SeriesPost.series_id == s.id,
+                SeriesPost.order_index > link.order_index
+            ).order_by(SeriesPost.order_index.asc()).first()
+            series_items.append({
+                'series_id': s.id,
+                'title': s.title,
+                'order_index': link.order_index,
+                'prev_post_id': prev_row.post_id if prev_row else None,
+                'next_post_id': next_row.post_id if next_row else None
+            })
+        post_data['series'] = series_items
 
         return jsonify(post_data)
     except Exception as e:
@@ -1631,6 +2084,7 @@ def add_comment(post_id):
     
     # Notification Logic
     try:
+        notified_user_ids = set()
         if parent_id:
             # Reply to comment
             parent_comment = Comment.query.get(parent_id)
@@ -1640,9 +2094,12 @@ def add_comment(post_id):
                     sender_id=g.current_user.id,
                     post_id=post.id,
                     comment_id=comment.id,
-                    type='reply'
+                    type='reply',
+                    content='回复了你的评论',
+                    link=f"/?post={post.id}"
                 )
                 db.session.add(notif)
+                notified_user_ids.add(parent_comment.author_id)
         elif post.author_id != g.current_user.id:
             # Comment on post
             notif = Notification(
@@ -1650,9 +2107,29 @@ def add_comment(post_id):
                 sender_id=g.current_user.id,
                 post_id=post.id,
                 comment_id=comment.id,
-                type='comment'
+                type='comment',
+                content='评论了你的帖子',
+                link=f"/?post={post.id}"
             )
             db.session.add(notif)
+            notified_user_ids.add(post.author_id)
+
+        # Mentions in comment content
+        mention_tokens = _extract_mention_tokens(clean_content)
+        mention_users = _resolve_mentioned_users(mention_tokens, exclude_user_id=g.current_user.id)
+        for u in mention_users:
+            if u.id in notified_user_ids:
+                continue
+            db.session.add(Notification(
+                user_id=u.id,
+                sender_id=g.current_user.id,
+                post_id=post.id,
+                comment_id=comment.id,
+                type='mention',
+                content='在评论中提到了你',
+                link=f"/?post={post.id}"
+            ))
+            notified_user_ids.add(u.id)
         db.session.commit()
     except Exception as e:
         print(f"Notification Error: {e}")
@@ -1677,7 +2154,9 @@ def like_post(post_id):
                     user_id=post.author_id,
                     sender_id=g.current_user.id,
                     post_id=post.id,
-                    type='like'
+                    type='like',
+                    content='点赞了你的帖子',
+                    link=f"/?post={post.id}"
                 )
                 db.session.add(notif)
         db.session.commit()
@@ -1723,6 +2202,81 @@ def upload():
 
 # 打赏最低 1 USDT（最小单位）
 TIP_MIN_USDT_RAW = 10 ** USDT_DECIMALS
+
+
+def _tip_amount_to_usdt_str(raw_amount):
+    try:
+        val = int(raw_amount or 0)
+    except Exception:
+        val = 0
+    return round(val / float(10 ** app.config['BSC']['USDT_DECIMALS']), 4)
+
+
+@app.route('/api/users/<int:user_id>/tips-received', methods=['GET'])
+def list_tips_received(user_id):
+    user = User.query.get_or_404(user_id)
+    payload = _get_optional_jwt_payload()
+    viewer_id = payload.get('user_id') if payload else None
+    viewer = User.query.get(viewer_id) if viewer_id else None
+    is_owner = bool(viewer and viewer.id == user.id)
+    is_admin = bool(viewer and viewer.is_admin)
+    if not (is_owner or is_admin or bool(getattr(user, 'show_tip_thanks', False))):
+        return jsonify({'error': '作者未开启感谢名单展示'}), 403
+
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(max(1, request.args.get('per_page', 20, type=int)), 50)
+    include_amount = (request.args.get('show_amount') or '').strip().lower() in ('1', 'true', 'yes')
+    if not (is_owner or is_admin):
+        include_amount = False
+
+    q = Tip.query.filter_by(to_user_id=user.id).order_by(Tip.created_at.desc())
+    pagination = q.paginate(page=page, per_page=per_page, error_out=False)
+    rows = []
+    for t in pagination.items:
+        sender = t.sender.to_dict() if t.sender else None
+        item = {
+            'id': t.id,
+            'post_id': t.post_id,
+            'token_symbol': t.token_symbol or 'USDT',
+            'tx_hash': t.tx_hash,
+            'created_at': t.created_at.isoformat() if t.created_at else None,
+            'from_user': sender,
+        }
+        if include_amount:
+            item['amount_usdt'] = _tip_amount_to_usdt_str(t.amount)
+        rows.append(item)
+    return jsonify({
+        'items': rows,
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page,
+        'show_amount': include_amount,
+        'show_tip_thanks': bool(getattr(user, 'show_tip_thanks', False))
+    })
+
+
+@app.route('/api/posts/<int:post_id>/tips', methods=['GET'])
+def list_post_tips(post_id):
+    post = Post.query.get_or_404(post_id)
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = min(max(1, request.args.get('per_page', 20, type=int)), 50)
+    q = Tip.query.filter_by(post_id=post.id).order_by(Tip.created_at.desc())
+    pagination = q.paginate(page=page, per_page=per_page, error_out=False)
+    rows = []
+    for t in pagination.items:
+        rows.append({
+            'id': t.id,
+            'from_user': t.sender.to_dict() if t.sender else None,
+            'created_at': t.created_at.isoformat() if t.created_at else None
+        })
+    return jsonify({
+        'items': rows,
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page,
+        'post_id': post.id
+    })
+
 
 @app.route('/api/tips/verify', methods=['POST'])
 @token_required
@@ -1770,7 +2324,9 @@ def verify_tip():
                 user_id=post.author.id,
                 sender_id=g.current_user.id,
                 post_id=post.id,
-                type='tip'
+                type='tip',
+                content='给你打赏了帖子',
+                link=f"/?post={post.id}"
             )
             db.session.add(notif)
         db.session.commit()
@@ -1832,6 +2388,8 @@ def update_post(post_id):
         post.title = bleach.clean(title, strip=True)
     if content:
         post.content = _bleach_clean_post_content(content)
+    if 'tags' in data or 'tag_names' in data:
+        post.tags = json.dumps(_normalize_tags(data.get('tags') or data.get('tag_names')), ensure_ascii=False)
         
     db.session.commit()
     return jsonify({'message': 'Post updated', 'post': post.to_dict()})
@@ -1926,6 +2484,8 @@ def create_announcement():
     title = (data.get('title') or '').strip()
     content = (data.get('content') or '').strip()
     level = (data.get('level') or 'info').strip().lower()
+    entry_type = (data.get('entry_type') or 'announcement').strip().lower()
+    starts_at = _parse_iso_datetime(data.get('starts_at'))
     expires_at = _parse_iso_datetime(data.get('expires_at'))
     activate_now = bool(data.get('activate', True))
     if not title or not content:
@@ -1934,14 +2494,18 @@ def create_announcement():
         return jsonify({'error': '标题或内容过长'}), 400
     if level not in ('info', 'warning', 'critical'):
         return jsonify({'error': 'level 仅支持 info/warning/critical'}), 400
+    if entry_type not in ('announcement', 'activity'):
+        return jsonify({'error': 'entry_type 仅支持 announcement/activity'}), 400
 
     if activate_now:
-        Announcement.query.update({'is_active': False}, synchronize_session=False)
+        Announcement.query.filter(Announcement.entry_type == entry_type).update({'is_active': False}, synchronize_session=False)
     ann = Announcement(
         title=title,
         content=content,
+        entry_type=entry_type,
         level=level,
         is_active=activate_now,
+        starts_at=starts_at,
         expires_at=expires_at,
         created_by=g.current_user.id
     )
@@ -1961,17 +2525,27 @@ def update_announcement(announcement_id):
         ann.title = (data.get('title') or '').strip()[:120]
     if 'content' in data:
         ann.content = (data.get('content') or '').strip()[:1000]
+    if 'entry_type' in data:
+        entry_type = (data.get('entry_type') or 'announcement').strip().lower()
+        if entry_type not in ('announcement', 'activity'):
+            return jsonify({'error': 'entry_type 仅支持 announcement/activity'}), 400
+        ann.entry_type = entry_type
     if 'level' in data:
         level = (data.get('level') or 'info').strip().lower()
         if level not in ('info', 'warning', 'critical'):
             return jsonify({'error': 'level 仅支持 info/warning/critical'}), 400
         ann.level = level
+    if 'starts_at' in data:
+        ann.starts_at = _parse_iso_datetime(data.get('starts_at'))
     if 'expires_at' in data:
         ann.expires_at = _parse_iso_datetime(data.get('expires_at'))
     if 'is_active' in data:
         make_active = bool(data.get('is_active'))
         if make_active:
-            Announcement.query.filter(Announcement.id != ann.id).update({'is_active': False}, synchronize_session=False)
+            Announcement.query.filter(
+                Announcement.id != ann.id,
+                Announcement.entry_type == ann.entry_type
+            ).update({'is_active': False}, synchronize_session=False)
         ann.is_active = make_active
     db.session.commit()
     _log_admin_action('announcement_update', 'announcement', ann.id)
@@ -2086,12 +2660,31 @@ def update_report(report_id):
     """管理员处理举报：status=resolved|dismissed, admin_notes=..."""
     r = Report.query.get_or_404(report_id)
     data = request.get_json() or {}
+    old_status = (r.status or '').strip()
     if data.get('status') in ('resolved', 'dismissed'):
         r.status = data['status']
     if 'admin_notes' in data:
         notes = (data['admin_notes'] or '')[:500]
         r.admin_notes = notes
         r.admin_note = notes
+    should_notify_result = (
+        r.reporter_id
+        and r.status in ('resolved', 'dismissed')
+        and r.status != old_status
+        and r.result_notified_at is None
+    )
+    if should_notify_result:
+        msg = '您提交的举报已处理，感谢反馈。' if r.status == 'resolved' else '您提交的举报经核实暂不处理。'
+        notif = Notification(
+            user_id=r.reporter_id,
+            sender_id=g.current_user.id,
+            post_id=r.post_id,
+            type='report_result',
+            content=msg,
+            link=f"/?post={r.post_id}" if r.post_id else None
+        )
+        db.session.add(notif)
+        r.result_notified_at = datetime.utcnow()
     db.session.commit()
     _log_admin_action('report_update', 'report', report_id, f"status={r.status}")
     return jsonify({'message': '已更新', 'report': r.to_dict()})
@@ -2259,7 +2852,7 @@ def _ensure_users_checkin_columns():
         if dialect == 'postgresql':
             cols = db.session.execute(text("""
                 SELECT column_name FROM information_schema.columns
-                WHERE table_name='users' AND column_name IN ('experience_points','checkin_streak','last_checkin_date','equipped_achievement_key')
+                WHERE table_name='users' AND column_name IN ('experience_points','checkin_streak','last_checkin_date','equipped_achievement_key','show_tip_thanks')
             """)).fetchall()
             existing = {c[0] for c in cols}
             changed = False
@@ -2278,6 +2871,10 @@ def _ensure_users_checkin_columns():
             if 'equipped_achievement_key' not in existing:
                 db.session.execute(text("ALTER TABLE users ADD COLUMN equipped_achievement_key VARCHAR(64)"))
                 print('[Startup] users.equipped_achievement_key added.')
+                changed = True
+            if 'show_tip_thanks' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN show_tip_thanks BOOLEAN DEFAULT false"))
+                print('[Startup] users.show_tip_thanks added.')
                 changed = True
             if changed:
                 db.session.commit()
@@ -2301,6 +2898,10 @@ def _ensure_users_checkin_columns():
             if 'equipped_achievement_key' not in existing:
                 db.session.execute(text("ALTER TABLE users ADD COLUMN equipped_achievement_key VARCHAR(64)"))
                 print('[Startup] users.equipped_achievement_key added.')
+                changed = True
+            if 'show_tip_thanks' not in existing:
+                db.session.execute(text("ALTER TABLE users ADD COLUMN show_tip_thanks BOOLEAN DEFAULT 0"))
+                print('[Startup] users.show_tip_thanks added.')
                 changed = True
             if changed:
                 db.session.commit()
@@ -2423,6 +3024,76 @@ def _ensure_posts_special_column():
         print(f'[Startup] posts special column skip: {e}')
 
 
+def _ensure_posts_tags_column():
+    """启动时确保 posts.tags 列存在。"""
+    from sqlalchemy import text
+    dialect = db.engine.dialect.name
+    try:
+        if dialect == 'postgresql':
+            r = db.session.execute(text(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='tags'"
+            ))
+            if r.scalar() is None:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN tags TEXT"))
+                db.session.commit()
+                print('[Startup] posts.tags added.')
+            return
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(posts)")).fetchall()
+            existing = {c[1] for c in cols}
+            if 'tags' not in existing:
+                db.session.execute(text("ALTER TABLE posts ADD COLUMN tags TEXT"))
+                db.session.commit()
+                print('[Startup] posts.tags added.')
+            return
+    except Exception as e:
+        db.session.rollback()
+        print(f'[Startup] posts tags column skip: {e}')
+
+
+def _ensure_notifications_columns():
+    """启动时确保 notifications.content/link 列存在。"""
+    from sqlalchemy import text
+    dialect = db.engine.dialect.name
+    try:
+        if dialect == 'postgresql':
+            cols = db.session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='notifications' AND column_name IN ('content','link')
+            """)).fetchall()
+            existing = {c[0] for c in cols}
+            changed = False
+            if 'content' not in existing:
+                db.session.execute(text("ALTER TABLE notifications ADD COLUMN content VARCHAR(500)"))
+                print('[Startup] notifications.content added.')
+                changed = True
+            if 'link' not in existing:
+                db.session.execute(text("ALTER TABLE notifications ADD COLUMN link VARCHAR(500)"))
+                print('[Startup] notifications.link added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(notifications)")).fetchall()
+            existing = {c[1] for c in cols}
+            changed = False
+            if 'content' not in existing:
+                db.session.execute(text("ALTER TABLE notifications ADD COLUMN content VARCHAR(500)"))
+                print('[Startup] notifications.content added.')
+                changed = True
+            if 'link' not in existing:
+                db.session.execute(text("ALTER TABLE notifications ADD COLUMN link VARCHAR(500)"))
+                print('[Startup] notifications.link added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+    except Exception as e:
+        db.session.rollback()
+        print(f'[Startup] notifications columns skip: {e}')
+
+
 def _ensure_reports_columns():
     """启动时兼容 reports 历史表结构（补齐新旧字段并避免 NOT NULL 报错）。"""
     from sqlalchemy import text
@@ -2431,7 +3102,7 @@ def _ensure_reports_columns():
         if dialect == 'postgresql':
             cols = db.session.execute(text("""
                 SELECT column_name FROM information_schema.columns
-                WHERE table_name='reports' AND column_name IN ('target_type','target_id','reported_user_id','post_id','admin_note','admin_notes')
+                WHERE table_name='reports' AND column_name IN ('target_type','target_id','reported_user_id','post_id','admin_note','admin_notes','result_notified_at')
             """)).fetchall()
             existing = {c[0] for c in cols}
             changed = False
@@ -2458,6 +3129,10 @@ def _ensure_reports_columns():
             if 'admin_notes' not in existing:
                 db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_notes VARCHAR(500) NULL"))
                 print('[Startup] reports.admin_notes added.')
+                changed = True
+            if 'result_notified_at' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN result_notified_at TIMESTAMP NULL"))
+                print('[Startup] reports.result_notified_at added.')
                 changed = True
             if changed:
                 db.session.commit()
@@ -2490,12 +3165,68 @@ def _ensure_reports_columns():
                 db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_notes VARCHAR(500)"))
                 print('[Startup] reports.admin_notes added.')
                 changed = True
+            if 'result_notified_at' not in existing:
+                db.session.execute(text("ALTER TABLE reports ADD COLUMN result_notified_at DATETIME"))
+                print('[Startup] reports.result_notified_at added.')
+                changed = True
             if changed:
                 db.session.commit()
             return
     except Exception as e:
         db.session.rollback()
         print(f'[Startup] reports columns skip: {e}')
+
+
+def _ensure_announcements_columns():
+    """启动时兼容 announcements 历史表结构（entry_type / starts_at）。"""
+    from sqlalchemy import text
+    dialect = db.engine.dialect.name
+    try:
+        if dialect == 'postgresql':
+            cols = db.session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='announcements' AND column_name IN ('entry_type','starts_at')
+            """)).fetchall()
+            existing = {c[0] for c in cols}
+            changed = False
+            if 'entry_type' not in existing:
+                db.session.execute(text("ALTER TABLE announcements ADD COLUMN entry_type VARCHAR(20) DEFAULT 'announcement'"))
+                print('[Startup] announcements.entry_type added.')
+                changed = True
+            if 'starts_at' not in existing:
+                db.session.execute(text("ALTER TABLE announcements ADD COLUMN starts_at TIMESTAMP NULL"))
+                print('[Startup] announcements.starts_at added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+        if dialect == 'sqlite':
+            cols = db.session.execute(text("PRAGMA table_info(announcements)")).fetchall()
+            existing = {c[1] for c in cols}
+            changed = False
+            if 'entry_type' not in existing:
+                db.session.execute(text("ALTER TABLE announcements ADD COLUMN entry_type VARCHAR(20) DEFAULT 'announcement'"))
+                print('[Startup] announcements.entry_type added.')
+                changed = True
+            if 'starts_at' not in existing:
+                db.session.execute(text("ALTER TABLE announcements ADD COLUMN starts_at DATETIME"))
+                print('[Startup] announcements.starts_at added.')
+                changed = True
+            if changed:
+                db.session.commit()
+            return
+    except Exception as e:
+        db.session.rollback()
+        print(f'[Startup] announcements columns skip: {e}')
+
+
+def _ensure_series_tables():
+    """启动时确保系列表存在。"""
+    try:
+        Series.__table__.create(db.engine, checkfirst=True)
+        SeriesPost.__table__.create(db.engine, checkfirst=True)
+    except Exception as e:
+        print(f'[Startup] series tables skip: {e}')
 
 def _check_receive_address():
     """启动时检查：未配置 RECEIVE_ADDRESS 时打印明确错误提示（发帖费与站长赞赏需要）。"""
@@ -2524,7 +3255,11 @@ def _run_startup_tasks():
     _ensure_posts_tx_nullable()
     _ensure_posts_pin_columns()
     _ensure_posts_special_column()
+    _ensure_posts_tags_column()
+    _ensure_notifications_columns()
     _ensure_reports_columns()
+    _ensure_announcements_columns()
+    _ensure_series_tables()
     if _should_run_init_db():
         init_db_data()
     _check_receive_address()

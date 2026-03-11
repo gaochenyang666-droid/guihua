@@ -59,13 +59,30 @@
             <span id="siteAnnouncementContent" class="site-announcement-content"></span>
         </div>
     </div>
+    <div class="site-entry-bar">
+        <button class="btn btn-ghost btn-sm" type="button" onclick="NoticeCenter.open('announcement')">📣 公告</button>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="NoticeCenter.open('activity')">🎉 活动</button>
+    </div>
+    <div class="search-advanced glass" id="searchAdvancedBar">
+        <div class="search-advanced-title">高级筛选</div>
+        <div class="search-advanced-grid">
+            <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
+            <label>到 <input type="date" id="searchToDate" class="form-input"></label>
+            <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
+            <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
+        </div>
+        <div class="search-advanced-actions">
+            <button class="btn btn-ghost btn-sm" type="button" id="searchFilterApplyBtn">应用筛选</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="searchFilterResetBtn">重置</button>
+        </div>
+    </div>
 
     <div class="main-container">
         <aside class="sidebar">
             <div class="sidebar-card nav-sort-card glass">
-                <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')">🔥 热门</div>
-                <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')">✨ 最新</div>
-                <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')">⭐ 收藏</div>
+                <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')"><span class="nav-item-icon">🔥</span><span class="nav-item-label">热门</span></div>
+                <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')"><span class="nav-item-icon">✨</span><span class="nav-item-label">最新</span></div>
+                <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')"><span class="nav-item-icon">⭐</span><span class="nav-item-label">收藏</span></div>
             </div>
             <div class="sidebar-card glass onboarding-card" id="onboardingCard" hidden>
                 <div class="onboarding-head">
@@ -403,6 +420,16 @@
                 <button class="modal-close" onclick="Modal.close('postDetailModal')">&times;</button>
             </div>
             <div id="postDetailBody"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="noticeCenterModal" onclick="Modal.close('noticeCenterModal')">
+        <div class="modal glass" style="max-width:760px; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="noticeCenterTitle">📣 公告</h3>
+                <button class="modal-close" onclick="Modal.close('noticeCenterModal')">&times;</button>
+            </div>
+            <div id="noticeCenterBody" style="overflow:auto; flex:1; padding:0 0.2rem 0.5rem;">加载中...</div>
         </div>
     </div>
 
