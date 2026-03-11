@@ -1,11 +1,13 @@
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
         const stripHtml = (s) => (s == null ? '' : String(s)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-        const escapeAttr = (s) => (s == null ? '' : String(s))
+        const escapeAttrBase = (s) => (s == null ? '' : String(s))
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
+        const escapeAttr = (s) => escapeAttrBase(s);
+        const escapeDataAttr = (s) => escapeAttrBase(s);
         const parseJsonSafe = async (res, fallback = {}) => {
             try {
                 return await res.json();
@@ -1374,50 +1376,52 @@
                 </div>`;
             },
 
-            renderPosts(posts, append=false) {
-                const grid = document.getElementById('postGrid');
-                const html = posts.map((p, idx) => {
-                    const stagger = append ? 0 : Math.min((idx % 8) * 18, 126);
-                    const itemClass = append ? 'masonry-item' : 'masonry-item is-entering';
-                    const imgUrl = this.resolveCoverUrl(p);
-                    const coverHtml = this.renderCover(imgUrl);
-                    const author = p.author || { nickname: '用户', avatar: '👻' };
+            renderPostCard(p, idx, append=false) {
+                const stagger = append ? 0 : Math.min((idx % 8) * 18, 126);
+                const itemClass = append ? 'masonry-item' : 'masonry-item is-entering';
+                const imgUrl = this.resolveCoverUrl(p);
+                const coverHtml = this.renderCover(imgUrl);
+                const author = p.author || { nickname: '用户', avatar: '👻' };
 
-                    const isWeb3 = p.post_type === 1 || p.tx_hash;
-                    const isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
-                    const isSpecial = !!p.is_special_announcement;
-                    const cardClasses = ['post-card', 'glass'];
-                    if (isWeb3) cardClasses.push('post-card--web3');
-                    const badge = isWeb3 ? '<div class="post-badge post-badge-web3">Web3</div>' : '';
-                    const permanentBadge = isPermanent ? '<div class="post-badge post-badge-permanent">已永存</div>' : '';
-                    const specialBadge = isSpecial ? '<div class="post-badge post-badge-special">📜 长公告</div>' : '';
-                    const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
+                const isWeb3 = p.post_type === 1 || p.tx_hash;
+                const isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
+                const isSpecial = !!p.is_special_announcement;
+                const cardClasses = ['post-card', 'glass'];
+                if (isWeb3) cardClasses.push('post-card--web3');
+                const badge = isWeb3 ? '<div class="post-badge post-badge-web3">Web3</div>' : '';
+                const permanentBadge = isPermanent ? '<div class="post-badge post-badge-permanent">已永存</div>' : '';
+                const specialBadge = isSpecial ? '<div class="post-badge post-badge-special">📜 长公告</div>' : '';
+                const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
 
-                    return `
-                    <div class="${itemClass}" style="--stagger:${stagger}ms;">
-                        <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(event, ${p.id})">
-                            ${pinBadge}
-                            ${badge}
-                            ${permanentBadge}
-                            ${specialBadge}
-                            ${coverHtml}
-                            <div class="post-content">
-                                <div class="post-title">${escapeHtml(p.title)}</div>
-                                <div class="post-meta">
-                                    <div class="author-info">
-                                        ${UI.renderAvatar(author)}
-                                        <span>${escapeHtml(author.nickname || '用户')}</span>
-                                        ${UI.renderAuthorBadge(author)}
-                                        ${author.id != null ? formatUserId(author.id) : ''}
-                                    </div>
-                                    <div class="post-like">
-                                        <span><i class="fas fa-heart" style="${p.is_liked ? 'color:var(--accent-red)' : ''}"></i> ${p.likes_count}</span>
-                                    </div>
+                return `
+                <div class="${itemClass}" style="--stagger:${stagger}ms;">
+                    <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(event, ${p.id})">
+                        ${pinBadge}
+                        ${badge}
+                        ${permanentBadge}
+                        ${specialBadge}
+                        ${coverHtml}
+                        <div class="post-content">
+                            <div class="post-title">${escapeHtml(p.title)}</div>
+                            <div class="post-meta">
+                                <div class="author-info">
+                                    ${this.renderAvatar(author)}
+                                    <span>${escapeHtml(author.nickname || '用户')}</span>
+                                    ${this.renderAuthorBadge(author)}
+                                    ${author.id != null ? formatUserId(author.id) : ''}
+                                </div>
+                                <div class="post-like">
+                                    <span><i class="fas fa-heart" style="${p.is_liked ? 'color:var(--accent-red)' : ''}"></i> ${p.likes_count}</span>
                                 </div>
                             </div>
                         </div>
-                    </div>`;
-                }).join('');
+                    </div>
+                </div>`;
+            },
+
+            renderPosts(posts, append=false) {
+                const grid = document.getElementById('postGrid');
+                const html = posts.map((p, idx) => this.renderPostCard(p, idx, append)).join('');
 
                 if(append) grid.insertAdjacentHTML('beforeend', html);
                 else grid.innerHTML = html;
@@ -1970,6 +1974,15 @@
                 overlay.classList.add('active');
                 overlay.scrollTop = 0;
                 if (modalEl) modalEl.scrollTop = 0;
+                const savedScrollY = (opts && Number.isFinite(opts.savedScrollY)) ? opts.savedScrollY : null;
+                if (id === 'postDetailModal' && savedScrollY !== null) {
+                    const restore = () => {
+                        if (window.scrollY !== savedScrollY) window.scrollTo(0, savedScrollY);
+                    };
+                    requestAnimationFrame(restore);
+                    setTimeout(restore, 50);
+                    setTimeout(restore, 150);
+                }
             },
             close(id) {
                 const overlay = document.getElementById(id);
@@ -2022,7 +2035,8 @@
                 if (id == null || id === undefined) return;
                 currentDetailPostId = id;
                 const reqSeq = ++currentDetailRequestSeq;
-                this.open('postDetailModal', { anchorY });
+                const savedScrollY = window.scrollY || window.pageYOffset || 0;
+                this.open('postDetailModal', { anchorY: anchorY, savedScrollY: savedScrollY });
                 const body = document.getElementById('postDetailBody');
                 body.innerHTML = '加载中...';
                 const modalScrollEl = document.querySelector('#postDetailModal .modal');
@@ -2057,7 +2071,6 @@
                         `;
                     }
 
-                const escapeDataAttr = (s) => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const renderComments = (comments, depth=0) => {
                     if (!comments || comments.length === 0) return '';
                     return comments.map(c => `
@@ -2176,7 +2189,10 @@
                         requestAnimationFrame(() => {
                             modalScrollEl.scrollTop = 0;
                             detailScrollStore.bind(p.id, modalScrollEl);
+                            if (window.scrollY !== savedScrollY) window.scrollTo(0, savedScrollY);
                         });
+                    } else {
+                        requestAnimationFrame(() => { if (window.scrollY !== savedScrollY) window.scrollTo(0, savedScrollY); });
                     }
                     const resumeBtn = document.getElementById('resumeReadBtn');
                     const resetBtn = document.getElementById('resumeReadResetBtn');

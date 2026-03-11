@@ -478,7 +478,7 @@ def get_nonce():
 @app.route('/api/auth/verify', methods=['POST'])
 def verify_signature():
     _prune_pending_wallet_nonces()
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'Invalid or empty JSON'}), 400
     address = data.get('address')
@@ -564,7 +564,7 @@ def register():
     if _rate_limit('register', 10):
         return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         if not data:
             return jsonify({'error': '请使用 JSON 提交（Content-Type: application/json）'}), 400
         username = (data.get('username') or '').strip()
@@ -602,7 +602,7 @@ def register():
 def login():
     if _rate_limit('login', 10):
         return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'Invalid or empty JSON'}), 400
     username = (data.get('username') or '').strip()
@@ -637,7 +637,7 @@ def change_password_no_login():
     """找回/修改密码：凭账号和原密码即可设置新密码，无需登录。限流防撞库。"""
     if _rate_limit('change_password', 5):
         return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'Missing data'}), 400
     username = data.get('username')
@@ -663,7 +663,7 @@ def user_me():
         return jsonify(g.current_user.to_dict())
     
     # PUT: Update profile
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
         
@@ -789,7 +789,7 @@ def equip_achievement():
     state = _build_achievements_for_user(user)
     if not state.get('can_equip'):
         return jsonify({'error': '等级达到 3 才可佩戴成就'}), 403
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     key = (data.get('key') or '').strip()
     if not key:
         user.equipped_achievement_key = None
@@ -836,7 +836,7 @@ def get_admin_group_links():
 @token_required
 @admin_required
 def set_admin_group_links():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     co_url = (data.get('co_create_url') or '').strip()
     core_url = (data.get('core_url') or '').strip()
     for val in (co_url, core_url):
@@ -853,7 +853,7 @@ def set_admin_group_links():
 @app.route('/api/user/password', methods=['PUT'])
 @token_required
 def change_password():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     old_password = data.get('old_password')
@@ -876,7 +876,7 @@ def bind_wallet():
     if g.current_user.address:
         return jsonify({'error': 'Wallet already bound'}), 400
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     address = data.get('address')
@@ -1195,7 +1195,7 @@ def _resolve_mentioned_users(tokens, exclude_user_id=None):
 @app.route('/api/posts/precheck', methods=['POST'])
 @token_required
 def precheck_post():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     return jsonify(_build_post_precheck(g.current_user, data))
 
 
@@ -1763,7 +1763,7 @@ def create_post():
         }
     else:
         # JSON fallback（避免 get_json() 为 None 时 .get 报错）
-        data = request.get_json() or {}
+        data = request.get_json(silent=True) or {}
     
     tx_hash = data.get('tx_hash')
     ipfs_cid = data.get('ipfs_cid')
@@ -2059,7 +2059,7 @@ def sync_post_to_arweave(post_id):
 @app.route('/api/posts/<int:post_id>/repost', methods=['POST'])
 @token_required
 def repost_post(post_id):
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     content = data.get('content', '')
@@ -2087,7 +2087,7 @@ def repost_post(post_id):
 @token_required
 def vote_post(post_id):
     post = Post.query.get_or_404(post_id)
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     option_id = data.get('option_id')
@@ -2133,7 +2133,7 @@ def add_comment(post_id):
     if not post.allow_comments and not g.current_user.is_admin:
         return jsonify({'error': 'Comments are closed for this post'}), 403
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     content = data.get('content')
@@ -2360,7 +2360,7 @@ def list_post_tips(post_id):
 @token_required
 def verify_tip():
     """打赏直接转入作者钱包：验证 USDT 转至作者地址后仅记账（展示打赏记录），不经过平台、不抽成、不写入可提现余额。"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     tx_hash = data.get('tx_hash')
@@ -2471,7 +2471,7 @@ def update_post(post_id):
     if post.is_on_chain:
         return jsonify({'error': 'Cannot edit on-chain content'}), 400
 
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     title = data.get('title')
@@ -2573,7 +2573,7 @@ def list_announcements():
 @token_required
 @admin_required
 def create_announcement():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     title = (data.get('title') or '').strip()
     content = (data.get('content') or '').strip()
     level = (data.get('level') or 'info').strip().lower()
@@ -2613,7 +2613,7 @@ def create_announcement():
 @admin_required
 def update_announcement(announcement_id):
     ann = Announcement.query.get_or_404(announcement_id)
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     if 'title' in data:
         ann.title = (data.get('title') or '').strip()[:120]
     if 'content' in data:
@@ -2668,7 +2668,7 @@ def list_admin_audit_logs():
 @token_required
 def create_report():
     """用户举报帖子或用户。"""
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     post_id = data.get('post_id')
     reported_user_id = data.get('reported_user_id')
     reason = (data.get('reason') or '').strip()
@@ -2752,7 +2752,7 @@ def list_reports():
 def update_report(report_id):
     """管理员处理举报：status=resolved|dismissed, admin_notes=..."""
     r = Report.query.get_or_404(report_id)
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     old_status = (r.status or '').strip()
     if data.get('status') in ('resolved', 'dismissed'):
         r.status = data['status']
