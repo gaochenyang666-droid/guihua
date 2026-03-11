@@ -41,10 +41,10 @@
                 <button class="btn btn-primary" onclick="Modal.open('loginModal')">登录</button>
             </div>
 
-            <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem;">
+            <div class="user-menu" id="userMenu" style="display: none;">
                 <span id="userDisplayName" style="font-size: 0.9rem;"></span>
                 <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
-                <button class="btn btn-ghost" id="logoutBtn" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;">
+                <button class="btn btn-ghost user-logout-btn" id="logoutBtn">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
             </div>
@@ -63,17 +63,22 @@
         <button class="btn btn-ghost btn-sm" type="button" onclick="NoticeCenter.open('announcement')">📣 公告</button>
         <button class="btn btn-ghost btn-sm" type="button" onclick="NoticeCenter.open('activity')">🎉 活动</button>
     </div>
-    <div class="search-advanced glass" id="searchAdvancedBar">
-        <div class="search-advanced-title">高级筛选</div>
-        <div class="search-advanced-grid">
-            <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
-            <label>到 <input type="date" id="searchToDate" class="form-input"></label>
-            <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
-            <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
-        </div>
-        <div class="search-advanced-actions">
-            <button class="btn btn-ghost btn-sm" type="button" id="searchFilterApplyBtn">应用筛选</button>
-            <button class="btn btn-ghost btn-sm" type="button" id="searchFilterResetBtn">重置</button>
+    <div class="search-advanced glass is-collapsed" id="searchAdvancedBar">
+        <button class="search-advanced-toggle" type="button" id="searchAdvancedToggleBtn" aria-expanded="false">
+            <span>高级筛选</span>
+            <span class="search-advanced-toggle-icon" id="searchAdvancedToggleIcon">▼</span>
+        </button>
+        <div class="search-advanced-content" id="searchAdvancedContent">
+            <div class="search-advanced-grid">
+                <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
+                <label>到 <input type="date" id="searchToDate" class="form-input"></label>
+                <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
+                <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
+            </div>
+            <div class="search-advanced-actions">
+                <button class="btn btn-ghost btn-sm" type="button" id="searchFilterApplyBtn">应用筛选</button>
+                <button class="btn btn-ghost btn-sm" type="button" id="searchFilterResetBtn">重置</button>
+            </div>
         </div>
     </div>
 
@@ -132,7 +137,7 @@
                 <p class="checkin-subtitle" id="groupLinksHint">达到等级后自动解锁 Telegram 群链接</p>
                 <div id="groupLinksList" class="onboarding-task-list"></div>
             </div>
-            <div class="sidebar-card glass" style="font-size: 0.85rem; color: var(--text-secondary); display: block;">
+            <div class="sidebar-card glass sidebar-web3-note" style="display: block;">
                 <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
                 <p>内容均由创作者共建。通过 Arweave 实现分布式永存，支付少量 USDT，让你的故事在赛博世界长生不老。</p>
             </div>
@@ -162,15 +167,17 @@
     </div>
 
     <!-- Footer with Legal Warning -->
-    <footer style="margin-top: 3rem; padding: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
-        <div style="max-width: 800px; margin: 0 auto;">
-            <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
+    <footer class="site-footer">
+        <div class="site-footer-inner">
+            <div class="site-footer-disclaimer">
+                <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
                 <p>
                     This platform is a decentralized content display interface. All content is stored on the distributed network and the blockchain.<br>
                     Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
                     本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
                 </p>
-            <p>© 2026 诡话 (GuiHua) | <a href="#" onclick="Donate.openModal(); return false;" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
+            </div>
+            <p class="site-footer-meta">© 2026 诡话 (GuiHua) | <a href="#" onclick="Donate.openModal(); return false;" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
         </div>
     </footer>
 
@@ -211,8 +218,8 @@
                         </div>
                         <button type="submit" class="btn btn-primary" style="width: 100%;">登录</button>
 
-                        <div style="margin: 1.5rem 0; border-top: 1px solid var(--border-color); position: relative; text-align: center;">
-                            <span style="background: var(--bg-card); padding: 0 0.5rem; color: var(--text-muted); position: relative; top: -0.8rem; font-size: 0.8rem;">或</span>
+                        <div class="auth-divider">
+                            <span>或</span>
                         </div>
                         <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.loginWithBinance()">
                             <i class="fas fa-wallet"></i> 币安钱包 / 扫码登录
@@ -362,24 +369,26 @@
                 您的支持是我们坚持下去的动力！
             </p>
 
-            <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+            <div class="donate-address-block">
                 <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC USDT)</p>
                 <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
                     <code style="color: var(--accent-purple); word-break: break-all;" id="donateAddress">—</code>
                     <button class="btn btn-ghost" onclick="var a=document.getElementById('donateAddress').textContent; if(!a || a==='—' || a.trim()==='') { Toast.error('请等待地址加载'); } else { navigator.clipboard.writeText(a).then(function(){ Toast.success('已复制'); }); }" style="padding: 0.2rem 0.5rem;">📋</button>
                 </div>
             </div>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">选择金额或自定义（USDT）</p>
-            <div style="display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; margin-bottom: 0.8rem;">
-                <button class="btn btn-ghost" onclick="Donate.send(1)">💰 1 USDT</button>
-                <button class="btn btn-ghost" onclick="Donate.send(5)">💰 5 USDT</button>
-                <button class="btn btn-primary" onclick="Donate.send(10)">💎 10 USDT</button>
+            <div class="donate-amount-group">
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">选择金额或自定义（USDT）</p>
+                <div style="display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; margin-bottom: 0.8rem;">
+                    <button class="btn btn-ghost" onclick="Donate.send(1)">💰 1 USDT</button>
+                    <button class="btn btn-ghost" onclick="Donate.send(5)">💰 5 USDT</button>
+                    <button class="btn btn-primary" onclick="Donate.send(10)">💎 10 USDT</button>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.8rem;">
+                    <label class="form-label">自定义金额 (USDT)</label>
+                    <input type="number" id="donateCustomAmount" class="form-input" min="0.1" step="0.1" placeholder="输入金额">
+                </div>
             </div>
-            <div class="form-group" style="margin-bottom: 0.8rem;">
-                <label class="form-label">自定义金额 (USDT)</label>
-                <input type="number" id="donateCustomAmount" class="form-input" min="0.1" step="0.1" placeholder="输入金额">
-            </div>
-            <button class="btn btn-ghost" style="width: 100%;" onclick="Donate.send(parseFloat(document.getElementById('donateCustomAmount').value) || 0)">确认打赏上述金额</button>
+            <button class="btn btn-primary" style="width: 100%;" onclick="Donate.send(parseFloat(document.getElementById('donateCustomAmount').value) || 0)">确认打赏上述金额</button>
         </div>
     </div>
 

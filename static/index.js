@@ -2183,7 +2183,7 @@
             success(m) { this.show(m, 'success'); },
             error(m) { this.show(m, 'error'); },
             info(m) { this.show(m, 'info'); },
-            warning(m) { this.show(m, 'info'); }
+            warning(m) { this.show(m, 'warning'); }
         };
 
         window.addEventListener('load', () => {
@@ -2220,15 +2220,18 @@
                 Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
             };
 
+            const searchInput = document.getElementById('searchInput');
             let searchTimeout;
-            document.getElementById('searchInput').addEventListener('input', (e) => {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    const q = e.target.value.trim();
-                    if (q) Post.load({q});
-                    else Post.load({ q: '' });
-                }, 300);
-            });
+            if (searchInput) {
+                searchInput.addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => {
+                        const q = e.target.value.trim();
+                        if (q) Post.load({q});
+                        else Post.load({ q: '' });
+                    }, 300);
+                });
+            }
 
             const applyFilterBtn = document.getElementById('searchFilterApplyBtn');
             const resetFilterBtn = document.getElementById('searchFilterResetBtn');
@@ -2240,7 +2243,7 @@
                         permanent_only: !!((document.getElementById('searchPermanentOnly') || {}).checked),
                         tags: (document.getElementById('searchTags') || {}).value || ''
                     };
-                    Post.load({ q: (document.getElementById('searchInput') || {}).value || '', filters: filters });
+                    Post.load({ q: (searchInput || {}).value || '', filters: filters });
                 };
             }
             if (resetFilterBtn) {
@@ -2253,22 +2256,57 @@
                     if (toEl) toEl.value = '';
                     if (perEl) perEl.checked = false;
                     if (tagsEl) tagsEl.value = '';
-                    Post.load({ q: (document.getElementById('searchInput') || {}).value || '', filters: { from_date: '', to_date: '', permanent_only: false, tags: '' } });
+                    Post.load({ q: (searchInput || {}).value || '', filters: { from_date: '', to_date: '', permanent_only: false, tags: '' } });
                 };
             }
 
+            const searchAdvancedBar = document.getElementById('searchAdvancedBar');
+            const searchAdvancedToggleBtn = document.getElementById('searchAdvancedToggleBtn');
+            const hasAdvancedValues = () => {
+                const from = (document.getElementById('searchFromDate') || {}).value || '';
+                const to = (document.getElementById('searchToDate') || {}).value || '';
+                const tags = (document.getElementById('searchTags') || {}).value || '';
+                const permanent = !!((document.getElementById('searchPermanentOnly') || {}).checked);
+                return !!(from || to || tags.trim() || permanent);
+            };
+            const setAdvancedCollapsed = (collapsed) => {
+                if (!searchAdvancedBar) return;
+                searchAdvancedBar.classList.toggle('is-collapsed', !!collapsed);
+                if (searchAdvancedToggleBtn) {
+                    searchAdvancedToggleBtn.setAttribute('aria-expanded', String(!collapsed));
+                }
+            };
+            if (searchAdvancedToggleBtn) {
+                searchAdvancedToggleBtn.onclick = () => {
+                    const nextCollapsed = !(searchAdvancedBar && searchAdvancedBar.classList.contains('is-collapsed'));
+                    setAdvancedCollapsed(nextCollapsed);
+                };
+            }
+            const syncAdvancedOnViewport = () => {
+                const isMobileView = window.matchMedia('(max-width: 768px)').matches;
+                if (!isMobileView) {
+                    setAdvancedCollapsed(false);
+                    return;
+                }
+                setAdvancedCollapsed(!hasAdvancedValues());
+            };
+            syncAdvancedOnViewport();
+            window.addEventListener('resize', syncAdvancedOnViewport);
+
             // Mobile: Close keyboard on 'Enter' or 'Search'
-            document.getElementById('searchInput').addEventListener('keyup', (e) => {
-                if(e.key === 'Enter') document.getElementById('searchInput').blur();
-            });
-            document.getElementById('searchInput').addEventListener('search', () => {
-                document.getElementById('searchInput').blur();
-            });
+            if (searchInput) {
+                searchInput.addEventListener('keyup', (e) => {
+                    if(e.key === 'Enter') searchInput.blur();
+                });
+                searchInput.addEventListener('search', () => {
+                    searchInput.blur();
+                });
+            }
 
             // Mobile: Close keyboard on scroll
             window.addEventListener('scroll', () => {
-                if(document.activeElement === document.getElementById('searchInput')) {
-                    document.getElementById('searchInput').blur();
+                if(searchInput && document.activeElement === searchInput) {
+                    searchInput.blur();
                 }
             });
 
