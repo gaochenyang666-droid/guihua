@@ -1341,10 +1341,15 @@ def admin_stats():
 
 @app.route('/api/users/<username>', methods=['GET'])
 def get_user_profile(username):
-    user = User.query.filter_by(username=username).first()
+    token = (username or '').strip()
+    if not token:
+        return jsonify({'error': 'User not found'}), 404
+
+    user = User.query.filter(func.lower(User.username) == token.lower()).first()
+    if not user and token.startswith('0x'):
+        user = User.query.filter(func.lower(User.address) == token.lower()).first()
     if not user:
-        if username.startswith('0x'):
-            user = User.query.filter_by(address=username).first()
+        user = User.query.filter(func.lower(User.nickname) == token.lower()).first()
     if not user:
         return jsonify({'error': 'User not found'}), 404
 

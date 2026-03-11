@@ -197,7 +197,7 @@
                 loadUserPosts(currentUser.username || currentUser.address);
             } else {
                 try {
-                    const res = await fetch(`${API_BASE}/users/${userParam}`);
+                    const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userParam)}`);
                     const data = await res.json().catch(() => ({}));
                     if(!res.ok) {
                         showProfileError(data.error || '用户不存在或已注销', true);
@@ -468,7 +468,7 @@
         
         async function loadUserPosts(username) {
             try {
-                const res = await fetch(`${API_BASE}/users/${username}`);
+                const res = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}`);
                 const data = await res.json().catch(() => ({}));
                 if(!res.ok) {
                     if(res.status === 401) localStorage.removeItem('token');

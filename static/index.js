@@ -37,7 +37,10 @@
         };
         const mentionifyText = (text) => {
             const safe = escapeHtml(text || '');
-            return safe.replace(/(^|[\s(（\[【])@([A-Za-z0-9_\u4e00-\u9fff]{2,32})/g, '$1<a class="mention-link" href="/profile?user=$2" data-no-transition="1">@$2</a>');
+            return safe.replace(/(^|[\s(（\[【])@([A-Za-z0-9_\u4e00-\u9fff]{2,32})/g, (all, prefix, token) => {
+                const encoded = encodeURIComponent(token || '');
+                return `${prefix}<a class="mention-link" href="/profile?user=${encoded}" data-no-transition="1">@${token}</a>`;
+            });
         };
         const detailScrollStore = {
             _timer: null,
@@ -1867,6 +1870,8 @@
                 this.open('postDetailModal');
                 const body = document.getElementById('postDetailBody');
                 body.innerHTML = '加载中...';
+                const modalScrollEl = document.querySelector('#postDetailModal .modal');
+                if (modalScrollEl) modalScrollEl.scrollTop = 0;
                 try {
                     const u = new URL(window.location.href);
                     if (u.searchParams.get('post') !== String(id)) {
@@ -2016,8 +2021,8 @@
                         im.setAttribute('referrerpolicy', 'no-referrer');
                         im.loading = 'lazy';
                     });
-                    const modalScrollEl = document.querySelector('#postDetailModal .modal');
                     if (modalScrollEl) {
+                        modalScrollEl.scrollTop = 0;
                         detailScrollStore.unbind(modalScrollEl);
                         requestAnimationFrame(() => {
                             modalScrollEl.scrollTop = 0;
