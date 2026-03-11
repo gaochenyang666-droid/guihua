@@ -194,6 +194,11 @@ from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payloa
     bleach_clean_post_content as _bleach_clean_post_content)
 from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
 from services.blockchain import (get_post_fee_usdt_raw, verify_transaction)
+from services.posts_query import (
+    apply_default_post_order as _posts_apply_default_post_order,
+    build_posts_payload as _build_posts_payload,
+    get_posts_fallback as _posts_get_posts_fallback,
+)
 
 
 def _new_user(**kwargs):
@@ -1218,177 +1223,11 @@ def read_all_notifications():
     return jsonify({'message': 'All marked as read'})
 
 def _get_posts_fallback(page, per_page, current_user_id):
-    """兜底：仅查 posts 表，不 join users，避免缺列导致 500。返回 (posts_data, total, pages)。"""
-    from sqlalchemy import text
-    def _order_sql():
-        return "ORDER BY is_special_announcement DESC, is_pinned DESC, pinned_at DESC, created_at DESC"
-    try:
-        query = Post.query.filter_by(is_hidden=False).order_by(
-            Post.is_special_announcement.desc(),
-            Post.is_pinned.desc(),
-            Post.pinned_at.desc(),
-            Post.created_at.desc()
-        )
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-        posts = pagination.items
-        total, pages = pagination.total, pagination.pages
-    except Exception as e:
-        print(f"[get_posts fallback] ORM query failed, using raw SQL: {e}")
-        try:
-            # 纯 SQL：列顺序与下方 p[0]/p[1]/... 下标一一对应；表结构变更时须同步改 SELECT 与解析逻辑
-            off = (page - 1) * per_page
-            rows = db.session.execute(text("""
-                SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
-                       tx_hash, ipfs_cid, is_paid, region, is_on_chain, post_type, is_hidden, allow_comments,
-                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment
-                FROM posts WHERE is_hidden = false
-            """ + _order_sql() + " LIMIT :lim OFFSET :off"), {'lim': per_page, 'off': off}).fetchall()
-            total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
-            pages = max(1, (total + per_page - 1) // per_page)
-            posts = rows
-        except Exception as e2:
-            print(f"[get_posts fallback] raw SQL failed: {e2}")
-            try:
-                rows = db.session.execute(text("""
-                    SELECT id, title, content, author_id, created_at, cover_image, view_count
-                    FROM posts WHERE is_hidden = false ORDER BY created_at DESC LIMIT :lim OFFSET :off
-                """), {'lim': per_page, 'off': (page - 1) * per_page}).fetchall()
-                total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
-                pages = max(1, (total + per_page - 1) // per_page)
-                posts = rows
-            except Exception as e3:
-                print(f"[get_posts fallback] minimal SQL failed: {e3}")
-                return [], 0, 1
-
-    post_ids = [p.id if hasattr(p, 'id') else p[0] for p in posts]
-    author_ids = {p.author_id if hasattr(p, 'author_id') else p[3] for p in posts}
-    authors_map = {}
-    if author_ids:
-        try:
-            users = User.query.filter(User.id.in_(list(author_ids))).all()
-            for u in users:
-                authors_map[u.id] = u.to_dict()
-        except Exception:
-            authors_map = {}
-    user_likes = set()
-    user_bookmarks = set()
-    if current_user_id and post_ids:
-        try:
-            user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
-            user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
-        except Exception:
-            pass
-
-    posts_data = []
-    for p in posts:
-        try:
-            if hasattr(p, 'id'):
-                pid, title, content, author_id = p.id, getattr(p, 'title', ''), getattr(p, 'content', ''), p.author_id
-                created_at = p.created_at.isoformat() if getattr(p, 'created_at', None) else ''
-                cover_image = getattr(p, 'cover_image', None)
-                images_raw = getattr(p, 'images', None)
-                view_count = getattr(p, 'view_count', 0)
-                tx_hash = getattr(p, 'tx_hash', None)
-                ipfs_cid = getattr(p, 'ipfs_cid', None)
-                post_type = getattr(p, 'post_type', 0)
-                is_repost = getattr(p, 'is_repost', False)
-                original_post_id = getattr(p, 'original_post_id', None)
-                repost_comment = getattr(p, 'repost_comment', None)
-                is_hidden = getattr(p, 'is_hidden', False)
-                is_special_announcement = getattr(p, 'is_special_announcement', False)
-                is_pinned = getattr(p, 'is_pinned', False)
-                pinned_at = getattr(p, 'pinned_at', None)
-                allow_comments = getattr(p, 'allow_comments', True)
-                region = getattr(p, 'region', '其他')
-                is_on_chain = getattr(p, 'is_on_chain', False)
-                pinned_by = getattr(p, 'pinned_by', None)
-            else:
-                r = p
-                pid = r[0]
-                title = r[1] or ''
-                content = r[2] or ''
-                author_id = r[3]
-                created_at = r[4].isoformat() if r[4] else ''
-                cover_image = r[5] if len(r) > 5 else None
-                images_raw = r[6] if len(r) > 6 else None
-                view_count = r[7] if len(r) > 7 else 0
-                tx_hash = r[8] if len(r) > 8 else None
-                ipfs_cid = r[9] if len(r) > 9 else None
-                post_type = r[13] if len(r) > 13 else 0
-                is_hidden = r[14] if len(r) > 14 else False
-                allow_comments = r[15] if len(r) > 15 else True
-                is_special_announcement = r[16] if len(r) > 16 else False
-                is_pinned = r[17] if len(r) > 17 else False
-                pinned_at = r[18] if len(r) > 18 else None
-                pinned_by = r[19] if len(r) > 19 else None
-                region = r[11] if len(r) > 11 else '其他'
-                is_on_chain = r[12] if len(r) > 12 else False
-                is_repost = r[20] if len(r) > 20 else False
-                original_post_id = r[21] if len(r) > 21 else None
-                repost_comment = r[22] if len(r) > 22 else None
-
-            images_list = []
-            if images_raw:
-                try:
-                    images_list = json.loads(images_raw) if isinstance(images_raw, str) else (images_raw or [])
-                except (TypeError, ValueError):
-                    pass
-            likes_count = 0
-            comments_count = 0
-            votes_list = []
-            try:
-                likes_count = Like.query.filter_by(post_id=pid).count()
-                comments_count = Comment.query.filter_by(post_id=pid).count()
-                for v in Vote.query.filter_by(post_id=pid).all():
-                    votes_list.append({'id': v.id, 'option_text': getattr(v, 'option_text', ''), 'vote_count': getattr(v, 'vote_count', 0)})
-            except Exception:
-                pass
-
-            if cover_image and str(cover_image).strip() == '/static/images/hua_cover.jpg':
-                cover_image = None
-            posts_data.append({
-                'id': pid,
-                'title': title,
-                'content': content,
-                'cover_image': cover_image,
-                'images': images_list,
-                'author': authors_map.get(author_id, {'id': author_id, 'nickname': '用户', 'avatar': '👻', 'honor_title': '新魂'}),
-                'view_count': view_count,
-                'likes_count': likes_count,
-                'comments_count': comments_count,
-                'votes': votes_list,
-                'is_liked': pid in user_likes,
-                'is_bookmarked': pid in user_bookmarks,
-                'tx_hash': tx_hash,
-                'ipfs_cid': ipfs_cid,
-                'post_type': post_type,
-                'created_at': created_at,
-                'is_repost': is_repost,
-                'original_post_id': original_post_id,
-                'original_post': None,
-                'repost_comment': repost_comment,
-                'is_hidden': is_hidden,
-                'is_special_announcement': is_special_announcement,
-                'is_pinned': is_pinned,
-                'pinned_at': pinned_at.isoformat() if hasattr(pinned_at, 'isoformat') and pinned_at else None,
-                'pinned_by': pinned_by,
-                'allow_comments': allow_comments,
-                'region': region,
-                'is_on_chain': is_on_chain,
-            })
-        except Exception as e:
-            print(f"[get_posts fallback] skip row: {e}")
-    return posts_data, total, pages
+    return _posts_get_posts_fallback(page, per_page, current_user_id)
 
 
 def _apply_default_post_order(query):
-    """统一帖子排序：特殊公告优先，再置顶，其次发布时间。"""
-    return query.order_by(
-        Post.is_special_announcement.desc(),
-        Post.is_pinned.desc(),
-        Post.pinned_at.desc(),
-        Post.created_at.desc()
-    )
+    return _posts_apply_default_post_order(query)
 
 
 @app.route('/api/posts/pinned', methods=['GET'])
@@ -1401,7 +1240,7 @@ def get_pinned_post():
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
-    """帖子列表：内容来自 DB（Post.content），不请求 Arweave，无 content_arweave_id。"""
+    """帖子列表：委托 services.posts_query 处理排序、聚合与 fallback。"""
     payload = _get_optional_jwt_payload()
     current_user_id = payload.get('user_id') if payload else None
 
@@ -1409,67 +1248,14 @@ def get_posts():
     page = request.args.get('page', 1, type=int)
     per_page = min(request.args.get('per_page', 20, type=int), 50)
     region = request.args.get('region')
-
-    try:
-        from sqlalchemy.orm import joinedload
-        query = Post.query.options(joinedload(Post.author))
-        if sort_by == 'bookmarks':
-            if current_user_id:
-                query = query.join(Bookmark, Post.id == Bookmark.post_id).filter(
-                    Bookmark.user_id == current_user_id
-                ).filter(Post.is_hidden == False)
-                query = _apply_default_post_order(query)
-            else:
-                return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
-        else:
-            query = _apply_default_post_order(query)
-        if region:
-            query = query.filter_by(region=region)
-        current_user = User.query.get(current_user_id) if current_user_id else None
-        if not current_user or not getattr(current_user, 'is_admin', False):
-            if sort_by != 'bookmarks':
-                query = query.filter_by(is_hidden=False)
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-        posts = pagination.items
-        post_ids = [p.id for p in posts]
-        user_likes = set()
-        user_bookmarks = set()
-        like_counts = {}
-        comment_counts = {}
-        if post_ids:
-            if current_user_id:
-                user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
-                user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
-            like_rows = db.session.query(Like.post_id, func.count(Like.id)).filter(Like.post_id.in_(post_ids)).group_by(Like.post_id).all()
-            like_counts = {r[0]: r[1] for r in like_rows}
-            comment_rows = db.session.query(Comment.post_id, func.count(Comment.id)).filter(Comment.post_id.in_(post_ids)).group_by(Comment.post_id).all()
-            comment_counts = {r[0]: r[1] for r in comment_rows}
-        posts_data = []
-        for p in posts:
-            try:
-                p_dict = p.to_dict(
-                    current_user_id,
-                    likes_count=like_counts.get(p.id, 0),
-                    comments_count=comment_counts.get(p.id, 0)
-                )
-                p_dict['is_liked'] = p.id in user_likes
-                p_dict['is_bookmarked'] = p.id in user_bookmarks
-                posts_data.append(p_dict)
-            except Exception as e:
-                print(f"[get_posts] skip post id={getattr(p, 'id', None)}: {e}")
-        return jsonify({'posts': posts_data, 'total': pagination.total, 'pages': pagination.pages, 'current_page': page})
-    except Exception as e:
-        traceback.print_exc()
-        print(f"[get_posts] ERROR (using fallback): {e}")
-        if sort_by == 'bookmarks':
-            return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
-        try:
-            posts_data, total, pages = _get_posts_fallback(page, per_page, current_user_id)
-            return jsonify({'posts': posts_data, 'total': total, 'pages': pages, 'current_page': page})
-        except Exception as e2:
-            traceback.print_exc()
-            print(f"[get_posts] fallback also failed: {e2}")
-            return jsonify({'error': 'Failed to load posts', 'posts': [], 'total': 0, 'pages': 0, 'current_page': page}), 500
+    payload_data, status_code = _build_posts_payload(
+        sort_by=sort_by,
+        page=page,
+        per_page=per_page,
+        region=region,
+        current_user_id=current_user_id
+    )
+    return jsonify(payload_data), status_code
 
 @app.route('/api/posts', methods=['POST'])
 @token_required
