@@ -2225,6 +2225,29 @@
                 Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
             };
 
+            const mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
+            const mobileUtilityStack = document.getElementById('mobileUtilityStack');
+            let mobileUtilityOpen = false;
+            const applyMobileUtilityState = () => {
+                if (!mobileUtilityToggleBtn || !mobileUtilityStack) return;
+                const isMobileView = window.matchMedia('(max-width: 768px)').matches;
+                if (!isMobileView) {
+                    mobileUtilityStack.classList.add('is-open');
+                    mobileUtilityToggleBtn.setAttribute('aria-expanded', 'true');
+                    return;
+                }
+                mobileUtilityStack.classList.toggle('is-open', mobileUtilityOpen);
+                mobileUtilityToggleBtn.setAttribute('aria-expanded', String(!!mobileUtilityOpen));
+            };
+            if (mobileUtilityToggleBtn && mobileUtilityStack) {
+                mobileUtilityToggleBtn.onclick = () => {
+                    mobileUtilityOpen = !mobileUtilityOpen;
+                    applyMobileUtilityState();
+                };
+                applyMobileUtilityState();
+                window.addEventListener('resize', applyMobileUtilityState);
+            }
+
             const searchInput = document.getElementById('searchInput');
             let searchTimeout;
             if (searchInput) {
