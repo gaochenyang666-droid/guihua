@@ -1843,30 +1843,29 @@
         let currentDetailPostId = null;
         let currentDetailRequestSeq = 0;
         const Modal = {
-            _lockedScrollY: null,
-            _lockBodyScroll() {
-                if (this._lockedScrollY !== null) return;
-                this._lockedScrollY = window.scrollY || window.pageYOffset || 0;
-                document.body.classList.add('modal-open');
-                document.body.style.top = `-${this._lockedScrollY}px`;
-            },
-            _unlockBodyScrollIfNeeded() {
-                if (document.querySelector('.modal-overlay.active')) return;
-                if (this._lockedScrollY === null) return;
-                const restoreY = this._lockedScrollY;
-                this._lockedScrollY = null;
-                document.body.classList.remove('modal-open');
-                document.body.style.top = '';
-                window.scrollTo(0, restoreY);
+            _pageScrollX: null,
+            _pageScrollY: null,
+            _restorePageScroll() {
+                if (this._pageScrollY == null) return;
+                const x = this._pageScrollX || 0;
+                const y = this._pageScrollY || 0;
+                const restore = () => window.scrollTo(x, y);
+                restore();
+                requestAnimationFrame(restore);
+                setTimeout(restore, 0);
             },
             open(id) {
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
-                if (!overlay.classList.contains('active')) this._lockBodyScroll();
+                if (id === 'postDetailModal') {
+                    this._pageScrollX = window.scrollX || window.pageXOffset || 0;
+                    this._pageScrollY = window.scrollY || window.pageYOffset || 0;
+                }
                 overlay.classList.add('active');
                 overlay.scrollTop = 0;
                 const modalEl = overlay.querySelector('.modal');
                 if (modalEl) modalEl.scrollTop = 0;
+                if (id === 'postDetailModal') this._restorePageScroll();
             },
             close(id) {
                 const overlay = document.getElementById(id);
@@ -1883,7 +1882,11 @@
                 }
                 overlay.classList.remove('active');
                 overlay.scrollTop = 0;
-                this._unlockBodyScrollIfNeeded();
+                if (id === 'postDetailModal') {
+                    this._restorePageScroll();
+                    this._pageScrollX = null;
+                    this._pageScrollY = null;
+                }
             },
 
             async openDetail(id) {
