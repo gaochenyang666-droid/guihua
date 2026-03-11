@@ -80,11 +80,12 @@
                 <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')"><span class="nav-item-icon">✨</span><span class="nav-item-label">最新</span></div>
                 <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')"><span class="nav-item-icon">⭐</span><span class="nav-item-label">收藏</span></div>
             </div>
-            <button class="mobile-utility-toggle btn btn-ghost btn-sm" id="mobileUtilityToggleBtn" type="button" aria-expanded="false">
-                <span>🧰 任务 / 福利</span>
-                <span class="mobile-utility-toggle-icon">▼</span>
-            </button>
-            <div class="mobile-utility-stack" id="mobileUtilityStack">
+            <div class="mobile-utility-host" id="mobileUtilityHost">
+                <button class="mobile-utility-toggle btn btn-ghost btn-sm" id="mobileUtilityToggleBtn" type="button" aria-expanded="false">
+                    <span>🧰 任务 / 福利</span>
+                    <span class="mobile-utility-toggle-icon">▼</span>
+                </button>
+                <div class="mobile-utility-stack" id="mobileUtilityStack">
             <div class="sidebar-card glass onboarding-card" id="onboardingCard" hidden>
                 <div class="onboarding-head">
                     <div>
@@ -137,6 +138,7 @@
                 <p style="margin-bottom: 0.5rem;">👻 <b>Web3 内容映射</b></p>
                 <p>内容均由创作者共建。通过 Arweave 实现分布式永存，支付少量 USDT，让你的故事在赛博世界长生不老。</p>
             </div>
+                </div>
             </div>
         </aside>
 
@@ -160,6 +162,7 @@
             <div id="loadMoreArea" style="text-align: center; padding: 1rem; display: none;">
                 <span style="font-size:0.85rem; color:var(--text-secondary);">继续下滑自动加载更多...</span>
             </div>
+            <div id="mobileUtilityMount"></div>
         </main>
     </div>
 

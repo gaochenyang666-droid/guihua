@@ -2227,7 +2227,25 @@
 
             const mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
             const mobileUtilityStack = document.getElementById('mobileUtilityStack');
+            const mobileUtilityHost = document.getElementById('mobileUtilityHost');
+            const mobileUtilityMount = document.getElementById('mobileUtilityMount');
+            const sidebarEl = document.querySelector('.sidebar');
+            const navSortCard = sidebarEl ? sidebarEl.querySelector('.nav-sort-card') : null;
             let mobileUtilityOpen = false;
+            const relocateMobileUtility = () => {
+                if (!mobileUtilityHost || !mobileUtilityMount || !sidebarEl || !navSortCard) return;
+                const isMobileView = window.matchMedia('(max-width: 768px)').matches;
+                if (isMobileView) {
+                    if (mobileUtilityHost.parentElement !== mobileUtilityMount) {
+                        mobileUtilityMount.appendChild(mobileUtilityHost);
+                    }
+                    return;
+                }
+                if (mobileUtilityHost.parentElement !== sidebarEl) {
+                    if (navSortCard.nextSibling) sidebarEl.insertBefore(mobileUtilityHost, navSortCard.nextSibling);
+                    else sidebarEl.appendChild(mobileUtilityHost);
+                }
+            };
             const applyMobileUtilityState = () => {
                 if (!mobileUtilityToggleBtn || !mobileUtilityStack) return;
                 const isMobileView = window.matchMedia('(max-width: 768px)').matches;
@@ -2244,8 +2262,12 @@
                     mobileUtilityOpen = !mobileUtilityOpen;
                     applyMobileUtilityState();
                 };
-                applyMobileUtilityState();
-                window.addEventListener('resize', applyMobileUtilityState);
+                const syncMobileUtility = () => {
+                    relocateMobileUtility();
+                    applyMobileUtilityState();
+                };
+                syncMobileUtility();
+                window.addEventListener('resize', syncMobileUtility);
             }
 
             const searchInput = document.getElementById('searchInput');

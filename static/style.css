@@ -239,6 +239,9 @@ body.page-motion.page-leaving {
         align-items: center;
         margin: 0.1rem 0 0.55rem;
     }
+    #mobileUtilityMount {
+        margin-top: 0.6rem;
+    }
     .mobile-utility-stack {
         display: none;
     }
@@ -356,6 +359,9 @@ body.page-motion.page-leaving {
 }
 .mobile-utility-toggle {
     display: none;
+}
+.mobile-utility-host {
+    width: 100%;
 }
 .mobile-utility-stack {
     display: block;
