@@ -1841,7 +1841,22 @@
         };
 
         let currentDetailPostId = null;
+        let currentDetailRequestSeq = 0;
         const Modal = {
+            _replaceUrlKeepingScroll(nextUrl) {
+                try {
+                    const y = window.scrollY || window.pageYOffset || 0;
+                    window.history.replaceState({}, '', nextUrl);
+                    if ((window.scrollY || window.pageYOffset || 0) !== y) {
+                        window.scrollTo(0, y);
+                        requestAnimationFrame(() => {
+                            if ((window.scrollY || window.pageYOffset || 0) !== y) {
+                                window.scrollTo(0, y);
+                            }
+                        });
+                    }
+                } catch (_) {}
+            },
             open(id) {
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
@@ -1861,12 +1876,13 @@
                         detailScrollStore.unbind(modalScrollEl);
                     }
                     currentDetailPostId = null;
+                    currentDetailRequestSeq += 1;
                     try {
                         const u = new URL(window.location.href);
                         if (u.searchParams.has('post')) {
                             u.searchParams.delete('post');
                             const nextUrl = u.pathname + (u.search ? u.search : '') + (u.hash || '');
-                            window.history.replaceState({}, '', nextUrl);
+                            this._replaceUrlKeepingScroll(nextUrl);
                         }
                     } catch (_) {}
                 }
@@ -1877,6 +1893,7 @@
             async openDetail(id) {
                 if (id == null || id === undefined) return;
                 currentDetailPostId = id;
+                const reqSeq = ++currentDetailRequestSeq;
                 this.open('postDetailModal');
                 const body = document.getElementById('postDetailBody');
                 body.innerHTML = '加载中...';
@@ -1886,7 +1903,7 @@
                     const u = new URL(window.location.href);
                     if (u.searchParams.get('post') !== String(id)) {
                         u.searchParams.set('post', String(id));
-                        window.history.replaceState({}, '', u.pathname + '?' + u.searchParams.toString() + (u.hash || ''));
+                        this._replaceUrlKeepingScroll(u.pathname + '?' + u.searchParams.toString() + (u.hash || ''));
                     }
                 } catch (_) {}
                 try {
@@ -1895,6 +1912,7 @@
                     if (token) headers['Authorization'] = `Bearer ${token}`;
                     const res = await fetch(`${API_BASE}/posts/${id}`, { headers });
                     const p = await parseJsonSafe(res, {});
+                    if (reqSeq !== currentDetailRequestSeq || currentDetailPostId !== id) return;
                     if (!res.ok) {
                         if (res.status === 401) {
                             localStorage.removeItem('token');
@@ -2059,6 +2077,7 @@
                         try {
                             const tipRes = await fetch(`${API_BASE}/posts/${p.id}/tips?page=1&per_page=12`);
                             const tipData = await parseJsonSafe(tipRes, {});
+                            if (reqSeq !== currentDetailRequestSeq || currentDetailPostId !== id) return;
                             const tipItems = (tipData && tipData.items) || [];
                             if (!tipRes.ok || !tipItems.length) {
                                 tipsWrap.textContent = '暂无打赏记录';
