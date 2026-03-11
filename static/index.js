@@ -2235,6 +2235,25 @@
 
             const applyFilterBtn = document.getElementById('searchFilterApplyBtn');
             const resetFilterBtn = document.getElementById('searchFilterResetBtn');
+            const searchAdvancedBar = document.getElementById('searchAdvancedBar');
+            const searchContainer = document.getElementById('searchContainer');
+            const searchToggleBtn = document.getElementById('searchToggleBtn');
+            const hasAdvancedValues = () => {
+                const from = (document.getElementById('searchFromDate') || {}).value || '';
+                const to = (document.getElementById('searchToDate') || {}).value || '';
+                const tags = (document.getElementById('searchTags') || {}).value || '';
+                const permanent = !!((document.getElementById('searchPermanentOnly') || {}).checked);
+                return !!(from || to || tags.trim() || permanent);
+            };
+            const openAdvanced = () => {
+                if (!searchAdvancedBar) return;
+                searchAdvancedBar.classList.add('is-open');
+            };
+            const closeAdvanced = (force) => {
+                if (!searchAdvancedBar) return;
+                if (!force && hasAdvancedValues()) return;
+                searchAdvancedBar.classList.remove('is-open');
+            };
             if (applyFilterBtn) {
                 applyFilterBtn.onclick = () => {
                     const filters = {
@@ -2244,6 +2263,7 @@
                         tags: (document.getElementById('searchTags') || {}).value || ''
                     };
                     Post.load({ q: (searchInput || {}).value || '', filters: filters });
+                    closeAdvanced(true);
                 };
             }
             if (resetFilterBtn) {
@@ -2257,49 +2277,45 @@
                     if (perEl) perEl.checked = false;
                     if (tagsEl) tagsEl.value = '';
                     Post.load({ q: (searchInput || {}).value || '', filters: { from_date: '', to_date: '', permanent_only: false, tags: '' } });
+                    closeAdvanced(true);
                 };
             }
 
-            const searchAdvancedBar = document.getElementById('searchAdvancedBar');
-            const searchAdvancedToggleBtn = document.getElementById('searchAdvancedToggleBtn');
-            const hasAdvancedValues = () => {
-                const from = (document.getElementById('searchFromDate') || {}).value || '';
-                const to = (document.getElementById('searchToDate') || {}).value || '';
-                const tags = (document.getElementById('searchTags') || {}).value || '';
-                const permanent = !!((document.getElementById('searchPermanentOnly') || {}).checked);
-                return !!(from || to || tags.trim() || permanent);
-            };
-            const setAdvancedCollapsed = (collapsed) => {
-                if (!searchAdvancedBar) return;
-                searchAdvancedBar.classList.toggle('is-collapsed', !!collapsed);
-                if (searchAdvancedToggleBtn) {
-                    searchAdvancedToggleBtn.setAttribute('aria-expanded', String(!collapsed));
-                }
-            };
-            if (searchAdvancedToggleBtn) {
-                searchAdvancedToggleBtn.onclick = () => {
-                    const nextCollapsed = !(searchAdvancedBar && searchAdvancedBar.classList.contains('is-collapsed'));
-                    setAdvancedCollapsed(nextCollapsed);
+            if (searchInput) {
+                searchInput.addEventListener('focus', openAdvanced);
+                searchInput.addEventListener('click', openAdvanced);
+            }
+            if (searchToggleBtn) {
+                searchToggleBtn.onclick = () => {
+                    if (searchAdvancedBar && searchAdvancedBar.classList.contains('is-open')) {
+                        closeAdvanced(true);
+                    } else {
+                        openAdvanced();
+                        if (searchInput) searchInput.focus();
+                    }
                 };
             }
-            const syncAdvancedOnViewport = () => {
-                const isMobileView = window.matchMedia('(max-width: 768px)').matches;
-                if (!isMobileView) {
-                    setAdvancedCollapsed(false);
-                    return;
-                }
-                setAdvancedCollapsed(!hasAdvancedValues());
-            };
-            syncAdvancedOnViewport();
-            window.addEventListener('resize', syncAdvancedOnViewport);
+            document.addEventListener('click', (e) => {
+                if (!searchContainer || !searchAdvancedBar) return;
+                if (!searchAdvancedBar.classList.contains('is-open')) return;
+                if (searchContainer.contains(e.target)) return;
+                closeAdvanced(true);
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeAdvanced(true);
+            });
 
             // Mobile: Close keyboard on 'Enter' or 'Search'
             if (searchInput) {
                 searchInput.addEventListener('keyup', (e) => {
-                    if(e.key === 'Enter') searchInput.blur();
+                    if(e.key === 'Enter') {
+                        searchInput.blur();
+                        closeAdvanced(true);
+                    }
                 });
                 searchInput.addEventListener('search', () => {
                     searchInput.blur();
+                    closeAdvanced(true);
                 });
             }
 
@@ -2308,6 +2324,7 @@
                 if(searchInput && document.activeElement === searchInput) {
                     searchInput.blur();
                 }
+                closeAdvanced(true);
             });
 
             document.getElementById('logoutBtn').onclick = () => Auth.logout();

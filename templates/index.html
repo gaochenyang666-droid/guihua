@@ -26,9 +26,23 @@
             <span>诡话</span>
         </a>
 
-        <div class="search-container">
-            <span class="search-icon">🔍</span>
+        <div class="search-container" id="searchContainer">
+            <button class="search-icon search-icon-btn" type="button" id="searchToggleBtn" aria-label="展开搜索筛选">🔍</button>
             <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
+            <div class="search-advanced glass" id="searchAdvancedBar">
+                <div class="search-advanced-content" id="searchAdvancedContent">
+                    <div class="search-advanced-grid">
+                        <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
+                        <label>到 <input type="date" id="searchToDate" class="form-input"></label>
+                        <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
+                        <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
+                    </div>
+                    <div class="search-advanced-actions">
+                        <button class="btn btn-ghost btn-sm" type="button" id="searchFilterApplyBtn">应用筛选</button>
+                        <button class="btn btn-ghost btn-sm" type="button" id="searchFilterResetBtn">重置</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="nav-actions">
@@ -59,29 +73,6 @@
             <span id="siteAnnouncementContent" class="site-announcement-content"></span>
         </div>
     </div>
-    <div class="site-entry-bar">
-        <button class="btn btn-ghost btn-sm" type="button" onclick="NoticeCenter.open('announcement')">📣 公告</button>
-        <button class="btn btn-ghost btn-sm" type="button" onclick="NoticeCenter.open('activity')">🎉 活动</button>
-    </div>
-    <div class="search-advanced glass is-collapsed" id="searchAdvancedBar">
-        <button class="search-advanced-toggle" type="button" id="searchAdvancedToggleBtn" aria-expanded="false">
-            <span>高级筛选</span>
-            <span class="search-advanced-toggle-icon" id="searchAdvancedToggleIcon">▼</span>
-        </button>
-        <div class="search-advanced-content" id="searchAdvancedContent">
-            <div class="search-advanced-grid">
-                <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
-                <label>到 <input type="date" id="searchToDate" class="form-input"></label>
-                <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
-                <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
-            </div>
-            <div class="search-advanced-actions">
-                <button class="btn btn-ghost btn-sm" type="button" id="searchFilterApplyBtn">应用筛选</button>
-                <button class="btn btn-ghost btn-sm" type="button" id="searchFilterResetBtn">重置</button>
-            </div>
-        </div>
-    </div>
-
     <div class="main-container">
         <aside class="sidebar">
             <div class="sidebar-card nav-sort-card glass">
