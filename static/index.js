@@ -1843,9 +1843,26 @@
         let currentDetailPostId = null;
         let currentDetailRequestSeq = 0;
         const Modal = {
+            _lockedScrollY: null,
+            _lockBodyScroll() {
+                if (this._lockedScrollY !== null) return;
+                this._lockedScrollY = window.scrollY || window.pageYOffset || 0;
+                document.body.classList.add('modal-open');
+                document.body.style.top = `-${this._lockedScrollY}px`;
+            },
+            _unlockBodyScrollIfNeeded() {
+                if (document.querySelector('.modal-overlay.active')) return;
+                if (this._lockedScrollY === null) return;
+                const restoreY = this._lockedScrollY;
+                this._lockedScrollY = null;
+                document.body.classList.remove('modal-open');
+                document.body.style.top = '';
+                window.scrollTo(0, restoreY);
+            },
             open(id) {
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
+                if (!overlay.classList.contains('active')) this._lockBodyScroll();
                 overlay.classList.add('active');
                 overlay.scrollTop = 0;
                 const modalEl = overlay.querySelector('.modal');
@@ -1866,6 +1883,7 @@
                 }
                 overlay.classList.remove('active');
                 overlay.scrollTop = 0;
+                this._unlockBodyScrollIfNeeded();
             },
 
             async openDetail(id) {
