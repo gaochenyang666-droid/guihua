@@ -112,6 +112,7 @@ app.config['SEED_ARTICLE_PATH'] = os.path.join(basedir, 'seeds', 'default_articl
 
 # 未注册地址的临时签名挑战（地址 -> {nonce, created_at}）
 _pending_wallet_nonces = {}
+_pending_wallet_nonce_redis_prefix = 'auth:pending_wallet_nonce:'
 
 
 def _prune_pending_wallet_nonces(now=None):
@@ -122,6 +123,63 @@ def _prune_pending_wallet_nonces(now=None):
     ]
     for k in expired_keys:
         _pending_wallet_nonces.pop(k, None)
+
+
+def _pending_wallet_nonce_redis_key(address):
+    return f"{_pending_wallet_nonce_redis_prefix}{str(address or '').lower()}"
+
+
+def _set_pending_wallet_nonce(address, nonce, created_at=None):
+    created_at = created_at or datetime.utcnow()
+    redis_conn = _get_redis_client()
+    payload = {
+        'nonce': str(nonce or ''),
+        'created_at': created_at.isoformat()
+    }
+    if redis_conn:
+        try:
+            redis_conn.set(
+                _pending_wallet_nonce_redis_key(address),
+                json.dumps(payload, ensure_ascii=False),
+                ex=max(60, WALLET_NONCE_TTL_MINUTES * 60)
+            )
+            return
+        except Exception:
+            pass
+    _pending_wallet_nonces[str(address or '').lower()] = {
+        'nonce': payload['nonce'],
+        'created_at': created_at
+    }
+
+
+def _get_pending_wallet_nonce(address):
+    addr = str(address or '').lower()
+    redis_conn = _get_redis_client()
+    if redis_conn:
+        try:
+            raw = redis_conn.get(_pending_wallet_nonce_redis_key(addr))
+            if raw:
+                text = raw.decode('utf-8') if isinstance(raw, (bytes, bytearray)) else str(raw)
+                obj = json.loads(text) if text and text.startswith('{') else {'nonce': text}
+                created_at = _parse_iso_datetime(obj.get('created_at')) if obj.get('created_at') else None
+                return {
+                    'nonce': obj.get('nonce'),
+                    'created_at': created_at
+                }
+        except Exception:
+            pass
+    return _pending_wallet_nonces.get(addr)
+
+
+def _delete_pending_wallet_nonce(address):
+    addr = str(address or '').lower()
+    redis_conn = _get_redis_client()
+    if redis_conn:
+        try:
+            redis_conn.delete(_pending_wallet_nonce_redis_key(addr))
+        except Exception:
+            pass
+    _pending_wallet_nonces.pop(addr, None)
 
 from extensions import db
 db.init_app(app)
@@ -376,10 +434,7 @@ def get_nonce():
 
     # 未注册用户：仅下发临时挑战，不预先建号（防刷库）
     nonce = secrets.token_hex(16)
-    _pending_wallet_nonces[address.lower()] = {
-        'nonce': nonce,
-        'created_at': datetime.utcnow()
-    }
+    _set_pending_wallet_nonce(address, nonce, datetime.utcnow())
     return jsonify({'nonce': nonce})
 
 @app.route('/api/auth/verify', methods=['POST'])
@@ -408,7 +463,7 @@ def verify_signature():
         nonce_value = user.nonce
         nonce_created_at = user.nonce_created_at
     else:
-        pending = _pending_wallet_nonces.get(address.lower())
+        pending = _get_pending_wallet_nonce(address)
         if pending:
             nonce_value = pending.get('nonce')
             nonce_created_at = pending.get('created_at')
@@ -417,7 +472,7 @@ def verify_signature():
 
     # Check nonce expiration
     if not nonce_created_at or datetime.utcnow() - nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
-        _pending_wallet_nonces.pop(address.lower(), None)
+        _delete_pending_wallet_nonce(address)
         return jsonify({'error': 'Nonce expired, please sign again'}), 401
 
     # 严格全文本匹配，防止假站用同一 nonce 骗用户签名后到本站登录
@@ -454,7 +509,7 @@ def verify_signature():
             db.session.rollback()
             return jsonify({'error': 'Failed to create user, please retry'}), 500
         finally:
-            _pending_wallet_nonces.pop(address.lower(), None)
+            _delete_pending_wallet_nonce(address)
     else:
         user.refresh_nonce()
         db.session.commit()
@@ -1595,6 +1650,7 @@ def create_post():
 # 浏览量防刷：同一 IP 对同一帖子 60 秒内只计一次
 _view_count_key = {}
 _view_count_ttl = 60
+_view_count_fallback_warned = False
 
 
 def _prune_view_count_keys(now):
@@ -1611,6 +1667,14 @@ def _allow_view_count_increment(post_id, ip):
         try:
             ok = redis_conn.set(key, '1', ex=_view_count_ttl, nx=True)
             return bool(ok)
+        except Exception:
+            pass
+    # Fallback 仅在单进程下有效；多 worker 生产环境建议启用 Redis。
+    global _view_count_fallback_warned
+    if not _view_count_fallback_warned:
+        _view_count_fallback_warned = True
+        try:
+            print('[ViewCount] Redis unavailable, fallback is process-local and may overcount under multi-worker.')
         except Exception:
             pass
     now = time.time()

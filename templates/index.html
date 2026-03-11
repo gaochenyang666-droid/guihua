@@ -462,6 +462,47 @@
                 if (cp) cp.style.display = (mode === 'changePassword') ? 'block' : 'none';
             },
 
+            async parseJsonSafe(res) {
+                try {
+                    return await res.json();
+                } catch (_) {
+                    return {};
+                }
+            },
+
+            async fetchNonceForAddress(address) {
+                const nonceRes = await fetch(`${API_BASE}/auth/nonce?address=${encodeURIComponent(address)}`);
+                const nonceData = await this.parseJsonSafe(nonceRes);
+                if (!nonceRes.ok || !nonceData || !nonceData.nonce) {
+                    throw new Error((nonceData && nonceData.error) || '获取签名消息失败，请重试');
+                }
+                return String(nonceData.nonce);
+            },
+
+            async requestPersonalSign(provider, address, message) {
+                const normalizeSig = function (result) {
+                    if (result && typeof result === 'object' && result.result) return result.result;
+                    return result;
+                };
+                try {
+                    const signRes = await provider.request({
+                        method: 'personal_sign',
+                        params: [message, address]
+                    });
+                    return normalizeSig(signRes);
+                } catch (_) {
+                    try {
+                        const signRes2 = await provider.request({
+                            method: 'personal_sign',
+                            params: [address, message]
+                        });
+                        return normalizeSig(signRes2);
+                    } catch (_) {
+                        throw new Error('签名被拒绝或钱包不支持');
+                    }
+                }
+            },
+
             async loginWeb3() {
                 if (typeof window.BinanceChain !== 'undefined') {
                     window.web3 = new Web3(window.BinanceChain);
@@ -491,7 +532,6 @@
                 }
 
                 try {
-                    let address;
                     let accounts;
                     const provider = window.BinanceChain || window.ethereum;
                     if (!provider) {
@@ -505,81 +545,32 @@
                         return Toast.error('无法连接钱包: ' + (e.message || '请重试'));
                     }
                     if (!accounts || accounts.length === 0) return Toast.error('未检测到账户');
-                    address = accounts[0];
-
-                    const resNonce = await fetch(`${API_BASE}/auth/nonce?address=${address}`);
-                    const { nonce } = await resNonce.json();
-
-                    const message = `Sign this message to login to ${location.host}: ${nonce}`;
-                    let signature;
-
-                    try {
-                        if (window.BinanceChain) {
-                             const res = await window.BinanceChain.request({
-                                method: 'personal_sign',
-                                params: [message, address]
-                             });
-                             signature = (typeof res === 'object' && res.result) ? res.result : res;
-                        } else {
-                             signature = await window.web3.eth.personal.sign(message, address, '');
-                        }
-                    } catch (err) {
-                        try {
-                             signature = await window.web3.eth.personal.sign(message, address);
-                        } catch (e2) {
-                             return Toast.error('签名被拒绝');
-                        }
-                    }
-
-                    const resVerify = await fetch(`${API_BASE}/auth/verify`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ address, signature, message })
-                    });
-
-                    const data = await resVerify.json();
-                    if (resVerify.ok) this.success(data);
-                    else Toast.error(data.error);
-                } catch(e) { Toast.error('登录失败: ' + e.message); }
+                    await this.handleWeb3Verify(accounts[0], provider, false);
+                } catch(e) { Toast.error(e && e.message ? e.message : 'Web3 登录失败'); }
             },
 
             async handleWeb3Verify(address, provider, isWalletConnect = false) {
                 try {
-                    const nonceRes = await fetch(`${API_BASE}/auth/nonce?address=${encodeURIComponent(address)}`);
-                    const nonceData = await nonceRes.json();
-                    if (!nonceRes.ok || nonceData.nonce == null) {
-                        throw new Error(nonceData.error || '获取签名消息失败');
-                    }
-                    const message = `Sign this message to login to ${location.host}: ${nonceData.nonce}`;
-
-                    let signature;
-                    try {
-                        signature = await provider.request({
-                            method: 'personal_sign',
-                            params: [message, address]
-                        });
-                    } catch (e) {
-                        signature = await provider.request({
-                            method: 'personal_sign',
-                            params: [address, message]
-                        });
-                    }
+                    const nonce = await this.fetchNonceForAddress(address);
+                    const message = `Sign this message to login to ${location.host}: ${nonce}`;
+                    const signature = await this.requestPersonalSign(provider, address, message);
+                    if (!signature) throw new Error('签名结果为空，请重试');
 
                     const verifyRes = await fetch(`${API_BASE}/auth/verify`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ address, signature, message })
                     });
-                    const verifyData = await verifyRes.json();
+                    const verifyData = await this.parseJsonSafe(verifyRes);
                     if (!verifyRes.ok) {
-                        throw new Error(verifyData.error || '验证失败');
+                        throw new Error((verifyData && verifyData.error) || '验证失败，请稍后重试');
                     }
+                    if (!verifyData || !verifyData.token) throw new Error('服务返回异常，请稍后重试');
 
                     Auth.success(verifyData);
                     if (isWalletConnect) Auth.wcProvider = provider;
                 } catch (e) {
                     console.error(e);
-                    Toast.error(e.message || 'Web3 登录失败');
                     throw e;
                 }
             },
@@ -595,7 +586,7 @@
                     }
 
                     const cfgRes = await fetch(`${API_BASE}/config/public`);
-                    const cfg = await cfgRes.json();
+                    const cfg = await this.parseJsonSafe(cfgRes);
                     const projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
                     if (!projectId) throw new Error('WalletConnect 未配置');
 
