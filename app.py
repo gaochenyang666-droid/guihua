@@ -401,6 +401,34 @@ def _build_achievements_for_user(user):
         'achievements': items
     }
 
+
+def _compute_asset_version():
+    """Static asset version for cache-busting on CDN/browser."""
+    override = (os.environ.get('ASSET_VERSION') or '').strip()
+    if override:
+        return override
+    candidates = [
+        os.path.join(basedir, 'static', 'style.css'),
+        os.path.join(basedir, 'static', 'common.js'),
+        os.path.join(basedir, 'static', 'toast.js'),
+        os.path.join(basedir, 'static', 'index.js'),
+    ]
+    latest_mtime = 0
+    for path in candidates:
+        try:
+            latest_mtime = max(latest_mtime, int(os.path.getmtime(path)))
+        except Exception:
+            continue
+    return str(latest_mtime or int(time.time()))
+
+
+_ASSET_VERSION = _compute_asset_version()
+
+
+@app.context_processor
+def inject_asset_version():
+    return {'asset_version': _ASSET_VERSION}
+
 # ============== Routes ==============
 
 @app.route('/')

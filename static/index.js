@@ -42,6 +42,20 @@
                 return `${prefix}<a class="mention-link" href="/profile?user=${encoded}" data-no-transition="1">@${token}</a>`;
             });
         };
+        let lastPointerClientY = null;
+        const recordPointerY = (ev) => {
+            if (!ev) return;
+            let y = null;
+            if (Number.isFinite(ev.clientY) && Number(ev.clientY) > 0) {
+                y = Number(ev.clientY);
+            } else if (ev.touches && ev.touches[0] && Number.isFinite(ev.touches[0].clientY)) {
+                y = Number(ev.touches[0].clientY);
+            }
+            if (Number.isFinite(y) && Number(y) > 0) lastPointerClientY = y;
+        };
+        window.addEventListener('pointerdown', recordPointerY, { capture: true, passive: true });
+        window.addEventListener('mousedown', recordPointerY, { capture: true, passive: true });
+        window.addEventListener('touchstart', recordPointerY, { capture: true, passive: true });
         const detailScrollStore = {
             _timer: null,
             key(postId) {
@@ -956,7 +970,7 @@
                         extraEl.hidden = !isHidden;
                         toggleBtn.textContent = isHidden ? '收起简介' : '展开简介';
                     };
-                    btn.onclick = function() { Modal.openDetail(post.id); };
+                    btn.onclick = function(ev) { Modal.openDetail(ev, post.id); };
                     banner.hidden = false;
                 } catch (_) {}
             },
@@ -1899,6 +1913,15 @@
                     }
                     evtOrId.preventDefault();
                     evtOrId.stopPropagation();
+                }
+                if (!Number.isFinite(anchorY) || anchorY <= 0) {
+                    if (Number.isFinite(lastPointerClientY) && lastPointerClientY > 0) {
+                        anchorY = Number(lastPointerClientY);
+                    } else if (document.activeElement && typeof document.activeElement.getBoundingClientRect === 'function') {
+                        const activeRect = document.activeElement.getBoundingClientRect();
+                        const activeApprox = activeRect.top + Math.min(activeRect.height * 0.5, 120);
+                        if (Number.isFinite(activeApprox) && activeApprox > 0) anchorY = activeApprox;
+                    }
                 }
                 const id = (evtOrId && typeof evtOrId === 'object') ? idMaybe : evtOrId;
                 if (id == null || id === undefined) return;
