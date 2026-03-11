@@ -231,21 +231,8 @@ body.page-motion.page-leaving {
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .mobile-utility-toggle {
-        display: flex;
-        width: 100%;
-        justify-content: space-between;
-        align-items: center;
-        margin: 0.1rem 0 0.55rem;
-    }
     #mobileUtilityMount {
-        margin-top: 0.6rem;
-    }
-    .mobile-utility-stack {
-        display: none;
-    }
-    .mobile-utility-stack.is-open {
-        display: block;
+        margin-top: 0.35rem;
     }
 }
 
@@ -365,12 +352,57 @@ body.page-motion.page-leaving {
 .mobile-utility-stack {
     display: block;
 }
+.mobile-quick-actions {
+    display: none;
+}
+.mobile-quick-btn {
+    border: 1px solid var(--border-color);
+    background: rgba(18, 18, 26, 0.72);
+    color: var(--text-secondary);
+    border-radius: 12px;
+    min-height: 40px;
+    padding: 0.42rem 0.5rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mobile-quick-btn.is-active {
+    border-color: var(--accent-purple-light);
+    color: var(--text-primary);
+    background: rgba(124, 58, 237, 0.16);
+}
 .mobile-utility-toggle-icon {
     font-size: 0.74rem;
     transition: transform 0.2s ease;
 }
 .mobile-utility-toggle[aria-expanded="true"] .mobile-utility-toggle-icon {
     transform: rotate(180deg);
+}
+@media (max-width: 768px) {
+    .mobile-quick-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.42rem;
+        margin: 0 0 0.58rem;
+    }
+    .mobile-utility-stack {
+        display: none;
+    }
+    .mobile-utility-stack.is-open {
+        display: block;
+    }
+    .mobile-utility-stack[data-focus="checkin"] > .sidebar-card,
+    .mobile-utility-stack[data-focus="group"] > .sidebar-card,
+    .mobile-utility-stack[data-focus="web3"] > .sidebar-card {
+        display: none;
+    }
+    .mobile-utility-stack[data-focus="checkin"] > #checkinCard,
+    .mobile-utility-stack[data-focus="group"] > #groupLinksCard,
+    .mobile-utility-stack[data-focus="web3"] > #web3NoteCard {
+        display: block;
+    }
 }
 .sidebar-card {
     background: var(--bg-card);

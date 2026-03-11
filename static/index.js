@@ -1860,6 +1860,7 @@
             open(id, opts = {}) {
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
+                const modalEl = overlay.querySelector('.modal');
                 if (id === 'postDetailModal') {
                     const anchorY = (opts && Number.isFinite(opts.anchorY)) ? Number(opts.anchorY) : null;
                     let offset = 0;
@@ -1867,15 +1868,15 @@
                         const overlayStyle = window.getComputedStyle(overlay);
                         const padTop = parseFloat(overlayStyle.paddingTop || '0') || 0;
                         const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
-                        const desired = anchorY - padTop - 72;
-                        const maxOffset = Math.max(0, viewportH - padTop - 220);
+                        const desired = anchorY - padTop - 28;
+                        const maxOffset = Math.max(0, viewportH - padTop - 140);
                         offset = Math.max(0, Math.min(desired, maxOffset));
                     }
                     overlay.style.setProperty('--detail-open-offset', `${Math.round(offset)}px`);
+                    if (modalEl) modalEl.style.marginTop = `${Math.round(offset)}px`;
                 }
                 overlay.classList.add('active');
                 overlay.scrollTop = 0;
-                const modalEl = overlay.querySelector('.modal');
                 if (modalEl) modalEl.scrollTop = 0;
             },
             close(id) {
@@ -1895,6 +1896,8 @@
                 overlay.scrollTop = 0;
                 if (id === 'postDetailModal') {
                     overlay.style.removeProperty('--detail-open-offset');
+                    const modalEl = overlay.querySelector('.modal');
+                    if (modalEl) modalEl.style.removeProperty('margin-top');
                 }
             },
 
@@ -2283,21 +2286,60 @@
             const mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
             const mobileUtilityStack = document.getElementById('mobileUtilityStack');
             const mobileUtilityHost = document.getElementById('mobileUtilityHost');
-            const mobileUtilityMount = document.getElementById('mobileUtilityMount');
+            const mobileQuickActions = document.getElementById('mobileQuickActions');
             const sidebarEl = document.querySelector('.sidebar');
             const navSortCard = sidebarEl ? sidebarEl.querySelector('.nav-sort-card') : null;
             let mobileUtilityOpen = false;
-            const relocateMobileUtility = () => {
-                if (!mobileUtilityHost || !mobileUtilityMount || !sidebarEl || !navSortCard) return;
-                const isMobileView = window.matchMedia('(max-width: 768px)').matches;
-                if (isMobileView) {
-                    if (mobileUtilityHost.parentElement !== mobileUtilityMount) {
-                        mobileUtilityMount.appendChild(mobileUtilityHost);
-                    }
+            let mobileUtilityFocus = '';
+            const utilityPanels = {
+                checkin: document.getElementById('checkinCard'),
+                group: document.getElementById('groupLinksCard'),
+                web3: document.getElementById('web3NoteCard')
+            };
+            const quickActionButtons = mobileQuickActions ? Array.from(mobileQuickActions.querySelectorAll('.mobile-quick-btn[data-panel]')) : [];
+            const syncQuickActionActive = (panel) => {
+                if (!quickActionButtons.length) return;
+                quickActionButtons.forEach((btn) => {
+                    btn.classList.toggle('is-active', !!panel && btn.getAttribute('data-panel') === panel);
+                });
+            };
+            const setMobileUtilityFocus = (panel) => {
+                mobileUtilityFocus = panel || '';
+                if (!mobileUtilityStack) return;
+                if (mobileUtilityFocus) mobileUtilityStack.setAttribute('data-focus', mobileUtilityFocus);
+                else mobileUtilityStack.removeAttribute('data-focus');
+                syncQuickActionActive(mobileUtilityFocus);
+            };
+            const openMobileUtilityPanel = (panel) => {
+                if (!mobileUtilityStack) return;
+                mobileUtilityOpen = true;
+                setMobileUtilityFocus(panel);
+                applyMobileUtilityState();
+                const target = utilityPanels[panel];
+                if (target && !target.hidden) {
+                    requestAnimationFrame(() => {
+                        try {
+                            target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        } catch (_) {}
+                    });
                     return;
                 }
+                if (panel === 'checkin' && !currentUser) Toast.info('登录后可查看签到详情');
+                if (panel === 'group' && !currentUser) Toast.info('登录后可查看社群解锁进度');
+            };
+            const relocateMobileUtility = () => {
+                if (!mobileUtilityHost || !sidebarEl || !navSortCard) return;
+                const isMobileView = window.matchMedia('(max-width: 768px)').matches;
+                const anchorNode = isMobileView
+                    ? (mobileQuickActions && mobileQuickActions.parentElement === sidebarEl ? mobileQuickActions : navSortCard)
+                    : navSortCard;
                 if (mobileUtilityHost.parentElement !== sidebarEl) {
-                    if (navSortCard.nextSibling) sidebarEl.insertBefore(mobileUtilityHost, navSortCard.nextSibling);
+                    if (anchorNode && anchorNode.nextSibling) sidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
+                    else sidebarEl.appendChild(mobileUtilityHost);
+                    return;
+                }
+                if (anchorNode && mobileUtilityHost.previousSibling !== anchorNode) {
+                    if (anchorNode.nextSibling) sidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
                     else sidebarEl.appendChild(mobileUtilityHost);
                 }
             };
@@ -2307,14 +2349,17 @@
                 if (!isMobileView) {
                     mobileUtilityStack.classList.add('is-open');
                     mobileUtilityToggleBtn.setAttribute('aria-expanded', 'true');
+                    setMobileUtilityFocus('');
                     return;
                 }
                 mobileUtilityStack.classList.toggle('is-open', mobileUtilityOpen);
                 mobileUtilityToggleBtn.setAttribute('aria-expanded', String(!!mobileUtilityOpen));
+                if (!mobileUtilityOpen) setMobileUtilityFocus('');
             };
             if (mobileUtilityToggleBtn && mobileUtilityStack) {
                 mobileUtilityToggleBtn.onclick = () => {
                     mobileUtilityOpen = !mobileUtilityOpen;
+                    if (!mobileUtilityOpen) setMobileUtilityFocus('');
                     applyMobileUtilityState();
                 };
                 const syncMobileUtility = () => {
@@ -2323,6 +2368,21 @@
                 };
                 syncMobileUtility();
                 window.addEventListener('resize', syncMobileUtility);
+            }
+            if (quickActionButtons.length) {
+                quickActionButtons.forEach((btn) => {
+                    btn.onclick = () => {
+                        const panel = btn.getAttribute('data-panel') || '';
+                        if (!panel) return;
+                        if (mobileUtilityOpen && mobileUtilityFocus === panel) {
+                            mobileUtilityOpen = false;
+                            setMobileUtilityFocus('');
+                            applyMobileUtilityState();
+                            return;
+                        }
+                        openMobileUtilityPanel(panel);
+                    };
+                });
             }
 
             const searchInput = document.getElementById('searchInput');
