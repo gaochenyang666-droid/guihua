@@ -1843,18 +1843,6 @@
         let currentDetailPostId = null;
         let currentDetailRequestSeq = 0;
         const Modal = {
-            _replaceUrlKeepingScroll(nextUrl) {
-                try {
-                    const x = window.scrollX || window.pageXOffset || 0;
-                    const y = window.scrollY || window.pageYOffset || 0;
-                    window.history.replaceState({}, '', nextUrl);
-                    const restore = () => window.scrollTo(x, y);
-                    restore();
-                    requestAnimationFrame(restore);
-                    setTimeout(restore, 0);
-                    setTimeout(restore, 60);
-                } catch (_) {}
-            },
             open(id) {
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
@@ -1875,14 +1863,6 @@
                     }
                     currentDetailPostId = null;
                     currentDetailRequestSeq += 1;
-                    try {
-                        const u = new URL(window.location.href);
-                        if (u.searchParams.has('post')) {
-                            u.searchParams.delete('post');
-                            const nextUrl = u.pathname + (u.search ? u.search : '') + (u.hash || '');
-                            this._replaceUrlKeepingScroll(nextUrl);
-                        }
-                    } catch (_) {}
                 }
                 overlay.classList.remove('active');
                 overlay.scrollTop = 0;
@@ -1897,13 +1877,6 @@
                 body.innerHTML = '加载中...';
                 const modalScrollEl = document.querySelector('#postDetailModal .modal');
                 if (modalScrollEl) modalScrollEl.scrollTop = 0;
-                try {
-                    const u = new URL(window.location.href);
-                    if (u.searchParams.get('post') !== String(id)) {
-                        u.searchParams.set('post', String(id));
-                        this._replaceUrlKeepingScroll(u.pathname + '?' + u.searchParams.toString() + (u.hash || ''));
-                    }
-                } catch (_) {}
                 try {
                     const headers = {};
                     const token = localStorage.getItem('token');
@@ -2219,11 +2192,6 @@
         };
 
         window.addEventListener('load', () => {
-            try {
-                if (window.history && 'scrollRestoration' in window.history) {
-                    window.history.scrollRestoration = 'manual';
-                }
-            } catch (_) {}
             Onboarding.bindClose();
             const c = document.getElementById('ghostFireContainer');
             const isMobile = window.innerWidth < 768;
