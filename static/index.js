@@ -1289,7 +1289,7 @@
 
                     return `
                     <div class="masonry-item" style="--stagger:${Math.min((idx % 12) * 28, 280)}ms;">
-                        <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(${p.id})">
+                        <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(event, ${p.id})">
                             ${pinBadge}
                             ${badge}
                             ${permanentBadge}
@@ -1843,29 +1843,13 @@
         let currentDetailPostId = null;
         let currentDetailRequestSeq = 0;
         const Modal = {
-            _pageScrollX: null,
-            _pageScrollY: null,
-            _restorePageScroll() {
-                if (this._pageScrollY == null) return;
-                const x = this._pageScrollX || 0;
-                const y = this._pageScrollY || 0;
-                const restore = () => window.scrollTo(x, y);
-                restore();
-                requestAnimationFrame(restore);
-                setTimeout(restore, 0);
-            },
             open(id) {
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
-                if (id === 'postDetailModal') {
-                    this._pageScrollX = window.scrollX || window.pageXOffset || 0;
-                    this._pageScrollY = window.scrollY || window.pageYOffset || 0;
-                }
                 overlay.classList.add('active');
                 overlay.scrollTop = 0;
                 const modalEl = overlay.querySelector('.modal');
                 if (modalEl) modalEl.scrollTop = 0;
-                if (id === 'postDetailModal') this._restorePageScroll();
             },
             close(id) {
                 const overlay = document.getElementById(id);
@@ -1882,14 +1866,14 @@
                 }
                 overlay.classList.remove('active');
                 overlay.scrollTop = 0;
-                if (id === 'postDetailModal') {
-                    this._restorePageScroll();
-                    this._pageScrollX = null;
-                    this._pageScrollY = null;
-                }
             },
 
-            async openDetail(id) {
+            async openDetail(evtOrId, idMaybe) {
+                if (evtOrId && typeof evtOrId === 'object' && typeof evtOrId.preventDefault === 'function') {
+                    evtOrId.preventDefault();
+                    evtOrId.stopPropagation();
+                }
+                const id = (evtOrId && typeof evtOrId === 'object') ? idMaybe : evtOrId;
                 if (id == null || id === undefined) return;
                 currentDetailPostId = id;
                 const reqSeq = ++currentDetailRequestSeq;
