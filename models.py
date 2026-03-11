@@ -461,6 +461,10 @@ class Report(db.Model):
     reported_user = db.relationship('User', foreign_keys=[reported_user_id])
     post = db.relationship('Post')
 
+    def admin_notes_text(self):
+        # 统一以 admin_notes 为主；admin_note 为历史兼容字段，迁移完成后可移除。
+        return self.admin_notes if self.admin_notes is not None else self.admin_note
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -471,7 +475,7 @@ class Report(db.Model):
             'post_id': self.post_id,
             'reason': self.reason,
             'status': self.status,
-            'admin_notes': self.admin_notes or self.admin_note,
+            'admin_notes': self.admin_notes_text(),
             'result_notified_at': self.result_notified_at.isoformat() if self.result_notified_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'reporter_nickname': self.reporter.nickname if self.reporter else None,

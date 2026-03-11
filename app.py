@@ -9,7 +9,7 @@ import bleach
 import base64
 import random
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify, g, render_template
@@ -956,9 +956,45 @@ def _parse_iso_datetime(value):
         v = str(value).strip()
         if v.endswith('Z'):
             v = v[:-1] + '+00:00'
-        return datetime.fromisoformat(v)
+        dt = datetime.fromisoformat(v)
+        # 统一转为 UTC naive，避免与 DB 中 naive UTC 时间比较时报 tz-aware 异常。
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
     except Exception:
         return None
+
+
+def _humanize_verify_error(message):
+    raw = (message or '').strip()
+    if not raw:
+        return '链上校验失败，请稍后重试'
+    low = raw.lower()
+    if 'invalid transaction hash format' in low:
+        return '交易哈希格式不正确'
+    if 'transaction hash already used' in low:
+        return '该交易哈希已被使用'
+    if 'transaction not found on chain' in low:
+        return '链上未找到该交易，请稍后重试'
+    if 'transaction needs at least' in low:
+        return '交易确认中，请稍后重试'
+    if 'transaction failed on chain' in low:
+        return '链上交易执行失败'
+    if 'sender mismatch' in low:
+        return '付款钱包与当前登录钱包不一致'
+    if 'not a usdt transfer to platform' in low:
+        return '未检测到向目标地址的 USDT 转账'
+    if 'insufficient usdt' in low or 'insufficient fee' in low:
+        return '支付金额不足'
+    if 'incorrect recipient' in low:
+        return '收款地址不正确'
+    if 'platform receive address not configured' in low:
+        return '平台收款地址未配置'
+    if 'user address not bound' in low:
+        return '当前账号未绑定钱包地址'
+    if 'verification process failed' in low or 'could not get latest block' in low:
+        return '链上校验失败，请稍后重试'
+    return raw
 
 
 def _china_today():
@@ -1231,8 +1267,8 @@ def search_posts():
         tag_filters = []
         for tag in tags:
             escaped = tag.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+            # tags 存为 JSON 字符串时，优先按引号包裹词项匹配，避免宽泛子串误命中。
             tag_filters.append(Post.tags.ilike(f'%"{escaped}"%', escape='\\'))
-            tag_filters.append(Post.tags.ilike(f'%{escaped}%', escape='\\'))
         if tag_filters:
             query = query.filter(or_(*tag_filters))
 
@@ -1741,7 +1777,7 @@ def create_post():
             return jsonify({'error': 'Transaction hash required'}), 400
         is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address, min_amount=get_post_fee_usdt_raw(), payment_type='usdt')
         if not is_valid:
-            return jsonify({'error': error_msg}), 400
+            return jsonify({'error': _humanize_verify_error(error_msg)}), 400
             
         is_paid = True
         is_on_chain = True
@@ -1902,6 +1938,11 @@ def _allow_view_count_increment(post_id, ip):
 def get_post_detail(post_id):
     try:
         post = Post.query.get_or_404(post_id)
+        payload = _get_optional_jwt_payload()
+        current_user_id = payload.get('user_id') if payload else None
+        viewer = User.query.get(current_user_id) if current_user_id else None
+        if post.is_hidden and not (viewer and (viewer.is_admin or viewer.id == post.author_id)):
+            return jsonify({'error': 'Post not found'}), 404
         # 浏览量 +1（同 IP 60 秒内仅计一次）
         try:
             ip = (request.remote_addr or 'unknown').strip()
@@ -1911,9 +1952,6 @@ def get_post_detail(post_id):
                 db.session.commit()
         except Exception:
             db.session.rollback()
-        payload = _get_optional_jwt_payload()
-        current_user_id = payload.get('user_id') if payload else None
-        viewer = User.query.get(current_user_id) if current_user_id else None
 
         post_data = post.to_dict(current_user_id)
         if post_data.get('cover_image') and str(post_data['cover_image']).strip() == '/static/images/hua_cover.jpg':
@@ -2066,18 +2104,26 @@ def add_comment(post_id):
     if not data:
         return jsonify({'error': 'No data provided'}), 400
     content = data.get('content')
-    parent_id = data.get('parent_id')
+    raw_parent_id = data.get('parent_id')
+    parent_id = None
     
     if not content: return jsonify({'error': 'Content empty'}), 400
     
     clean_content = bleach.clean(content, tags=[], strip=True)
     
-    # Verify parent exists if provided
-    if parent_id:
-        parent = Comment.query.get(parent_id)
-        if not parent or parent.post_id != post_id:
+    # parent_id 仅允许正整数；0/空统一视为无父评论，避免脏数据写入 parent_id=0。
+    parent_comment = None
+    if raw_parent_id not in (None, '', 0, '0'):
+        try:
+            parent_id = int(raw_parent_id)
+        except Exception:
+            return jsonify({'error': 'Invalid parent comment id'}), 400
+        if parent_id <= 0:
+            return jsonify({'error': 'Invalid parent comment id'}), 400
+        parent_comment = Comment.query.get(parent_id)
+        if not parent_comment or parent_comment.post_id != post_id:
             return jsonify({'error': 'Invalid parent comment'}), 400
-    
+
     comment = Comment(content=clean_content, author_id=g.current_user.id, post_id=post.id, parent_id=parent_id)
     db.session.add(comment)
     db.session.commit()
@@ -2085,10 +2131,9 @@ def add_comment(post_id):
     # Notification Logic
     try:
         notified_user_ids = set()
-        if parent_id:
+        if parent_id is not None:
             # Reply to comment
-            parent_comment = Comment.query.get(parent_id)
-            if parent_comment.author_id != g.current_user.id:
+            if parent_comment and parent_comment.author_id != g.current_user.id:
                 notif = Notification(
                     user_id=parent_comment.author_id,
                     sender_id=g.current_user.id,
@@ -2303,7 +2348,7 @@ def verify_tip():
         payment_type='usdt'
     )
     if not is_valid:
-        return jsonify({'error': result}), 400
+        return jsonify({'error': _humanize_verify_error(result)}), 400
     amount_full = int(result)
     if Tip.query.filter_by(tx_hash=tx_hash).first():
         return jsonify({'error': 'Tip already recorded'}), 400
@@ -2353,14 +2398,29 @@ def delete_post(post_id):
     if not g.current_user.is_admin and post.author_id != g.current_user.id:
         return jsonify({'error': 'Permission denied'}), 403
     
-    # Delete related
-    Comment.query.filter_by(post_id=post.id).delete()
-    Like.query.filter_by(post_id=post.id).delete()
-    Bookmark.query.filter_by(post_id=post.id).delete()
-    Vote.query.filter_by(post_id=post.id).delete()
-    
-    db.session.delete(post)
-    db.session.commit()
+    try:
+        # 先删除 user_votes，避免 votes 被删时触发外键约束失败。
+        vote_ids = [row[0] for row in db.session.query(Vote.id).filter(Vote.post_id == post.id).all()]
+        if vote_ids:
+            UserVote.query.filter(UserVote.vote_id.in_(vote_ids)).delete(synchronize_session=False)
+
+        # 清理与该帖相关的引用，确保无外键阻塞并保留审计记录。
+        Notification.query.filter(Notification.post_id == post.id).update({'post_id': None}, synchronize_session=False)
+        Report.query.filter(Report.post_id == post.id).update({'post_id': None}, synchronize_session=False)
+        Tip.query.filter(Tip.post_id == post.id).update({'post_id': None}, synchronize_session=False)
+        SeriesPost.query.filter(SeriesPost.post_id == post.id).delete(synchronize_session=False)
+
+        # 删除强关联互动数据
+        Comment.query.filter_by(post_id=post.id).delete(synchronize_session=False)
+        Like.query.filter_by(post_id=post.id).delete(synchronize_session=False)
+        Bookmark.query.filter_by(post_id=post.id).delete(synchronize_session=False)
+        Vote.query.filter_by(post_id=post.id).delete(synchronize_session=False)
+
+        db.session.delete(post)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'删除失败: {str(e)}'}), 500
     if g.current_user.is_admin:
         _log_admin_action('post_delete', 'post', post_id)
     return jsonify({'message': 'Post deleted'})
@@ -2663,9 +2723,10 @@ def update_report(report_id):
     old_status = (r.status or '').strip()
     if data.get('status') in ('resolved', 'dismissed'):
         r.status = data['status']
-    if 'admin_notes' in data:
-        notes = (data['admin_notes'] or '')[:500]
+    if ('admin_notes' in data) or ('admin_note' in data):
+        notes = (data.get('admin_notes', data.get('admin_note')) or '')[:500]
         r.admin_notes = notes
+        # 兼容历史字段：统一同步写入，后续可在迁移后移除 admin_note。
         r.admin_note = notes
     should_notify_result = (
         r.reporter_id
