@@ -752,12 +752,14 @@ body.page-motion.page-leaving {
 }
 .masonry-item {
     margin-bottom: 0;
+    opacity: 1;
+    transform: none;
+}
+.masonry-item.is-entering {
     opacity: 0;
     transform: translateY(8px);
-    animation: cardIn 0.35s ease-out both;
+    animation: cardIn 0.3s ease-out both;
     animation-delay: var(--stagger, 0ms);
-    content-visibility: auto;
-    contain-intrinsic-size: 240px;
 }
 
 .post-card {

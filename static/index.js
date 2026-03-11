@@ -1377,6 +1377,8 @@
             renderPosts(posts, append=false) {
                 const grid = document.getElementById('postGrid');
                 const html = posts.map((p, idx) => {
+                    const stagger = append ? 0 : Math.min((idx % 8) * 18, 126);
+                    const itemClass = append ? 'masonry-item' : 'masonry-item is-entering';
                     const imgUrl = this.resolveCoverUrl(p);
                     const coverHtml = this.renderCover(imgUrl);
                     const author = p.author || { nickname: '用户', avatar: '👻' };
@@ -1392,7 +1394,7 @@
                     const pinBadge = p.is_pinned ? '<div class="post-badge post-badge-pinned">📌 置顶</div>' : '';
 
                     return `
-                    <div class="masonry-item" style="--stagger:${Math.min((idx % 12) * 28, 280)}ms;">
+                    <div class="${itemClass}" style="--stagger:${stagger}ms;">
                         <div class="${cardClasses.join(' ')}" onclick="Modal.openDetail(event, ${p.id})">
                             ${pinBadge}
                             ${badge}
