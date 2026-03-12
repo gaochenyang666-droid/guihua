@@ -13,6 +13,8 @@
     <script src="/static/common.js?v={{ asset_version }}"></script>
     <script src="/static/toast.js?v={{ asset_version }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+    <script src="https://unpkg.com/@walletconnect/universal-provider@2.10.1/dist/index.umd.js"></script>
+    <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
     <nav class="navbar glass">
@@ -82,10 +84,21 @@
                 <div style="height:1px; flex:1; background:var(--border-color);"></div>
             </div>
 
-            <button class="btn btn-ghost" style="width:100%;" id="walletLoginBtn" type="button">🦊 钱包登录（BSC）</button>
+            <button class="btn btn-ghost" style="width:100%;" id="walletLoginBtn" type="button">🦊 钱包登录（多种钱包）</button>
             <p style="font-size:0.78rem; color:var(--text-muted); margin-top:0.7rem;">如控制台出现 `inpage.js: Origin not allowed`，通常是钱包扩展自身告警，不影响本站登录逻辑。</p>
         </section>
     </main>
+
+    <div class="modal-overlay" id="loginWalletSelectModal" onclick="if(event.target===this){this.classList.remove('active');}">
+        <div class="modal glass wallet-select-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>连接钱包</h3>
+                <button class="modal-close" type="button" onclick="document.getElementById('loginWalletSelectModal').classList.remove('active')">&times;</button>
+            </div>
+            <div id="loginWalletSelectList"></div>
+            <div id="loginWalletSelectQr" class="wallet-select-qr" style="display:none;"></div>
+        </div>
+    </div>
 
     <div class="toast-container" id="toastContainer"></div>
     <script src="/static/login.js?v={{ asset_version }}"></script>

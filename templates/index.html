@@ -20,47 +20,54 @@
 <body>
     <div class="ghost-fire-container" id="ghostFireContainer"></div>
 
-    <nav class="navbar glass">
+    <nav class="navbar glass" id="mainNavbar">
         <a href="/" class="logo">
             <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
             <span>诡话</span>
         </a>
-        
-        <div class="search-container" id="searchContainer">
-            <button class="search-icon search-icon-btn" type="button" id="searchToggleBtn" aria-label="展开搜索筛选">🔍</button>
-            <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
-            <div class="search-advanced glass" id="searchAdvancedBar">
-                <div class="search-advanced-content" id="searchAdvancedContent">
-                    <div class="search-advanced-grid">
-                        <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
-                        <label>到 <input type="date" id="searchToDate" class="form-input"></label>
-                        <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
-                        <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
-                    </div>
-                    <div class="search-advanced-actions">
-                        <button class="btn btn-ghost btn-sm" type="button" id="searchFilterApplyBtn">应用筛选</button>
-                        <button class="btn btn-ghost btn-sm" type="button" id="searchFilterResetBtn">重置</button>
+
+        <button class="mobile-nav-toggle btn btn-ghost" id="mobileNavToggleBtn" type="button" aria-label="展开导航菜单" aria-expanded="false" aria-controls="mobileNavPanel">
+            <i class="fas fa-bars"></i>
+            <span>菜单</span>
+        </button>
+
+        <div class="mobile-nav-panel" id="mobileNavPanel">
+            <div class="search-container" id="searchContainer">
+                <button class="search-icon search-icon-btn" type="button" id="searchToggleBtn" aria-label="展开搜索筛选">🔍</button>
+                <input type="text" class="search-input" id="searchInput" placeholder="搜索灵异事件..." inputmode="search" />
+                <div class="search-advanced glass" id="searchAdvancedBar">
+                    <div class="search-advanced-content" id="searchAdvancedContent">
+                        <div class="search-advanced-grid">
+                            <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
+                            <label>到 <input type="date" id="searchToDate" class="form-input"></label>
+                            <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
+                            <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
+                        </div>
+                        <div class="search-advanced-actions">
+                            <button class="btn btn-ghost btn-sm" type="button" id="searchFilterApplyBtn">应用筛选</button>
+                            <button class="btn btn-ghost btn-sm" type="button" id="searchFilterResetBtn">重置</button>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <div class="nav-actions">
-            <!-- 创作者入口 -->
-            <button class="btn btn-ghost" style="color: var(--accent-green); border-color: var(--accent-green);" onclick="Auth.checkAndGoStudio()">
-                <i class="fas fa-magic"></i> <span>创作</span>
-            </button>
-
-            <div id="authButtons">
-                <button class="btn btn-primary" onclick="if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">登录</button>
-            </div>
-
-            <div class="user-menu" id="userMenu" style="display: none;">
-                <span id="userDisplayName" style="font-size: 0.9rem;"></span>
-                <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
-                <button class="btn btn-ghost user-logout-btn" id="logoutBtn">
-                    <i class="fas fa-sign-out-alt"></i>
+            <div class="nav-actions">
+                <!-- 创作者入口 -->
+                <button class="btn btn-ghost" style="color: var(--accent-green); border-color: var(--accent-green);" onclick="Auth.checkAndGoStudio()">
+                    <i class="fas fa-magic"></i> <span>创作</span>
                 </button>
+
+                <div id="authButtons">
+                    <button class="btn btn-primary" onclick="if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">登录</button>
+                </div>
+
+                <div class="user-menu" id="userMenu" style="display: none;">
+                    <span id="userDisplayName" style="font-size: 0.9rem;"></span>
+                    <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
+                    <button class="btn btn-ghost user-logout-btn" id="logoutBtn">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
             </div>
         </div>
     </nav>
@@ -257,11 +264,10 @@
                         <div class="auth-divider">
                             <span>或</span>
                         </div>
-                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.loginWithBinance()">
-                            <i class="fas fa-wallet"></i> 币安钱包 / 扫码登录
+                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.openWalletSelector()">
+                            <i class="fas fa-wallet"></i> 钱包登录（多种钱包）
                         </button>
-                        <div id="wc-qrcode" style="display:none; text-align:center; margin-top:0.8rem;"></div>
-                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">有插件会直接拉起钱包；无插件将显示二维码，用手机钱包扫码即可</p>
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">支持 Binance Wallet、MetaMask、WalletConnect 扫码</p>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
 
                         <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
@@ -312,6 +318,18 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Wallet Selector Modal -->
+    <div class="modal-overlay" id="walletSelectModal" onclick="Modal.close('walletSelectModal')">
+        <div class="modal glass wallet-select-modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>连接钱包</h3>
+                <button class="modal-close" onclick="Modal.close('walletSelectModal')">&times;</button>
+            </div>
+            <div id="walletSelectList"></div>
+            <div id="walletSelectQr" class="wallet-select-qr" style="display:none;"></div>
         </div>
     </div>
 

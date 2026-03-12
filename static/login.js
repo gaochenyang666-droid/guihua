@@ -51,58 +51,188 @@
         return true;
     }
 
-    async function web3Login() {
-        // 优先币安钱包（BSC），其次 MetaMask/ethereum，保证两种都支持
-        const provider = window.BinanceChain || window.ethereum;
+    function closeWalletSelector() {
+        const modal = document.getElementById('loginWalletSelectModal');
+        if (modal) modal.classList.remove('active');
+    }
+
+    function getWalletChoices() {
+        const installed = [];
+        if (window.BinanceChain) {
+            installed.push({ id: 'binance', icon: '🟡', name: 'Binance Wallet', sub: '已安装 · 推荐（BSC）' });
+        }
+        if (window.ethereum) {
+            installed.push({ id: 'metamask', icon: '🦊', name: 'MetaMask', sub: '已安装' });
+        }
+        const hasInjected = !!(window.BinanceChain || window.ethereum);
+        const others = [
+            { id: 'walletconnect', icon: '🔗', name: 'WalletConnect', sub: '扫码登录（手机钱包）' },
+            { id: 'browser', icon: '🌐', name: 'Browser Wallet', sub: hasInjected ? '使用当前浏览器钱包' : '未检测到注入钱包', disabled: !hasInjected }
+        ];
+        return { installed, others };
+    }
+
+    async function requestPersonalSign(provider, address, message) {
+        try {
+            return await provider.request({ method: 'personal_sign', params: [message, address] });
+        } catch (_) {
+            try {
+                return await provider.request({ method: 'personal_sign', params: [address, message] });
+            } catch (_) {
+                throw new Error('签名被拒绝或钱包不支持');
+            }
+        }
+    }
+
+    async function verifyAddressLogin(address, provider) {
+        const nonceRes = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
+        const nonceData = await parseJsonSafe(nonceRes, {});
+        if (!nonceRes.ok || !nonceData.nonce) {
+            throw new Error((nonceData && nonceData.error) || '获取签名挑战失败');
+        }
+        const message = 'Sign this message to login to ' + window.location.host + ': ' + nonceData.nonce;
+        const signature = await requestPersonalSign(provider, address, message);
+        const verifyRes = await fetch(API_BASE + '/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: address, signature: signature, message: message })
+        });
+        const verifyData = await parseJsonSafe(verifyRes, {});
+        if (!verifyRes.ok || !verifyData.token) {
+            throw new Error((verifyData && verifyData.error) || '钱包登录失败');
+        }
+        saveLogin(verifyData);
+        closeWalletSelector();
+        Toast.success('登录成功');
+        goAfterLogin();
+    }
+
+    async function loginWithInjected(provider, walletName) {
         if (!provider) {
-            Toast.error('未检测到钱包插件，请安装币安钱包或 MetaMask');
+            Toast.error(`${walletName || '钱包'} 未检测到`);
             return;
         }
         try {
             const accounts = await provider.request({ method: 'eth_requestAccounts' });
             const address = (accounts && accounts[0]) ? accounts[0] : '';
-            if (!address) {
-                Toast.error('未获取到钱包地址');
+            if (!address) throw new Error('未获取到钱包地址');
+            await verifyAddressLogin(address, provider);
+        } catch (e) {
+            const msg = String((e && e.message) || e || '');
+            if ((e && e.code === 4001) || msg.includes('reject')) Toast.info('已取消授权');
+            else Toast.error(msg || `${walletName || '钱包'} 登录失败`);
+        }
+    }
+
+    async function loginWithWalletConnect(qrContainerId) {
+        try {
+            const cfgRes = await fetch(API_BASE + '/config/public');
+            const cfg = await parseJsonSafe(cfgRes, {});
+            const projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
+            if (!projectId) throw new Error('WalletConnect 未配置');
+            const UC = window.UniversalProvider && (window.UniversalProvider.UniversalProvider || window.UniversalProvider);
+            if (!UC) throw new Error('UniversalProvider 未加载');
+            const provider = await UC.init({
+                projectId: projectId,
+                metadata: {
+                    name: '诡话',
+                    description: 'Web3 灵异文学社区',
+                    url: location.origin,
+                    icons: [location.origin + '/static/logo.svg']
+                }
+            });
+
+            const sessionAccounts = provider.session && provider.session.namespaces && provider.session.namespaces.eip155 && provider.session.namespaces.eip155.accounts;
+            if (sessionAccounts && sessionAccounts.length) {
+                await verifyAddressLogin(sessionAccounts[0].split(':')[2], provider);
                 return;
             }
 
-            const nonceRes = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
-            const nonceData = await parseJsonSafe(nonceRes, {});
-            if (!nonceRes.ok || !nonceData.nonce) {
-                Toast.error((nonceData && nonceData.error) || '获取签名挑战失败');
-                return;
+            const qrWrap = document.getElementById(qrContainerId);
+            if (qrWrap) {
+                qrWrap.style.display = 'block';
+                qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
             }
+            provider.on('display_uri', function (uri) {
+                if (!qrWrap) return;
+                qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
+                new QRCode(qrWrap, { text: uri, width: 220, height: 220 });
+            });
 
-            const message = 'Sign this message to login to ' + window.location.host + ': ' + nonceData.nonce;
-            let signature = '';
-            try {
-                signature = await provider.request({ method: 'personal_sign', params: [message, address] });
-            } catch (_) {
-                try {
-                    signature = await provider.request({ method: 'personal_sign', params: [address, message] });
-                } catch (err2) {
-                    Toast.error('签名被拒绝或钱包不支持');
+            await provider.connect({
+                namespaces: {
+                    eip155: {
+                        methods: ['personal_sign'],
+                        chains: ['eip155:56'],
+                        events: ['accountsChanged', 'chainChanged']
+                    }
+                }
+            });
+            const accounts = provider.session && provider.session.namespaces && provider.session.namespaces.eip155 && provider.session.namespaces.eip155.accounts;
+            if (!accounts || !accounts.length) throw new Error('未获取到钱包地址');
+            await verifyAddressLogin(accounts[0].split(':')[2], provider);
+        } catch (e) {
+            const msg = String((e && e.message) || e || '');
+            if (msg.includes('reject')) Toast.info('用户取消了扫码');
+            else Toast.error(msg || 'WalletConnect 登录失败');
+        }
+    }
+
+    function openWalletSelector() {
+        const modal = document.getElementById('loginWalletSelectModal');
+        const listEl = document.getElementById('loginWalletSelectList');
+        const qrWrap = document.getElementById('loginWalletSelectQr');
+        if (!modal || !listEl) {
+            Toast.error('钱包面板加载失败');
+            return;
+        }
+        if (qrWrap) {
+            qrWrap.style.display = 'none';
+            qrWrap.innerHTML = '';
+        }
+        const groups = getWalletChoices();
+        const renderItem = function (item) {
+            return `
+                <button type="button" class="wallet-select-item" data-wallet="${item.id}" ${item.disabled ? 'disabled' : ''}>
+                    <span class="wallet-select-icon">${item.icon}</span>
+                    <span class="wallet-select-meta">
+                        <span class="wallet-select-name">${item.name}</span>
+                        <span class="wallet-select-sub">${item.sub || ''}</span>
+                    </span>
+                </button>
+            `;
+        };
+        listEl.innerHTML = `
+            <div class="wallet-select-group-title">已安装</div>
+            <div class="wallet-select-list">
+                ${groups.installed.length ? groups.installed.map(renderItem).join('') : '<div class="wallet-select-sub" style="padding:0.35rem 0.2rem;">未检测到注入钱包，可使用 WalletConnect 扫码登录。</div>'}
+            </div>
+            <div class="wallet-select-group-title">Other Wallets</div>
+            <div class="wallet-select-list">${groups.others.map(renderItem).join('')}</div>
+        `;
+
+        listEl.querySelectorAll('button[data-wallet]').forEach(function (btn) {
+            btn.addEventListener('click', async function () {
+                const key = btn.getAttribute('data-wallet') || '';
+                if (!key || btn.disabled) return;
+                if (key === 'walletconnect') {
+                    await loginWithWalletConnect('loginWalletSelectQr');
                     return;
                 }
-            }
-
-            const verifyRes = await fetch(API_BASE + '/auth/verify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address: address, signature: signature, message: message })
+                if (key === 'binance') {
+                    await loginWithInjected(window.BinanceChain, 'Binance Wallet');
+                    return;
+                }
+                if (key === 'metamask') {
+                    await loginWithInjected(window.ethereum, 'MetaMask');
+                    return;
+                }
+                if (key === 'browser') {
+                    await loginWithInjected(window.BinanceChain || window.ethereum, 'Browser Wallet');
+                }
             });
-            const verifyData = await parseJsonSafe(verifyRes, {});
-            if (!verifyRes.ok || !verifyData.token) {
-                Toast.error((verifyData && verifyData.error) || '钱包登录失败');
-                return;
-            }
-
-            saveLogin(verifyData);
-            Toast.success('登录成功');
-            goAfterLogin();
-        } catch (e) {
-            Toast.error((e && e.message) || '钱包登录失败');
-        }
+        });
+        modal.classList.add('active');
     }
 
     async function init() {
@@ -117,7 +247,7 @@
         modeLoginBtn.addEventListener('click', function () { setMode('login'); });
         modeRegisterBtn.addEventListener('click', function () { setMode('register'); });
         modePasswordBtn.addEventListener('click', function () { setMode('password'); });
-        walletLoginBtn.addEventListener('click', web3Login);
+        walletLoginBtn.addEventListener('click', openWalletSelector);
 
         loginForm.addEventListener('submit', async function (ev) {
             ev.preventDefault();

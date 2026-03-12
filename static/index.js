@@ -253,16 +253,97 @@
                 }
             },
 
-            async loginWithBinance() {
-                try {
-                    if (window.BinanceChain || window.ethereum) {
-                        const provider = window.BinanceChain || window.ethereum;
-                        const accounts = await provider.request({ method: 'eth_requestAccounts' });
-                        if (accounts && accounts.length) {
-                            return await this.handleWeb3Verify(accounts[0], provider, false);
-                        }
-                    }
+            getWalletChoices() {
+                const installed = [];
+                if (window.BinanceChain) {
+                    installed.push({ id: 'binance', icon: '🟡', name: 'Binance Wallet', sub: '已安装 · 推荐（BSC）' });
+                }
+                if (window.ethereum) {
+                    installed.push({ id: 'metamask', icon: '🦊', name: 'MetaMask', sub: '已安装' });
+                }
+                const hasInjected = !!(window.BinanceChain || window.ethereum);
+                const others = [
+                    { id: 'walletconnect', icon: '🔗', name: 'WalletConnect', sub: '扫码登录（手机钱包）' },
+                    { id: 'browser', icon: '🌐', name: 'Browser Wallet', sub: hasInjected ? '使用当前浏览器钱包' : '未检测到注入钱包', disabled: !hasInjected }
+                ];
+                return { installed, others };
+            },
 
+            openWalletSelector() {
+                const listEl = document.getElementById('walletSelectList');
+                const qrWrap = document.getElementById('walletSelectQr');
+                if (!listEl) {
+                    Toast.error('钱包列表加载失败');
+                    return;
+                }
+                if (qrWrap) {
+                    qrWrap.style.display = 'none';
+                    qrWrap.innerHTML = '';
+                }
+                const groups = this.getWalletChoices();
+                const renderItem = (item) => `
+                    <button type="button" class="wallet-select-item" data-wallet="${item.id}" ${item.disabled ? 'disabled' : ''}>
+                        <span class="wallet-select-icon">${item.icon}</span>
+                        <span class="wallet-select-meta">
+                            <span class="wallet-select-name">${item.name}</span>
+                            <span class="wallet-select-sub">${item.sub || ''}</span>
+                        </span>
+                    </button>
+                `;
+                listEl.innerHTML = `
+                    <div class="wallet-select-group-title">已安装</div>
+                    <div class="wallet-select-list">
+                        ${groups.installed.length ? groups.installed.map(renderItem).join('') : '<div class="wallet-select-sub" style="padding:0.35rem 0.2rem;">未检测到注入钱包，可使用 WalletConnect 扫码登录。</div>'}
+                    </div>
+                    <div class="wallet-select-group-title">Other Wallets</div>
+                    <div class="wallet-select-list">${groups.others.map(renderItem).join('')}</div>
+                `;
+                listEl.querySelectorAll('button[data-wallet]').forEach((btn) => {
+                    btn.onclick = async () => {
+                        const key = btn.getAttribute('data-wallet') || '';
+                        if (!key || btn.disabled) return;
+                        if (key === 'walletconnect') {
+                            await this.loginWithWalletConnect('walletSelectQr');
+                            return;
+                        }
+                        if (key === 'binance') {
+                            await this.loginWithInjectedWallet(window.BinanceChain, 'Binance Wallet');
+                            return;
+                        }
+                        if (key === 'metamask') {
+                            await this.loginWithInjectedWallet(window.ethereum, 'MetaMask');
+                            return;
+                        }
+                        if (key === 'browser') {
+                            await this.loginWithInjectedWallet(window.BinanceChain || window.ethereum, 'Browser Wallet');
+                        }
+                    };
+                });
+                Modal.close('loginModal');
+                Modal.open('walletSelectModal');
+            },
+
+            async loginWithInjectedWallet(provider, walletName) {
+                if (!provider) {
+                    Toast.error(`${walletName || '钱包'} 未检测到`);
+                    return;
+                }
+                try {
+                    const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                    if (!accounts || !accounts.length) {
+                        Toast.error('未获取到钱包地址');
+                        return;
+                    }
+                    await this.handleWeb3Verify(accounts[0], provider, false);
+                } catch (e) {
+                    const msg = String((e && e.message) || e || '');
+                    if ((e && e.code === 4001) || msg.includes('reject')) Toast.info('已取消授权');
+                    else Toast.error(msg || `${walletName || '钱包'} 连接失败`);
+                }
+            },
+
+            async loginWithWalletConnect(qrContainerId = 'walletSelectQr') {
+                try {
                     const cfgRes = await fetch(`${API_BASE}/config/public`);
                     const cfg = await this.parseJsonSafe(cfgRes);
                     const projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
@@ -284,18 +365,19 @@
                     const accountsInSession = provider.session && provider.session.namespaces && provider.session.namespaces.eip155 && provider.session.namespaces.eip155.accounts;
                     if (accountsInSession && accountsInSession.length) {
                         const address = accountsInSession[0].split(':')[2];
-                        return await this.handleWeb3Verify(address, provider, true);
+                        await this.handleWeb3Verify(address, provider, true);
+                        return;
                     }
 
-                    const qrWrap = document.getElementById('wc-qrcode');
-                    if (qrWrap) { qrWrap.style.display = 'block'; qrWrap.innerHTML = ''; }
-                    let qrInstance = null;
-
+                    const qrWrap = document.getElementById(qrContainerId);
+                    if (qrWrap) {
+                        qrWrap.style.display = 'block';
+                        qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
+                    }
                     provider.on('display_uri', (uri) => {
-                        if (qrWrap) {
-                            qrWrap.innerHTML = '<p style="margin-bottom:8px;">请使用币安钱包或其他钱包扫码</p>';
-                            qrInstance = new QRCode(qrWrap, { text: uri, width: 220, height: 220 });
-                        }
+                        if (!qrWrap) return;
+                        qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
+                        new QRCode(qrWrap, { text: uri, width: 220, height: 220 });
                     });
 
                     await provider.connect({
@@ -312,15 +394,16 @@
                     if (!accounts || !accounts.length) throw new Error('未获取到钱包地址');
 
                     const address = accounts[0].split(':')[2];
-                    if (qrWrap) qrWrap.style.display = 'none';
-
                     await this.handleWeb3Verify(address, provider, true);
                 } catch (e) {
-                    console.error(e);
-                    const msg = String(e.message || e);
+                    const msg = String((e && e.message) || e || '');
                     if (msg.includes('reject')) Toast.info('用户取消了扫码');
-                    else Toast.error(msg || '连接失败，请重试');
+                    else Toast.error(msg || 'WalletConnect 连接失败');
                 }
+            },
+
+            async loginWithBinance() {
+                return this.openWalletSelector();
             },
 
             async loginWeb2(username, password) {
@@ -390,6 +473,7 @@
                 sessionStorage.removeItem('login_expiry_warned');
                 currentUser = data.user;
                 UI.updateAuth();
+                Modal.close('walletSelectModal');
                 Modal.close('loginModal');
                 Toast.success('认证成功');
                 Post.load({ sort: Post.currentSort || 'new' });
@@ -1337,14 +1421,14 @@
                 subEl.textContent = `${lv} · ${currentUser.experience_points || 0} EXP`;
                 btnEl.textContent = '查看个人页';
             },
-            getPostSummaryText(post) {
-                const title = (post && post.title) ? String(post.title).trim() : '';
-                const body = stripHtml((post && post.content) || '');
-                const text = body && title ? `${title}\n${body}` : (title || body || '');
-                return text.trim();
+            getPostTitleText(post) {
+                return ((post && post.title) ? String(post.title) : '').trim();
+            },
+            getPostBodyText(post) {
+                return stripHtml((post && post.content) || '').trim();
             },
             shouldCollapseSummary(text) {
-                return !!(text && text.length > 160);
+                return !!(text && text.length > 220);
             },
             formatSummaryHtml(text) {
                 return escapeHtml(text || '').replace(/\n/g, '<br>');
@@ -1435,10 +1519,11 @@
                 const imgUrl = this.resolveCoverUrl(p);
                 const coverHtml = this.renderCover(imgUrl);
                 const author = p.author || { nickname: '用户', avatar: '👻' };
-                const summaryText = this.getPostSummaryText(p);
-                const shouldCollapse = this.shouldCollapseSummary(summaryText);
+                const titleText = this.getPostTitleText(p);
+                const bodyText = this.getPostBodyText(p);
+                const shouldCollapse = this.shouldCollapseSummary(bodyText);
                 const expanded = this.expandedPostIds.has(Number(p.id));
-                const summaryVisible = shouldCollapse && !expanded ? `${summaryText.slice(0, 160).trimEnd()}...` : summaryText;
+                const summaryVisible = shouldCollapse && !expanded ? `${bodyText.slice(0, 220).trimEnd()}...` : bodyText;
                 const summaryHtml = this.formatSummaryHtml(summaryVisible);
 
                 const isWeb3 = p.post_type === 1 || p.tx_hash;
@@ -1453,7 +1538,7 @@
 
                 return `
                 <div class="${itemClass}" style="--stagger:${stagger}ms;">
-                    <article class="timeline-item glass">
+                    <article class="timeline-item glass" onclick="Modal.openDetail(event, ${p.id})">
                         <div class="timeline-head">
                             <div class="timeline-author">
                                 ${this.renderAvatar(author)}
@@ -1469,13 +1554,15 @@
                             <button class="btn btn-ghost btn-sm timeline-open-btn" onclick="Modal.openDetail(event, ${p.id})">查看</button>
                         </div>
                         ${badges ? `<div class="timeline-tags">${badges}</div>` : ''}
-                        <div class="timeline-body" onclick="Modal.openDetail(event, ${p.id})">${summaryHtml || '（无正文）'}</div>
+                        <h3 class="timeline-title">${escapeHtml(titleText || '（无标题）')}</h3>
+                        <div class="timeline-body">${summaryHtml || '（无正文）'}</div>
                         ${this.renderTopComment(p)}
-                        ${shouldCollapse ? `<button class="timeline-expand-btn" onclick="UI.togglePostExpand(event, ${p.id})">${expanded ? '收起' : '展开全文'}</button>` : ''}
+                        ${shouldCollapse ? `<button class="timeline-expand-btn" onclick="UI.togglePostExpand(event, ${p.id})">${expanded ? '收起正文' : '展开阅读'}</button>` : ''}
                         ${imgUrl ? `<div class="timeline-cover" onclick="Modal.openDetail(event, ${p.id})">${coverHtml}</div>` : ''}
                         <div class="timeline-actions">
                             <button class="btn btn-ghost btn-sm" onclick="Interact.like(${p.id}); event.stopPropagation();">😰 ${Number(p.likes_count || 0)}</button>
                             <button class="btn btn-ghost btn-sm" onclick="Interact.bookmark(${p.id}); event.stopPropagation();">${p.is_bookmarked ? '★ 已收' : '⭐ 收藏'}</button>
+                            <button class="btn btn-ghost btn-sm" onclick="UI.copyPostText(event, ${p.id})">📋 复制</button>
                             <button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${p.id}); event.stopPropagation();">💬 详情</button>
                         </div>
                     </article>
@@ -1527,6 +1614,41 @@
                 }
                 if (!user.honor_title) return '';
                 return `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>`;
+            },
+            async copyPostText(ev, postId) {
+                if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+                if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+                const id = Number(postId);
+                const post = Array.isArray(this.renderedPosts) ? this.renderedPosts.find((it) => Number(it && it.id) === id) : null;
+                if (!post) {
+                    Toast.error('未找到帖子内容');
+                    return;
+                }
+                const title = this.getPostTitleText(post);
+                const body = this.getPostBodyText(post);
+                const text = [title, body].filter(Boolean).join('\n\n').trim();
+                if (!text) {
+                    Toast.info('该帖暂无可复制文本');
+                    return;
+                }
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        const ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                    }
+                    Toast.success('已复制标题和正文');
+                } catch (_) {
+                    Toast.error('复制失败，请重试');
+                }
             },
 
             handleNav(el, sort) {
@@ -2481,6 +2603,46 @@
                     const pw = document.getElementById('loginPassword');
                     if (un && pw) Auth.loginWeb2(un.value, pw.value);
                 };
+            }
+            const navbarEl = document.getElementById('mainNavbar');
+            const mobileNavToggleBtn = document.getElementById('mobileNavToggleBtn');
+            const mobileNavPanel = document.getElementById('mobileNavPanel');
+            const isMobileNav = () => window.matchMedia('(max-width: 768px)').matches;
+            const closeMobileNav = () => {
+                if (!navbarEl) return;
+                navbarEl.classList.remove('mobile-nav-open');
+                if (mobileNavToggleBtn) mobileNavToggleBtn.setAttribute('aria-expanded', 'false');
+            };
+            const openMobileNav = () => {
+                if (!navbarEl) return;
+                navbarEl.classList.add('mobile-nav-open');
+                if (mobileNavToggleBtn) mobileNavToggleBtn.setAttribute('aria-expanded', 'true');
+            };
+            if (navbarEl && mobileNavToggleBtn && mobileNavPanel) {
+                mobileNavToggleBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isMobileNav()) return;
+                    if (navbarEl.classList.contains('mobile-nav-open')) closeMobileNav();
+                    else openMobileNav();
+                };
+                mobileNavPanel.addEventListener('click', (e) => {
+                    if (!isMobileNav()) return;
+                    const target = e.target;
+                    if (!(target instanceof Element)) return;
+                    if (target.closest('.search-container') || target.closest('#searchAdvancedBar')) return;
+                    if (target.closest('button, a')) closeMobileNav();
+                });
+                document.addEventListener('click', (e) => {
+                    if (!isMobileNav()) return;
+                    if (!navbarEl.contains(e.target)) closeMobileNav();
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') closeMobileNav();
+                });
+                window.addEventListener('resize', () => {
+                    if (!isMobileNav()) closeMobileNav();
+                });
             }
 
             const mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
