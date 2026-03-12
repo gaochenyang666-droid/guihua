@@ -45,18 +45,15 @@ body {
 }
 body.page-motion {
     opacity: 0;
-    transform: translateY(10px);
-    transition: opacity 0.38s ease, transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 0.28s ease;
 }
 
 body.page-motion.page-ready {
     opacity: 1;
-    transform: translateY(0);
 }
 
 body.page-motion.page-leaving {
     opacity: 0;
-    transform: translateY(-8px);
     pointer-events: none;
 }
 

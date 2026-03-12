@@ -439,6 +439,10 @@ def index():
 def studio():
     return render_template('studio.html')
 
+@app.route('/login')
+def login_page():
+    return render_template('login.html')
+
 @app.route('/profile')
 def profile():
     return render_template('profile.html')
@@ -1388,7 +1392,14 @@ def get_user_profile(username):
     if not token:
         return jsonify({'error': 'User not found'}), 404
 
-    user = User.query.filter(func.lower(User.username) == token.lower()).first()
+    user = None
+    if token.isdigit():
+        try:
+            user = User.query.get(int(token))
+        except Exception:
+            user = None
+    if not user:
+        user = User.query.filter(func.lower(User.username) == token.lower()).first()
     if not user and token.startswith('0x'):
         user = User.query.filter(func.lower(User.address) == token.lower()).first()
     if not user:

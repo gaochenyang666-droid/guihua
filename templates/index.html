@@ -52,7 +52,7 @@
             </button>
 
             <div id="authButtons">
-                <button class="btn btn-primary" onclick="Modal.open('loginModal')">登录</button>
+                <button class="btn btn-primary" onclick="if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">登录</button>
             </div>
 
             <div class="user-menu" id="userMenu" style="display: none;">
@@ -83,7 +83,7 @@
                         <div class="profile-quick-sub" id="leftProfileSub">登录后可查看个人中心</div>
                     </div>
                 </div>
-                <button class="btn btn-ghost btn-sm profile-quick-btn" id="leftProfileBtn" type="button" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else Modal.open('loginModal');">查看个人页</button>
+                <button class="btn btn-ghost btn-sm profile-quick-btn" id="leftProfileBtn" type="button" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">查看个人页</button>
             </div>
             <div class="sidebar-card nav-sort-card glass">
                 <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')"><span class="nav-item-icon">🔥</span><span class="nav-item-label">热门</span></div>
@@ -226,7 +226,7 @@
         <a href="#" onclick="Auth.checkAndGoStudio(); return false;" class="bottom-nav-item">
             <i class="fas fa-plus-circle nav-highlight-btn" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
         </a>
-        <a href="#" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else Modal.open('loginModal'); return false;" class="bottom-nav-item">
+        <a href="#" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);} return false;" class="bottom-nav-item">
             <i class="fas fa-user"></i>
             <span>我的</span>
         </a>

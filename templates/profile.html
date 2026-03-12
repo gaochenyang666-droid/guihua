@@ -97,6 +97,7 @@
         let displayedSeries = [];
         let tempAvatar = null;
         let myAchievementsState = null;
+        let viewingOwnProfile = false;
         const ACHIEVEMENT_META = {
             report_privilege: { title: '举报权限', min_level: 2, wearable: false },
             wearable_unlock: { title: '成就佩戴权限', min_level: 3, wearable: false },
@@ -108,6 +109,43 @@
             .replace(/"/g, '&quot;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
+        const normalizeToken = (s) => (s == null ? '' : String(s).trim().toLowerCase());
+
+        function sameIdentity(a, b) {
+            if (!a || !b) return false;
+            if (a.id != null && b.id != null && String(a.id) === String(b.id)) return true;
+            const aUsername = normalizeToken(a.username);
+            const bUsername = normalizeToken(b.username);
+            if (aUsername && bUsername && aUsername === bUsername) return true;
+            const aAddress = normalizeToken(a.address || a.wallet_address);
+            const bAddress = normalizeToken(b.address || b.wallet_address);
+            if (aAddress && bAddress && aAddress === bAddress) return true;
+            return false;
+        }
+
+        function queryIsCurrentUser(queryToken, user) {
+            const q = normalizeToken(queryToken);
+            if (!q || !user) return false;
+            const username = normalizeToken(user.username);
+            const address = normalizeToken(user.address || user.wallet_address);
+            return (username && q === username) || (address && q === address);
+        }
+
+        function renderMyActions() {
+            const area = document.getElementById('myActions');
+            if (!area) return;
+            if (!currentUser) {
+                area.innerHTML = '<a class="btn btn-primary" href="/login?next=%2Fprofile" data-no-transition="1">登录</a>';
+                return;
+            }
+            const profileKey = encodeURIComponent(currentUser.username || currentUser.address || currentUser.id || '');
+            area.innerHTML = `
+                <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                    <a class="btn btn-ghost" href="/profile?user=${profileKey}" data-no-transition="1">我的主页</a>
+                    <button class="btn btn-ghost" type="button" onclick="localStorage.removeItem('token'); localStorage.removeItem('login_at'); navigateWithTransition('/')">退出</button>
+                </div>
+            `;
+        }
 
         function achievementTitleByKey(key) {
             if (!key) return '';
@@ -188,14 +226,21 @@
                     }
                 } catch(e) { console.error("Auth check failed", e); }
             }
+            renderMyActions();
 
             if(!userParam) {
-                if(!currentUser) { navigateWithTransition('/'); return; }
+                if(!currentUser) {
+                    if (typeof openLoginPage === 'function') openLoginPage('/profile');
+                    else navigateWithTransition('/login?next=%2Fprofile');
+                    return;
+                }
+                viewingOwnProfile = true;
                 displayedUser = currentUser;
                 renderProfile(currentUser, [], []);
                 loadAchievements();
-                loadUserPosts(currentUser.id || currentUser.username || currentUser.address, true);
+                loadUserPosts(currentUser.username || currentUser.address || currentUser.id, true);
             } else {
+                viewingOwnProfile = queryIsCurrentUser(userParam, currentUser);
                 try {
                     const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userParam)}`);
                     const data = await res.json().catch(() => ({}));
@@ -204,8 +249,11 @@
                         return;
                     }
                     displayedUser = data.user;
+                    if (currentUser && sameIdentity(currentUser, data.user)) {
+                        viewingOwnProfile = true;
+                    }
                     renderProfile(data.user, data.posts, data.series || []);
-                    if (currentUser && data.user && data.user.id === currentUser.id) {
+                    if (currentUser && sameIdentity(currentUser, data.user)) {
                         loadAchievements();
                     }
                 } catch(e) {
@@ -286,8 +334,8 @@
                 if (!res.ok) return;
                 myAchievementsState = data;
                 renderAchievementWallBody();
-                if (displayedUser && currentUser && displayedUser.id === currentUser.id) {
-                    renderProfile(displayedUser, displayedPosts);
+                if (displayedUser && currentUser && sameIdentity(displayedUser, currentUser)) {
+                    renderProfile(displayedUser, displayedPosts, displayedSeries);
                 }
             } catch (_) {}
         }
@@ -367,7 +415,7 @@
                 ? `<button type="button" class="btn btn-ghost btn-sm" style="background:rgba(16,185,129,0.1); color:#10b981; border-color:rgba(16,185,129,0.4); min-height:24px; padding:2px 8px; font-size:0.72rem;" title="点击复制打赏地址" onclick="copyWalletAddress('${escapeAttr(walletAddress)}')">打赏地址: ${escapeHtml(walletAddress.substring(0,6) + '...' + walletAddress.slice(-4))}</button>`
                 : '';
             
-            const isMe = currentUser && currentUser.id === user.id;
+            const isMe = !!(viewingOwnProfile || sameIdentity(currentUser, user));
             const showTipThanks = !!user.show_tip_thanks;
             
             document.getElementById('profileArea').innerHTML = `
@@ -479,8 +527,11 @@
                 const res = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}`);
                 const data = await res.json().catch(() => ({}));
                 if(!res.ok) {
-                    if (softFail && currentUser && currentUser.id && String(currentUser.id) !== String(username)) {
-                        return loadUserPosts(currentUser.id, false);
+                    if (softFail && currentUser) {
+                        const fallbackKey = currentUser.username || currentUser.address || currentUser.id;
+                        if (fallbackKey && String(fallbackKey) !== String(username)) {
+                            return loadUserPosts(fallbackKey, false);
+                        }
                     }
                     if(res.status === 401) localStorage.removeItem('token');
                     if (softFail) {
@@ -492,8 +543,11 @@
                 }
                 if(data.user) {
                     displayedUser = data.user;
+                    if (currentUser && sameIdentity(currentUser, data.user)) {
+                        viewingOwnProfile = true;
+                    }
                     renderProfile(data.user, data.posts || [], data.series || []);
-                    if (currentUser && data.user && data.user.id === currentUser.id) {
+                    if (currentUser && sameIdentity(currentUser, data.user)) {
                         loadAchievements();
                     }
                 }
@@ -540,12 +594,12 @@
                     myAchievementsState = data.status || null;
                     if (myAchievementsState && myAchievementsState.equipped_key !== undefined) {
                         currentUser.equipped_achievement_key = myAchievementsState.equipped_key || null;
-                        if (displayedUser && displayedUser.id === currentUser.id) {
+                        if (displayedUser && sameIdentity(displayedUser, currentUser)) {
                             displayedUser.equipped_achievement_key = currentUser.equipped_achievement_key;
                         }
                     }
-                    if (displayedUser && displayedUser.id === currentUser.id) {
-                        renderProfile(displayedUser, displayedPosts);
+                    if (displayedUser && sameIdentity(displayedUser, currentUser)) {
+                        renderProfile(displayedUser, displayedPosts, displayedSeries);
                     }
                     renderAchievementWallBody();
                     if (typeof Toast !== 'undefined') Toast.success(data.message || '佩戴状态已更新');
@@ -624,9 +678,11 @@
                     if(res.ok) {
                         const data = await res.json();
                         currentUser = data.user;
-                        displayedUser = currentUser; 
-                        renderProfile(currentUser, []); 
-                        loadUserPosts(currentUser.id || currentUser.username || currentUser.address, true); 
+                        displayedUser = currentUser;
+                        viewingOwnProfile = true;
+                        renderMyActions();
+                        renderProfile(currentUser, displayedPosts, displayedSeries);
+                        loadUserPosts(currentUser.username || currentUser.address || currentUser.id, true);
                         this.close();
                         tempAvatar = false;
                     } else {
@@ -680,6 +736,7 @@
                 }
             }
         };
+        window.EditProfile = EditProfile;
 
         window.onload = loadProfile;
     </script>

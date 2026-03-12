@@ -39,6 +39,24 @@
         return '<span class="user-id-badge" style="color:' + res.color + '">' + res.emoji + ' ' + window.escapeHtml(idStr) + '</span>';
     };
 
+    window.openLoginPage = function (nextPath) {
+        var fallback = '/';
+        var target = (typeof nextPath === 'string' && nextPath.trim()) ? nextPath.trim() : (window.location.pathname + window.location.search + window.location.hash);
+        var safeTarget = fallback;
+        try {
+            var parsed = new URL(target, window.location.origin);
+            if (parsed.origin === window.location.origin) {
+                safeTarget = (parsed.pathname || '/') + (parsed.search || '') + (parsed.hash || '');
+            }
+        } catch (e) {}
+        var loginUrl = '/login?next=' + encodeURIComponent(safeTarget);
+        if (typeof window.navigateWithTransition === 'function') {
+            window.navigateWithTransition(loginUrl);
+        } else {
+            window.location.href = loginUrl;
+        }
+    };
+
     var PAGE_TRANSITION_MS = 260;
     var isNavigating = false;
     var PAGE_STATE_INIT_KEY = 'pageStateInit';
@@ -125,6 +143,18 @@
 
     window.addEventListener('load', function () {
         resetPageVisualState();
+    });
+
+    // Ignore known wallet-extension noise that appears as unhandled rejection in page console.
+    window.addEventListener('unhandledrejection', function (evt) {
+        try {
+            var reason = evt && evt.reason;
+            var message = String((reason && reason.message) || reason || '');
+            var stack = String((reason && reason.stack) || '');
+            if (/Origin not allowed/i.test(message) && /inpage\.js/i.test(stack)) {
+                evt.preventDefault();
+            }
+        } catch (e) {}
     });
 
     if (document.readyState === 'loading') {

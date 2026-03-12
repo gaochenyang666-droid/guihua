@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#7c3aed">
+    <title>登录 - 诡话</title>
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+    <script src="/static/common.js?v={{ asset_version }}"></script>
+    <script src="/static/toast.js?v={{ asset_version }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+</head>
+<body>
+    <nav class="navbar glass">
+        <a href="/" class="logo">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
+            <span>诡话</span>
+        </a>
+        <div class="nav-actions">
+            <a href="/" class="btn btn-ghost" data-no-transition="1">返回首页</a>
+        </div>
+    </nav>
+
+    <main class="container" style="max-width: 520px; margin: 1.5rem auto; padding: 0 1rem;">
+        <section class="glass" style="padding:1.2rem; border-radius: var(--radius-lg);">
+            <h2 style="margin-bottom:0.8rem;">欢迎回来</h2>
+            <p style="color:var(--text-secondary); font-size:0.88rem; margin-bottom:1rem;">登录后继续查看和创作帖子。</p>
+
+            <div id="loginModeBar" style="display:flex; gap:0.5rem; margin-bottom:0.9rem; flex-wrap:wrap;">
+                <button class="btn btn-primary btn-sm" id="modeLoginBtn" type="button">账号登录</button>
+                <button class="btn btn-ghost btn-sm" id="modeRegisterBtn" type="button">注册账号</button>
+                <button class="btn btn-ghost btn-sm" id="modePasswordBtn" type="button">修改密码</button>
+            </div>
+
+            <form id="loginForm">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input class="form-input" id="loginUsername" type="text" maxlength="50" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码</label>
+                    <input class="form-input" id="loginPassword" type="password" autocomplete="current-password" required>
+                </div>
+                <button class="btn btn-primary" style="width:100%;" type="submit" id="loginSubmitBtn">登录</button>
+            </form>
+
+            <form id="registerForm" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input class="form-input" id="registerUsername" type="text" maxlength="50" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">密码（至少 6 位）</label>
+                    <input class="form-input" id="registerPassword" type="password" autocomplete="new-password">
+                </div>
+                <button class="btn btn-primary" style="width:100%;" type="submit" id="registerSubmitBtn">创建账号并登录</button>
+            </form>
+
+            <form id="passwordForm" style="display:none;">
+                <div class="form-group">
+                    <label class="form-label">用户名</label>
+                    <input class="form-input" id="passwordUsername" type="text" maxlength="50" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">原密码</label>
+                    <input class="form-input" id="passwordOld" type="password" autocomplete="current-password">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">新密码（至少 6 位）</label>
+                    <input class="form-input" id="passwordNew" type="password" autocomplete="new-password">
+                </div>
+                <button class="btn btn-primary" style="width:100%;" type="submit" id="passwordSubmitBtn">确认修改</button>
+            </form>
+
+            <div style="display:flex; align-items:center; gap:0.5rem; margin:1rem 0;">
+                <div style="height:1px; flex:1; background:var(--border-color);"></div>
+                <span style="font-size:0.78rem; color:var(--text-muted);">或</span>
+                <div style="height:1px; flex:1; background:var(--border-color);"></div>
+            </div>
+
+            <button class="btn btn-ghost" style="width:100%;" id="walletLoginBtn" type="button">🦊 钱包登录（BSC）</button>
+            <p style="font-size:0.78rem; color:var(--text-muted); margin-top:0.7rem;">如控制台出现 `inpage.js: Origin not allowed`，通常是钱包扩展自身告警，不影响本站登录逻辑。</p>
+        </section>
+    </main>
+
+    <div class="toast-container" id="toastContainer"></div>
+    <script src="/static/login.js?v={{ asset_version }}"></script>
+</body>
+</html>

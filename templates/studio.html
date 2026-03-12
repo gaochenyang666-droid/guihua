@@ -446,14 +446,15 @@
                     await this.fetchMe();
                 } else {
                     Toast.info('请先登录');
-                    navigateWithTransition('/');
+                    if (typeof openLoginPage === 'function') openLoginPage('/studio');
+                    else navigateWithTransition('/login?next=%2Fstudio');
                 }
                 UI.updateAuth();
-                Draft.load();
+                Draft.load(); 
                 if (window.Studio) Studio.loadPendingPost();
                 Studio.updateFeeDisplay();
                 Studio.loadSeriesOptions();
-
+                
                 document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
                 const tagsInput = document.getElementById('studioPostTags');
                 if (tagsInput) tagsInput.addEventListener('input', () => Draft.save());
@@ -477,7 +478,8 @@
                     } else {
                         if (handle401(res)) return;
                         localStorage.removeItem('token');
-                        navigateWithTransition('/');
+                        if (typeof openLoginPage === 'function') openLoginPage('/studio');
+                        else navigateWithTransition('/login?next=%2Fstudio');
                     }
                 } catch(e) { console.error(e); }
             }

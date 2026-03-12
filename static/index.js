@@ -2018,6 +2018,11 @@
         let currentDetailRequestSeq = 0;
         const Modal = {
             open(id, opts = {}) {
+                if (id === 'loginModal') {
+                    if (typeof openLoginPage === 'function') openLoginPage();
+                    else window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+                    return;
+                }
                 const overlay = document.getElementById(id);
                 if (!overlay) return;
                 const modalEl = overlay.querySelector('.modal');
