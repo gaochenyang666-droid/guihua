@@ -680,6 +680,10 @@
             },
             dismissedKey() {
                 const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
+                return `onboarding_v3_dismissed_session_${uid}`;
+            },
+            legacyDismissedKey() {
+                const uid = currentUser && currentUser.id ? String(currentUser.id) : 'guest';
                 return `onboarding_v2_dismissed_${uid}`;
             },
             hideCard() {
@@ -727,11 +731,15 @@
             isDismissed() {
                 if (this.dismissedInMemory) return true;
                 try {
-                    return localStorage.getItem(this.dismissedKey()) === '1'
-                        || sessionStorage.getItem(this.dismissedKey()) === '1';
+                    return sessionStorage.getItem(this.dismissedKey()) === '1';
                 } catch (_) {
                     return this.dismissedInMemory;
                 }
+            },
+            clearLegacyDismissFlag() {
+                try {
+                    localStorage.removeItem(this.legacyDismissedKey());
+                } catch (_) {}
             },
             bindClose() {
                 const btn = document.getElementById('onboardingCloseBtn');
@@ -749,7 +757,6 @@
             dismiss() {
                 this.dismissedInMemory = true;
                 try {
-                    localStorage.setItem(this.dismissedKey(), '1');
                     sessionStorage.setItem(this.dismissedKey(), '1');
                 } catch (_) {}
                 this.hideCard();
@@ -757,6 +764,7 @@
             async load() {
                 const card = document.getElementById('onboardingCard');
                 if (!card) return;
+                this.clearLegacyDismissFlag();
                 this.bindClose();
                 if (!currentUser) {
                     this.hideCard();
