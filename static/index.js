@@ -1562,7 +1562,6 @@
                         <div class="timeline-actions">
                             <button class="btn btn-ghost btn-sm" onclick="Interact.like(${p.id}); event.stopPropagation();">😰 ${Number(p.likes_count || 0)}</button>
                             <button class="btn btn-ghost btn-sm" onclick="Interact.bookmark(${p.id}); event.stopPropagation();">${p.is_bookmarked ? '★ 已收' : '⭐ 收藏'}</button>
-                            <button class="btn btn-ghost btn-sm" onclick="UI.copyPostText(event, ${p.id})">📋 复制</button>
                             <button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${p.id}); event.stopPropagation();">💬 详情</button>
                         </div>
                     </article>
@@ -1614,41 +1613,6 @@
                 }
                 if (!user.honor_title) return '';
                 return `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>`;
-            },
-            async copyPostText(ev, postId) {
-                if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
-                if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
-                const id = Number(postId);
-                const post = Array.isArray(this.renderedPosts) ? this.renderedPosts.find((it) => Number(it && it.id) === id) : null;
-                if (!post) {
-                    Toast.error('未找到帖子内容');
-                    return;
-                }
-                const title = this.getPostTitleText(post);
-                const body = this.getPostBodyText(post);
-                const text = [title, body].filter(Boolean).join('\n\n').trim();
-                if (!text) {
-                    Toast.info('该帖暂无可复制文本');
-                    return;
-                }
-                try {
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        await navigator.clipboard.writeText(text);
-                    } else {
-                        const ta = document.createElement('textarea');
-                        ta.value = text;
-                        ta.style.position = 'fixed';
-                        ta.style.opacity = '0';
-                        document.body.appendChild(ta);
-                        ta.focus();
-                        ta.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(ta);
-                    }
-                    Toast.success('已复制标题和正文');
-                } catch (_) {
-                    Toast.error('复制失败，请重试');
-                }
             },
 
             handleNav(el, sort) {
