@@ -52,9 +52,10 @@
     }
 
     async function web3Login() {
-        const provider = window.ethereum || window.BinanceChain;
+        // 优先币安钱包（BSC），其次 MetaMask/ethereum，保证两种都支持
+        const provider = window.BinanceChain || window.ethereum;
         if (!provider) {
-            Toast.error('未检测到钱包插件');
+            Toast.error('未检测到钱包插件，请安装币安钱包或 MetaMask');
             return;
         }
         try {

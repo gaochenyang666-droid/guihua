@@ -255,8 +255,8 @@
 
             async loginWithBinance() {
                 try {
-                    if (window.ethereum || window.BinanceChain) {
-                        const provider = window.ethereum || window.BinanceChain;
+                    if (window.BinanceChain || window.ethereum) {
+                        const provider = window.BinanceChain || window.ethereum;
                         const accounts = await provider.request({ method: 'eth_requestAccounts' });
                         if (accounts && accounts.length) {
                             return await this.handleWeb3Verify(accounts[0], provider, false);
@@ -424,9 +424,10 @@
             },
 
             async bindWallet() {
-                if (!window.ethereum && !window.BinanceChain) return Toast.error('请安装钱包');
+                if (!window.BinanceChain && !window.ethereum) return Toast.error('请安装币安钱包或 MetaMask');
                 try {
-                    const accounts = await (window.ethereum || window.BinanceChain).request({ method: 'eth_requestAccounts' });
+                    const bindProvider = window.BinanceChain || window.ethereum;
+                    const accounts = await bindProvider.request({ method: 'eth_requestAccounts' });
                     const address = accounts[0];
 
                     const { res: resNonce, data: nonceData } = await fetchJsonSafe(`${API_BASE}/user/bind_wallet/nonce`, {
@@ -440,11 +441,11 @@
 
                     const message = `Bind wallet ${address} to account ${currentUser.id} on ${location.host}: ${nonce}`;
                     let signature;
-
                     try {
-                         signature = await (window.web3 || new Web3(window.ethereum || window.BinanceChain)).eth.personal.sign(message, address, '');
-                    } catch (e) {
-                         return Toast.error('签名被拒绝');
+                        // 与登录流程保持一致：兼容 personal_sign 两种参数顺序
+                        signature = await this.requestPersonalSign(bindProvider, address, message);
+                    } catch (_) {
+                        return Toast.error('签名被拒绝或钱包不支持');
                     }
 
                     const { res, data } = await fetchJsonSafe(`${API_BASE}/user/bind_wallet`, {
@@ -2441,6 +2442,7 @@
         };
 
         window.addEventListener('load', () => {
+            try {
             Onboarding.bindClose();
             const c = document.getElementById('ghostFireContainer');
             const isMobile = window.innerWidth < 768;
@@ -2471,10 +2473,15 @@
                 window.location.replace(next);
                 return;
             }
-            document.getElementById('loginForm').onsubmit = (e) => {
-                e.preventDefault();
-                Auth.loginWeb2(document.getElementById('loginUsername').value, document.getElementById('loginPassword').value);
-            };
+            const loginForm = document.getElementById('loginForm');
+            if (loginForm) {
+                loginForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    const un = document.getElementById('loginUsername');
+                    const pw = document.getElementById('loginPassword');
+                    if (un && pw) Auth.loginWeb2(un.value, pw.value);
+                };
+            }
 
             const mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
             const mobileUtilityStack = document.getElementById('mobileUtilityStack');
@@ -2682,4 +2689,7 @@
             });
 
             document.getElementById('logoutBtn').onclick = () => Auth.logout();
+            } catch (err) {
+                console.error('[诡话] 首页初始化错误:', err);
+            }
         });

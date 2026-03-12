@@ -912,13 +912,15 @@
                     if (!pre.ok) throw new Error((pre.issues && pre.issues[0]) || '发布前检查未通过');
                     // Initialize Web3 if needed
                     if (typeof window.web3 === 'undefined') {
-                        if (window.ethereum || window.BinanceChain) {
-                            window.web3 = new Web3(window.ethereum || window.BinanceChain);
+                        if (window.BinanceChain || window.ethereum) {
+                            window.web3 = new Web3(window.BinanceChain || window.ethereum);
                         } else {
                             throw new Error("No wallet found");
                         }
                     }
                     const web3 = window.web3;
+                    const provider = window.BinanceChain || window.ethereum;
+                    if (!provider) throw new Error('No wallet found');
 
                     // 1. Fee Config（fee 为 Wei 字符串，勿再 toWei）
                     const cRes = await fetch(`${API_BASE}/config/fees`);
@@ -932,7 +934,7 @@
                         const chainId = await web3.eth.getChainId();
                         if (Number(chainId) !== Number(config.chain_id)) {
                             try {
-                                await window.ethereum.request({
+                                await provider.request({
                                     method: 'wallet_switchEthereumChain',
                                     params: [{ chainId: web3.utils.toHex(String(config.chain_id)) }],
                                 });
@@ -947,7 +949,6 @@
                     if (!txHash) {
                         if (!config.usdt_contract) throw new Error('未配置 USDT 合约地址');
                         this.addLog("等待钱包确认 USDT 转账...");
-                        const provider = window.BinanceChain || window.ethereum;
                         const feeRaw = web3.utils.toBN(config.fee.toString());
                         const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
                         const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, feeRaw]);
