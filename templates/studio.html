@@ -162,12 +162,12 @@
                         <div style="font-weight:bold;">1. 撰写</div>
                         <div style="font-size:0.8rem; opacity:0.7;">创作你的故事</div>
                     </div>
-                    <div class="step-item" id="stepIndicator2">
+                    <div class="step-item" id="stepIndicator2" style="display:none;">
                         <div style="font-weight:bold;">2. 封面</div>
                         <div style="font-size:0.8rem; opacity:0.7;">选填，可跳过</div>
                     </div>
                     <div class="step-item" id="stepIndicator3">
-                        <div style="font-weight:bold;">3. 永存</div>
+                        <div style="font-weight:bold;">2. 永存</div>
                         <div style="font-size:0.8rem; opacity:0.7;">上链并发布</div>
                     </div>
                 </div>
@@ -209,11 +209,11 @@
                             <div id="studioPostContent" style="min-height: 200px;"></div>
                         </div>
                     </div>
-                    <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="Studio.nextStep(2)">下一步: 封面（选填）</button>
+                    <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="Studio.nextStep(3)">下一步: 永存确认</button>
                 </div>
 
                 <!-- Step 2: Cover -->
-                <div class="step-content" id="step2">
+                <div class="step-content" id="step2" style="display:none !important;">
                     <h2 style="margin-bottom: 1.5rem;">设置封面</h2>
                     <div class="form-group">
                         <label class="form-label">封面图 (选填)</label>
@@ -271,7 +271,7 @@
                         </div>
                     </div>
                     
-                    <button class="btn btn-ghost" style="width: 100%; margin-top: 1rem;" onclick="Studio.prevStep(2)">返回修改</button>
+                    <button class="btn btn-ghost" style="width: 100%; margin-top: 1rem;" onclick="Studio.prevStep(1)">返回修改</button>
                 </div>
 
             </div>
@@ -499,7 +499,7 @@
                     const content = studioQuill ? studioQuill.getText().trim() : '';
                     if(!title.trim() || !content) return Toast.error('请填写标题和正文');
                 }
-                if (this.currentStep === 2 && step === 3) {
+                if (step === 3) {
                     this.checkWalletEnv();
                 }
 
@@ -517,12 +517,11 @@
                 if (!token) return { ok: false, issues: ['登录已失效，请重新登录'], warnings: [] };
                 const title = document.getElementById('studioPostTitle').value || '';
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
-                const coverImage = document.getElementById('studioPostImage').value || '';
                 try {
                     const res = await fetch(`${API_BASE}/posts/precheck`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ title, content, cover_image: coverImage })
+                        body: JSON.stringify({ title, content })
                     });
                     const data = await res.json().catch(() => ({}));
                     if (!res.ok) return { ok: false, issues: [data.error || '发布前检查失败'], warnings: [] };
@@ -704,14 +703,12 @@
             savePendingPost(txHash) {
                 const title = document.getElementById('studioPostTitle').value;
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
-                const coverImage = document.getElementById('studioPostImage').value;
                 const tags = this.parseTagsInput();
                 const seriesId = this.seriesSelectValue();
                 const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const data = {
                     title,
                     content,
-                    cover_image: coverImage,
                     tags,
                     series_id: seriesId || null,
                     tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null),
@@ -732,14 +729,12 @@
                     this.pendingTxHash = p.tx_hash;
                     if (p.title) document.getElementById('studioPostTitle').value = p.title;
                     if (p.content && studioQuill) studioQuill.clipboard.dangerouslyPasteHTML(p.content);
-                    if (p.cover_image) document.getElementById('studioPostImage').value = p.cover_image;
                     if (Array.isArray(p.tags)) {
                         const tagsInput = document.getElementById('studioPostTags');
                         if (tagsInput) tagsInput.value = p.tags.join(', ');
                     }
                     const seriesVal = (p.series_id == null ? '' : String(p.series_id));
                     this.loadSeriesOptions(seriesVal);
-                    if (typeof Editor !== 'undefined' && Editor.previewCover) Editor.previewCover(p.cover_image);
                     const specialBox = document.getElementById('adminSpecialPostCheckbox');
                     if (specialBox) specialBox.checked = !!p.is_special_announcement;
                     Toast.info('检测到未完成的发布（已支付），可直接点击发布继续，无需再次支付');
@@ -892,7 +887,6 @@
                 
                 const title = document.getElementById('studioPostTitle').value;
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
-                const coverImage = document.getElementById('studioPostImage').value;
                 const tags = this.parseTagsInput();
                 const seriesId = this.seriesSelectValue();
                 const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
@@ -997,7 +991,6 @@
                             title,
                             content,
                             tx_hash: txHash,
-                            cover_image: coverImage,
                             tags: tags,
                             series_id: seriesId || null,
                             is_special_announcement: specialChecked,
@@ -1073,7 +1066,6 @@
                     Toast.error('请填写正文');
                     return;
                 }
-                const coverImage = document.getElementById('studioPostImage').value || '';
                 const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const btn = document.getElementById('adminDirectPublishBtn');
                 if (btn) btn.disabled = true;
@@ -1087,7 +1079,6 @@
                         body: JSON.stringify({
                             title,
                             content,
-                            cover_image: coverImage || null,
                             tags: tags,
                             series_id: seriesId || null,
                             is_special_announcement: specialChecked,

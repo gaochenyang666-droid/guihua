@@ -1098,7 +1098,6 @@ def _build_checkin_status(user):
 def _build_post_precheck(user, data):
     title = (data.get('title') or '').strip()
     content_html = data.get('content') or ''
-    cover_image = (data.get('cover_image') or '').strip()
     issues = []
     warnings = []
 
@@ -1111,9 +1110,6 @@ def _build_post_precheck(user, data):
         issues.append('正文不能为空')
     elif len(text_content) < 20:
         warnings.append('正文较短，建议补充细节提升可读性')
-    if cover_image and not (cover_image.startswith('http://') or cover_image.startswith('https://') or cover_image.startswith('/static/')):
-        warnings.append('封面图链接格式可能无效')
-
     image_count = len(re.findall(r'<img\\b', content_html or '', flags=re.IGNORECASE))
     if image_count > 10:
         warnings.append('正文图片较多，移动端加载可能较慢')
@@ -1768,14 +1764,8 @@ def create_post():
                 return jsonify({'error': 'vote_options 必须是数组'}), 400
         else:
             vote_options = []
-        # 封面可选：有上传文件则走 ImgBB，否则用表单里的 cover_image URL 或留空
+        # 封面功能已下线：保留兼容字段，但不再上传/写入封面
         cover_url = None
-        if image_file and getattr(image_file, 'filename', None) and image_file.filename.strip():
-            cover_url, img_err = upload_to_imgbb(image_file)
-            if not cover_url:
-                return jsonify({'error': img_err or '封面上传失败'}), 500
-        else:
-            cover_url = (request.form.get('cover_image') or '').strip() or None
         data = {
             'title': title,
             'content': content,
@@ -1846,7 +1836,6 @@ def create_post():
         payload = {
             'title': data.get('title'),
             'content': clean_content,
-            'cover_image': data.get('cover_image'),
             'tags': normalized_tags,
             'author': g.current_user.address,
             'timestamp': datetime.utcnow().isoformat(),
@@ -1877,12 +1866,8 @@ def create_post():
     if not clean_content or not clean_content.strip():
         return jsonify({'error': '正文不能为空'}), 400
 
-    # 封面选填：空字符串规范为 None
-    cover_image = data.get('cover_image')
-    if isinstance(cover_image, str):
-        cover_image = cover_image.strip() or None
-    if not cover_image:
-        cover_image = None
+    # 封面功能已下线：新帖统一不写入封面
+    cover_image = None
     is_special_announcement = bool(data.get('is_special_announcement')) if g.current_user.is_admin else False
     post = Post(
         title=clean_title,
@@ -2089,7 +2074,6 @@ def sync_post_to_arweave(post_id):
     payload = {
         'title': post.title,
         'content': post.content or '',
-        'cover_image': post.cover_image,
         'author': author_address,
         'timestamp': post.created_at.isoformat() if post.created_at else datetime.utcnow().isoformat(),
         'tx_hash': post.tx_hash,
