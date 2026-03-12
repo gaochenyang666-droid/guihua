@@ -97,6 +97,21 @@
                 <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')"><span class="nav-item-icon">✨</span><span class="nav-item-label">最新</span></div>
                 <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')"><span class="nav-item-icon">⭐</span><span class="nav-item-label">收藏</span></div>
             </div>
+            <div class="sidebar-card glass onboarding-card" id="onboardingCard" hidden>
+                <div class="onboarding-head">
+                    <div>
+                        <p class="onboarding-title">🧭 新手任务</p>
+                        <p class="onboarding-progress-label">完成进度 <span id="onboardingProgress">0/0</span></p>
+                    </div>
+                    <div class="onboarding-right">
+                        <button class="onboarding-close-btn" id="onboardingCloseBtn" type="button" onclick="if(window.Onboarding&&window.Onboarding.dismiss){window.Onboarding.dismiss();}return false;">✕</button>
+                        <div class="onboarding-ring" id="onboardingRing">
+                            <span id="onboardingPercent">0%</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="onboardingTaskList" class="onboarding-task-list"></div>
+            </div>
             <div class="mobile-quick-actions" id="mobileQuickActions">
                 <button class="mobile-quick-btn" type="button" data-panel="checkin">📅 签到</button>
                 <button class="mobile-quick-btn" type="button" data-panel="group">🛰️ 社群</button>
@@ -129,26 +144,7 @@
 
         <aside class="sidebar sidebar-right" id="rightSidebar">
             <div class="mobile-utility-host" id="mobileUtilityHost">
-                <button class="mobile-utility-toggle btn btn-ghost btn-sm" id="mobileUtilityToggleBtn" type="button" aria-expanded="false">
-                    <span>🧰 任务 / 福利</span>
-                    <span class="mobile-utility-toggle-icon">▼</span>
-                </button>
                 <div class="mobile-utility-stack" id="mobileUtilityStack">
-            <div class="sidebar-card glass onboarding-card" id="onboardingCard" hidden>
-                <div class="onboarding-head">
-                    <div>
-                        <p class="onboarding-title">🧭 新手任务</p>
-                        <p class="onboarding-progress-label">完成进度 <span id="onboardingProgress">0/0</span></p>
-                    </div>
-                    <div class="onboarding-right">
-                        <button class="onboarding-close-btn" id="onboardingCloseBtn" type="button" onclick="if(window.Onboarding&&window.Onboarding.dismiss){window.Onboarding.dismiss();}return false;">✕</button>
-                        <div class="onboarding-ring" id="onboardingRing">
-                            <span id="onboardingPercent">0%</span>
-                        </div>
-                    </div>
-                </div>
-                <div id="onboardingTaskList" class="onboarding-task-list"></div>
-            </div>
             <div class="sidebar-card glass checkin-card utility-accordion-card" id="checkinCard" data-utility-key="checkin" hidden>
                 <button class="utility-card-trigger" type="button" data-utility-trigger="checkin">
                     <span class="utility-card-title">📅 每日签到</span>

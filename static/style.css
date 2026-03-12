@@ -247,12 +247,26 @@ body.page-motion.page-leaving {
         transform: translateY(0);
         padding: 0.65rem;
         animation: fadeIn 0.16s ease-out;
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
     .mobile-nav-panel .search-container {
         display: block;
         width: 100%;
         margin-top: 0;
         margin-bottom: 0.6rem;
+        overflow: visible;
+    }
+    .mobile-nav-panel .search-advanced {
+        position: static;
+        top: auto;
+        left: auto;
+        transform: none;
+        width: 100%;
+        max-width: none;
+        margin-top: 0.55rem;
+        box-shadow: none;
+        z-index: auto;
     }
     .mobile-nav-panel .nav-actions {
         display: flex !important;
@@ -280,6 +294,9 @@ body.page-motion.page-leaving {
         justify-content: space-between;
         border-top: 1px dashed var(--border-color);
         padding-top: 0.5rem;
+    }
+    .mobile-nav-panel .user-menu .btn {
+        width: auto;
     }
     .site-announcement-inner {
         flex-wrap: nowrap;
@@ -454,6 +471,32 @@ body.page-motion.page-leaving {
     transform: rotate(180deg);
 }
 @media (max-width: 768px) {
+    .profile-quick-card {
+        padding: 0.5rem 0.58rem;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+    }
+    .profile-quick-head {
+        margin-bottom: 0;
+        flex: 1;
+        min-width: 0;
+    }
+    .profile-quick-avatar {
+        width: 30px;
+        height: 30px;
+        font-size: 1rem;
+    }
+    .profile-quick-sub {
+        display: none;
+    }
+    .profile-quick-btn {
+        width: auto;
+        min-height: 34px;
+        padding: 0.34rem 0.62rem;
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
     .mobile-quick-actions {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -461,10 +504,10 @@ body.page-motion.page-leaving {
         margin: 0 0 0.58rem;
     }
     .mobile-utility-stack {
-        display: none;
-    }
-    .mobile-utility-stack.is-open {
         display: block;
+    }
+    .mobile-utility-host {
+        margin-top: 0.12rem;
     }
 }
 .sidebar-card {
