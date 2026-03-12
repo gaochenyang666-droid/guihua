@@ -203,6 +203,9 @@ body.page-motion.page-leaving {
         align-items: center;
         padding: 0.5rem 0.9rem;
         flex-wrap: nowrap;
+        position: sticky;
+        top: 0;
+        z-index: 120;
     }
     .mobile-nav-toggle {
         display: inline-flex;
@@ -217,40 +220,66 @@ body.page-motion.page-leaving {
         font-size: 0.95rem;
     }
     .mobile-nav-panel {
-        display: none;
-        width: 100%;
-        margin-top: 0.45rem;
-        padding: 0.55rem;
+        display: block;
+        position: absolute;
+        left: 0.9rem;
+        right: 0.9rem;
+        top: calc(100% + 0.2rem);
+        z-index: 130;
+        margin-top: 0;
+        padding: 0 0.55rem;
         border: 1px solid var(--border-color);
         border-radius: 12px;
-        background: rgba(12, 12, 19, 0.78);
-        backdrop-filter: blur(10px);
+        background: rgba(12, 12, 19, 0.92);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
+        overflow: hidden;
+        opacity: 0;
+        max-height: 0;
+        pointer-events: none;
+        transform: translateY(-6px);
+        transition: max-height 0.24s ease, opacity 0.2s ease, transform 0.24s ease, padding 0.24s ease;
     }
     .navbar.mobile-nav-open .mobile-nav-panel {
-        display: block;
-        animation: fadeIn 0.2s ease-out;
+        opacity: 1;
+        max-height: min(72vh, 560px);
+        pointer-events: auto;
+        transform: translateY(0);
+        padding: 0.65rem;
+        animation: fadeIn 0.16s ease-out;
     }
     .mobile-nav-panel .search-container {
         display: block;
         width: 100%;
         margin-top: 0;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.6rem;
     }
     .mobile-nav-panel .nav-actions {
         display: flex !important;
-        gap: 0.45rem;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
         margin-left: 0;
-        flex-wrap: wrap;
+        width: 100%;
     }
     .mobile-nav-panel .nav-actions .btn {
-        padding: 0.38rem 0.75rem;
-        font-size: 0.84rem;
+        width: 100%;
+        min-height: 44px;
+        padding: 0.55rem 0.75rem;
+        font-size: 0.9rem;
+        justify-content: center;
+    }
+    .mobile-nav-panel .nav-actions > div {
+        width: 100%;
+    }
+    .mobile-nav-panel .nav-actions > div .btn {
+        width: 100%;
     }
     .mobile-nav-panel .user-menu {
         width: 100%;
         justify-content: space-between;
         border-top: 1px dashed var(--border-color);
-        padding-top: 0.4rem;
+        padding-top: 0.5rem;
     }
     .site-announcement-inner {
         flex-wrap: nowrap;
