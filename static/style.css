@@ -996,10 +996,43 @@ body.page-motion.page-leaving {
     overflow: hidden;
     cursor: pointer;
 }
-.timeline-cover .post-image-wrap {
+.timeline-cover-single .post-image-wrap {
     aspect-ratio: 16 / 6;
     min-height: 68px;
     max-height: 94px;
+}
+.timeline-cover-gallery {
+    display: grid;
+    gap: 4px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.timeline-cover-gallery.count-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.timeline-cover-gallery .timeline-thumb-wrap {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    min-height: 68px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+    border-radius: 8px;
+}
+.timeline-cover-gallery .timeline-thumb-wrap .post-image-placeholder {
+    font-size: 1.2rem;
+}
+.timeline-cover-gallery .timeline-thumb-wrap.has-image .post-image-placeholder {
+    display: none;
+}
+.timeline-more-mask {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.52);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1rem;
 }
 .timeline-actions {
     margin-top: 0.45rem;
@@ -1549,10 +1582,14 @@ textarea.form-input { min-height: 100px; resize: vertical; }
         gap: 0.4rem;
         align-items: flex-start;
     }
-    .timeline-cover .post-image-wrap {
+    .timeline-cover-single .post-image-wrap {
         aspect-ratio: 16 / 5;
         min-height: 56px;
         max-height: 72px;
+    }
+    .timeline-cover-gallery .timeline-thumb-wrap {
+        min-height: 56px;
+        border-radius: 6px;
     }
     .author-info {
         min-width: 0;

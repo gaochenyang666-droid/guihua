@@ -1471,7 +1471,7 @@
                 });
             },
 
-            resolveCoverUrl(post) {
+            resolveDisplayImages(post) {
                 const removedLegacyCover = '/static/images/hua_cover.jpg';
                 const normalize = (val) => {
                     if (typeof val !== 'string') return null;
@@ -1479,35 +1479,44 @@
                     if (!trimmed || trimmed === removedLegacyCover) return null;
                     return trimmed;
                 };
-                const direct = normalize(post && post.cover_image);
-                if (direct) return direct;
+                const out = [];
+                const seen = new Set();
+                const pushOne = (val) => {
+                    const found = normalize(val);
+                    if (!found || seen.has(found)) return;
+                    seen.add(found);
+                    out.push(found);
+                };
 
+                // 优先正文内插图
+                const html = (post && post.content) ? String(post.content) : '';
+                if (html) {
+                    const reg = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+                    let match;
+                    while ((match = reg.exec(html)) !== null) {
+                        pushOne(match[1]);
+                        if (out.length >= 9) break;
+                    }
+                }
+
+                // 兼容历史 images 字段
                 const images = post && post.images;
                 if (Array.isArray(images)) {
-                    for (const it of images) {
-                        const found = normalize(it);
-                        if (found) return found;
-                    }
-                    return null;
-                }
-                if (typeof images === 'string') {
+                    images.forEach((it) => pushOne(it));
+                } else if (typeof images === 'string') {
                     const raw = images.trim();
-                    if (!raw) return null;
-                    if (raw.startsWith('[')) {
-                        try {
-                            const parsed = JSON.parse(raw);
-                            if (Array.isArray(parsed)) {
-                                for (const it of parsed) {
-                                    const found = normalize(it);
-                                    if (found) return found;
-                                }
-                                return null;
-                            }
-                        } catch (_) {}
+                    if (raw) {
+                        if (raw.startsWith('[')) {
+                            try {
+                                const parsed = JSON.parse(raw);
+                                if (Array.isArray(parsed)) parsed.forEach((it) => pushOne(it));
+                            } catch (_) {}
+                        } else {
+                            pushOne(raw);
+                        }
                     }
-                    return normalize(raw);
                 }
-                return null;
+                return out;
             },
 
             renderCover(imageUrl) {
@@ -1520,12 +1529,34 @@
                     <img src="${imgSrc}" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image');this.parentElement.classList.remove('is-fallback')" onerror="this.remove();this.parentElement.classList.add('is-fallback')">
                 </div>`;
             },
+            renderImageGallery(imageUrls) {
+                if (!Array.isArray(imageUrls) || !imageUrls.length) return '';
+                const shown = imageUrls.slice(0, 3);
+                const more = Math.max(0, imageUrls.length - shown.length);
+                if (shown.length === 1) {
+                    return this.renderCover(shown[0]);
+                }
+                return shown.map((src, idx) => {
+                    const safe = escapeAttr(src);
+                    const mask = (more > 0 && idx === shown.length - 1)
+                        ? `<span class="timeline-more-mask">+${more}</span>`
+                        : '';
+                    return `<div class="timeline-thumb-wrap">
+                        <div class="post-image-placeholder">🖼️</div>
+                        <img src="${safe}" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image')" onerror="this.remove();this.parentElement.classList.add('is-fallback')">
+                        ${mask}
+                    </div>`;
+                }).join('');
+            },
 
             renderPostCard(p, idx, append=false) {
                 const stagger = append ? 0 : Math.min((idx % 8) * 18, 126);
                 const itemClass = append ? 'masonry-item timeline-item-wrap' : 'masonry-item is-entering timeline-item-wrap';
-                const imgUrl = this.resolveCoverUrl(p);
-                const coverHtml = this.renderCover(imgUrl);
+                const displayImages = this.resolveDisplayImages(p);
+                const coverHtml = this.renderImageGallery(displayImages);
+                const coverClass = displayImages.length > 1
+                    ? `timeline-cover timeline-cover-gallery count-${Math.min(displayImages.length, 3)}`
+                    : 'timeline-cover timeline-cover-single';
                 const author = p.author || { nickname: '用户', avatar: '👻' };
                 const titleText = this.getPostTitleText(p);
                 const bodyText = this.getPostBodyText(p);
@@ -1566,7 +1597,7 @@
                         <div class="timeline-body">${summaryHtml || '（无正文）'}</div>
                         ${this.renderTopComment(p)}
                         ${shouldCollapse ? `<button class="timeline-expand-btn" onclick="UI.togglePostExpand(event, ${p.id})">${expanded ? '收起正文' : '展开阅读'}</button>` : ''}
-                        ${imgUrl ? `<div class="timeline-cover" onclick="Modal.openDetail(event, ${p.id})">${coverHtml}</div>` : ''}
+                        ${displayImages.length ? `<div class="${coverClass}" onclick="Modal.openDetail(event, ${p.id})">${coverHtml}</div>` : ''}
                         <div class="timeline-actions">
                             <button class="btn btn-ghost btn-sm" onclick="Interact.like(${p.id}); event.stopPropagation();">😰 ${Number(p.likes_count || 0)}</button>
                             <button class="btn btn-ghost btn-sm" onclick="Interact.bookmark(${p.id}); event.stopPropagation();">${p.is_bookmarked ? '★ 已收' : '⭐ 收藏'}</button>
