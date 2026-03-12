@@ -188,13 +188,38 @@
                 if (!trimmed || trimmed === '/static/images/hua_cover.jpg') return null;
                 return trimmed;
             };
-            const direct = normalize(post && post.cover_image);
-            if (direct) return direct;
+            const html = (post && post.content) ? String(post.content) : '';
+            if (html) {
+                const reg = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/i;
+                const m = html.match(reg);
+                if (m && m[1]) {
+                    const fromHtml = normalize(m[1]);
+                    if (fromHtml) return fromHtml;
+                }
+            }
             const images = post && post.images;
             if (Array.isArray(images)) {
                 for (const it of images) {
                     const found = normalize(it);
                     if (found) return found;
+                }
+            } else if (typeof images === 'string') {
+                const raw = images.trim();
+                if (raw) {
+                    if (raw.startsWith('[')) {
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                for (const it of parsed) {
+                                    const found = normalize(it);
+                                    if (found) return found;
+                                }
+                            }
+                        } catch (_) {}
+                    } else {
+                        const found = normalize(raw);
+                        if (found) return found;
+                    }
                 }
             }
             return null;

@@ -1764,12 +1764,9 @@ def create_post():
                 return jsonify({'error': 'vote_options 必须是数组'}), 400
         else:
             vote_options = []
-        # 封面功能已下线：保留兼容字段，但不再上传/写入封面
-        cover_url = None
         data = {
             'title': title,
             'content': content,
-            'cover_image': cover_url,
             'tx_hash': tx_hash,
             'ipfs_cid': request.form.get('ipfs_cid'),
             'images': [],
@@ -1998,8 +1995,6 @@ def get_post_detail(post_id):
             db.session.rollback()
             
         post_data = post.to_dict(current_user_id)
-        if post_data.get('cover_image') and str(post_data['cover_image']).strip() == '/static/images/hua_cover.jpg':
-            post_data['cover_image'] = None
 
         from sqlalchemy.orm import joinedload
         all_comments = Comment.query.filter_by(post_id=post_id).options(

@@ -238,15 +238,12 @@ class Post(db.Model):
 
         lc = likes_count if likes_count is not None else self.likes.count()
         cc = comments_count if comments_count is not None else self.comments.count()
-        cover_image = self.cover_image
-        if cover_image and str(cover_image).strip() == '/static/images/hua_cover.jpg':
-            cover_image = None  # 该占位图已移除，不再返回避免 404
         is_permanent = bool(self.tx_hash or self.ipfs_cid or self.is_on_chain or self.post_type == 1)
         return {
             'id': self.id,
             'title': self.title,
             'content': self.content,
-            'cover_image': cover_image,
+            'cover_image': None,  # 帖子封面系统已下线，字段仅保留兼容
             'images': images_list,
             'tags': tags_list,
             'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻', 'honor_title': '新魂'},
