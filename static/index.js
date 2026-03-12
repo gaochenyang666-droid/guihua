@@ -1148,11 +1148,18 @@
                 if(this.isLoading || this.isFetching) return;
                 this.isLoading = true;
                 this.isFetching = true;
+                const postGridEl = document.getElementById('postGrid');
+                const loadingEl = document.getElementById('loadingArea');
+                if (!postGridEl) {
+                    this.isLoading = false;
+                    this.isFetching = false;
+                    return;
+                }
 
                 try {
                     if(params.sort || params.q !== undefined || params.filters) {
                         this.currentPage = 1;
-                        document.getElementById('postGrid').innerHTML = '';
+                        postGridEl.innerHTML = '';
                         if (UI && UI.expandedPostIds) UI.expandedPostIds.clear();
                         if (UI) UI.renderedPosts = [];
                         this.currentSort = params.sort || 'new';
@@ -1192,7 +1199,7 @@
 
                 if (data.posts) {
                     if(this.currentPage === 1) {
-                        document.getElementById('postGrid').innerHTML = '';
+                        postGridEl.innerHTML = '';
                         if (data.posts.length === 0) {
                             let emptyMsg = '这里一片荒芜，什么也没有...';
                             let emptyBtn = this.currentQuery ? '<button class="btn btn-ghost" onclick="Post.load()" style="margin-top:1rem;">返回全部</button>' : '';
@@ -1205,7 +1212,7 @@
                                     emptyBtn = '<button class="btn btn-ghost" onclick="UI.handleNav(document.querySelector(\'[data-sort=new]\'), \'new\')" style="margin-top:1rem;">看最新</button>';
                                 }
                             }
-                            document.getElementById('postGrid').innerHTML = `
+                            postGridEl.innerHTML = `
                                 <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">
                                     <div style="font-size: 3rem; margin-bottom: 1rem;">${this.currentSort === 'bookmarks' ? '⭐' : '👻'}</div>
                                     <p>${emptyMsg}</p>
@@ -1224,15 +1231,14 @@
                     }
                 }
                 } catch (e) {
-                    if (this.currentPage === 1) {
-                        const loadingEl = document.getElementById('loadingArea');
+                    if (this.currentPage === 1 && loadingEl) {
                         const msg = (e && e.message) || '网络异常或服务暂时不可用';
                         loadingEl.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${msg}</div><button class="btn btn-ghost" onclick="Post.load()" style="margin-top:0.5rem;">重试</button>`;
                     }
                 } finally {
                     this.isLoading = false;
                     this.isFetching = false;
-                    document.getElementById('loadingArea').style.display = 'none';
+                    if (loadingEl) loadingEl.style.display = 'none';
                 }
             },
 
@@ -1286,11 +1292,19 @@
             updateAuth() {
                 const authBtns = document.getElementById('authButtons');
                 const userMenu = document.getElementById('userMenu');
+                if (!authBtns || !userMenu) {
+                    this.syncLeftProfile();
+                    Onboarding.load();
+                    Checkin.load();
+                    GroupLinks.load();
+                    return;
+                }
 
                 if (currentUser) {
                     authBtns.style.display = 'none';
                     userMenu.style.display = 'flex';
-                    document.getElementById('userDisplayName').textContent = currentUser.nickname;
+                    const userDisplayNameEl = document.getElementById('userDisplayName');
+                    if (userDisplayNameEl) userDisplayNameEl.textContent = currentUser.nickname;
 
                     let notifBtn = document.getElementById('notifBtn');
                     if(!notifBtn) {
@@ -1305,7 +1319,11 @@
                             else window.location.href = '/notifications';
                         };
                         const avatarBtn = document.getElementById('userAvatarEmoji');
-                        avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
+                        if (avatarBtn && avatarBtn.parentNode) {
+                            avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
+                        } else {
+                            userMenu.insertBefore(notifBtn, userMenu.firstChild || null);
+                        }
                     }
                     Notification.load();
 
@@ -1319,7 +1337,11 @@
                         profileLink.textContent = '👤 我的主页';
                         profileLink.href = `/profile?user=${currentUser.username || currentUser.address}`;
                         const logoutBtn = document.getElementById('logoutBtn');
-                        logoutBtn.parentNode.insertBefore(profileLink, logoutBtn);
+                        if (logoutBtn && logoutBtn.parentNode) {
+                            logoutBtn.parentNode.insertBefore(profileLink, logoutBtn);
+                        } else {
+                            userMenu.appendChild(profileLink);
+                        }
                     }
 
                     let bindBtn = document.getElementById('bindWalletBtn');
@@ -1334,12 +1356,16 @@
                         bindBtn.textContent = '🔗 绑定钱包';
                         bindBtn.onclick = Auth.bindWallet;
                         const logoutBtn = document.getElementById('logoutBtn');
-                        logoutBtn.parentNode.insertBefore(bindBtn, logoutBtn);
+                        if (logoutBtn && logoutBtn.parentNode) {
+                            logoutBtn.parentNode.insertBefore(bindBtn, logoutBtn);
+                        } else {
+                            userMenu.appendChild(bindBtn);
+                        }
                     }
 
-                    if(currentUser.address) {
+                    if(bindBtn && currentUser.address) {
                         bindBtn.style.display = 'none';
-                    } else {
+                    } else if (bindBtn) {
                         bindBtn.style.display = 'inline-flex';
                     }
 
@@ -1388,18 +1414,24 @@
                             auditBtn.textContent = '🧾 日志';
                             auditBtn.onclick = Admin.openAuditLogs;
                             const logoutBtn = document.getElementById('logoutBtn');
-                            logoutBtn.parentNode.insertBefore(usersBtn, logoutBtn);
-                            logoutBtn.parentNode.insertBefore(reportsBtn, logoutBtn);
-                            logoutBtn.parentNode.insertBefore(annBtn, logoutBtn);
-                            logoutBtn.parentNode.insertBefore(groupBtn, logoutBtn);
-                            logoutBtn.parentNode.insertBefore(auditBtn, logoutBtn);
-                            logoutBtn.parentNode.insertBefore(statsBtn, logoutBtn);
+                            const menuAnchor = (logoutBtn && logoutBtn.parentNode) ? logoutBtn : null;
+                            const menuParent = menuAnchor ? menuAnchor.parentNode : userMenu;
+                            const addAdminAction = (el) => {
+                                if (menuAnchor) menuParent.insertBefore(el, menuAnchor);
+                                else menuParent.appendChild(el);
+                            };
+                            addAdminAction(usersBtn);
+                            addAdminAction(reportsBtn);
+                            addAdminAction(annBtn);
+                            addAdminAction(groupBtn);
+                            addAdminAction(auditBtn);
+                            addAdminAction(statsBtn);
                         }
                     }
 
                     if(currentUser.avatar) {
                         const avatarEl = document.getElementById('userAvatarEmoji');
-                        avatarEl.textContent = currentUser.avatar;
+                        if (avatarEl) avatarEl.textContent = currentUser.avatar;
                     }
                 } else {
                     authBtns.style.display = 'flex';
@@ -1611,12 +1643,18 @@
                 const grid = document.getElementById('postGrid');
                 if (!append) this.renderedPosts = Array.isArray(posts) ? posts.slice() : [];
                 else if (Array.isArray(posts) && posts.length) this.renderedPosts = (this.renderedPosts || []).concat(posts);
+                if (!grid) {
+                    const loadingEl = document.getElementById('loadingArea');
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    return;
+                }
                 const html = posts.map((p, idx) => this.renderPostCard(p, idx, append)).join('');
 
                 if(append) grid.insertAdjacentHTML('beforeend', html);
                 else grid.innerHTML = html;
 
-                document.getElementById('loadingArea').style.display = 'none';
+                const loadingEl = document.getElementById('loadingArea');
+                if (loadingEl) loadingEl.style.display = 'none';
             },
 
             renderAvatar(user) {
@@ -2862,7 +2900,8 @@
                 closeAdvanced(true);
             });
 
-            document.getElementById('logoutBtn').onclick = () => Auth.logout();
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) logoutBtn.onclick = () => Auth.logout();
             } catch (err) {
                 console.error('[诡话] 首页初始化错误:', err);
             }

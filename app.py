@@ -496,6 +496,8 @@ def get_nonce():
 
 @app.route('/api/auth/verify', methods=['POST'])
 def verify_signature():
+    if _rate_limit('verify_wallet', 40):
+        return jsonify({'error': '请求过于频繁'}), 429
     _prune_pending_wallet_nonces()
     data = request.get_json(silent=True) or {}
     if not data:
@@ -1743,6 +1745,8 @@ def get_posts():
 @app.route('/api/posts', methods=['POST'])
 @token_required
 def create_post():
+    if _rate_limit('create_post', 20):
+        return jsonify({'error': '请求过于频繁'}), 429
     # 1. Permission Check
     if not g.current_user.is_admin and not g.current_user.address:
         return jsonify({'error': 'Wallet binding required'}), 400
@@ -2155,6 +2159,8 @@ def vote_post(post_id):
 @app.route('/api/posts/<int:post_id>/comments', methods=['POST'])
 @token_required
 def add_comment(post_id):
+    if _rate_limit('comment', 40):
+        return jsonify({'error': '评论过于频繁，请稍后再试'}), 429
     post = Post.query.get_or_404(post_id)
     if not post.allow_comments and not g.current_user.is_admin:
         return jsonify({'error': 'Comments are closed for this post'}), 403
@@ -2294,7 +2300,8 @@ def like_post(post_id):
         db.session.rollback()
         # If it's an integrity error, it means we tried to like a liked post (race condition)
         # We can treat it as 'already liked'
-        return jsonify({'message': 'Operation failed', 'error': str(e)}), 400
+        app.logger.exception('Like post failed: post_id=%s user_id=%s', post_id, getattr(g.current_user, 'id', None))
+        return jsonify({'message': '操作失败，请稍后重试'}), 400
 
 @app.route('/api/posts/<int:post_id>/bookmark', methods=['POST'])
 @token_required
@@ -2312,7 +2319,8 @@ def bookmark_post(post_id):
         return jsonify({'message': msg})
     except Exception as e:
         db.session.rollback()
-        return jsonify({'message': 'Operation failed', 'error': str(e)}), 400
+        app.logger.exception('Bookmark post failed: post_id=%s user_id=%s', post_id, getattr(g.current_user, 'id', None))
+        return jsonify({'message': '操作失败，请稍后重试'}), 400
 
 @app.route('/api/upload', methods=['POST'])
 @token_required
@@ -2411,6 +2419,8 @@ def list_post_tips(post_id):
 @token_required
 def verify_tip():
     """打赏直接转入作者钱包：验证 USDT 转至作者地址后仅记账（展示打赏记录），不经过平台、不抽成、不写入可提现余额。"""
+    if _rate_limit('tip_verify', 30):
+        return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({'error': 'No data provided'}), 400
@@ -2461,7 +2471,8 @@ def verify_tip():
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        app.logger.exception('Verify tip failed: post_id=%s user_id=%s tx_hash=%s', post_id, getattr(g.current_user, 'id', None), tx_hash)
+        return jsonify({'error': '服务器错误，请稍后重试'}), 500
     amount_usdt = amount_full / (10 ** decimals)
     return jsonify({
         'message': '打赏成功，已直接转入作者钱包',
@@ -2507,7 +2518,8 @@ def delete_post(post_id):
         db.session.commit()
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'删除失败: {str(e)}'}), 500
+        app.logger.exception('Delete post failed: post_id=%s user_id=%s', post_id, getattr(g.current_user, 'id', None))
+        return jsonify({'error': '删除失败，请稍后重试'}), 500
     if g.current_user.is_admin:
         _log_admin_action('post_delete', 'post', post_id)
     return jsonify({'message': 'Post deleted'})
@@ -2722,6 +2734,8 @@ def list_admin_audit_logs():
 @token_required
 def create_report():
     """用户举报帖子或用户。"""
+    if _rate_limit('report', 20):
+        return jsonify({'error': '举报过于频繁，请稍后再试'}), 429
     data = request.get_json(silent=True) or {}
     post_id = data.get('post_id')
     reported_user_id = data.get('reported_user_id')
@@ -2762,6 +2776,8 @@ def create_report():
 @app.route('/api/reports/priority', methods=['POST'])
 @token_required
 def report_priority():
+    if _rate_limit('report_priority', 20):
+        return jsonify({'error': '举报过于频繁，请稍后再试'}), 429
     level = _get_user_level(g.current_user)
     is_admin = bool(getattr(g.current_user, 'is_admin', False))
     if is_admin:
