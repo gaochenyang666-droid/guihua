@@ -172,7 +172,7 @@
                 <img src="${escapeAttr(coverUrl)}" class="post-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image')" onerror="this.remove();this.parentElement.classList.remove('has-image')">
             </div>`;
         }
-
+        
         async function loadProfile() {
             const params = new URLSearchParams(window.location.search);
             const userParam = params.get('user');
@@ -194,7 +194,7 @@
                 displayedUser = currentUser;
                 renderProfile(currentUser, [], []);
                 loadAchievements();
-                loadUserPosts(currentUser.username || currentUser.address);
+                loadUserPosts(currentUser.id || currentUser.username || currentUser.address, true);
             } else {
                 try {
                     const res = await fetch(`${API_BASE}/users/${encodeURIComponent(userParam)}`);
@@ -449,7 +449,7 @@
                     return parts.length ? '<div style="margin-top:0.4rem; font-size:0.75rem;">链上证据: ' + parts.join(' · ') + '</div>' : '';
                 };
                 document.getElementById('postsArea').innerHTML = displayedPosts.map(p => `
-                    <div class="post-item glass" onclick="navigateWithTransition('/?post=${p.id}')"> 
+                    <div class="post-item glass" onclick="navigateWithTransition('/post/${p.id}')"> 
                         ${renderPostCover(p)}
                         <div style="flex:1;">
                             <div style="font-weight:bold; font-size:1.1rem; margin-bottom:0.3rem;">${escapeHtml(p.title)}</div>
@@ -466,13 +466,28 @@
             }
         }
         
-        async function loadUserPosts(username) {
+        async function loadUserPosts(username, softFail = false) {
+            if (username == null || username === '') {
+                if (softFail) {
+                    document.getElementById('postsArea').innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">暂无发布记录</div>';
+                    return;
+                }
+                showProfileError('缺少用户标识', true);
+                return;
+            }
             try {
                 const res = await fetch(`${API_BASE}/users/${encodeURIComponent(username)}`);
                 const data = await res.json().catch(() => ({}));
                 if(!res.ok) {
+                    if (softFail && currentUser && currentUser.id && String(currentUser.id) !== String(username)) {
+                        return loadUserPosts(currentUser.id, false);
+                    }
                     if(res.status === 401) localStorage.removeItem('token');
-                    showProfileError(data.error || '用户不存在或已注销', true);
+                    if (softFail) {
+                        document.getElementById('postsArea').innerHTML = `<div style="text-align:center; padding:2rem; color:var(--text-secondary);">${escapeHtml(data.error || '加载失败')}</div>`;
+                    } else {
+                        showProfileError(data.error || '用户不存在或已注销', true);
+                    }
                     return;
                 }
                 if(data.user) {
@@ -483,7 +498,11 @@
                     }
                 }
             } catch(e) {
-                showProfileError('加载帖子失败', true);
+                if (softFail) {
+                    document.getElementById('postsArea').innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">加载帖子失败，请刷新重试</div>';
+                } else {
+                    showProfileError('加载帖子失败', true);
+                }
             }
         }
 
@@ -607,7 +626,7 @@
                         currentUser = data.user;
                         displayedUser = currentUser; 
                         renderProfile(currentUser, []); 
-                        loadUserPosts(currentUser.username || currentUser.address); 
+                        loadUserPosts(currentUser.id || currentUser.username || currentUser.address, true); 
                         this.close();
                         tempAvatar = false;
                     } else {

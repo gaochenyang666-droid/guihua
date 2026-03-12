@@ -773,7 +773,7 @@ body.page-motion.page-leaving {
 .timeline-item {
     border: 1px solid var(--border-color);
     border-radius: 16px;
-    padding: 0.9rem 0.95rem;
+    padding: 0.72rem 0.8rem;
     background: var(--bg-card);
 }
 .timeline-head {
@@ -828,11 +828,40 @@ body.page-motion.page-leaving {
 .timeline-tag.tag-permanent { border-color: var(--accent-green); color: var(--accent-green); }
 .timeline-body {
     color: var(--text-primary);
-    line-height: 1.72;
-    font-size: 0.97rem;
-    margin-top: 0.38rem;
+    line-height: 1.62;
+    font-size: 0.9rem;
+    margin-top: 0.3rem;
     word-break: break-word;
     cursor: pointer;
+}
+.timeline-top-comment {
+    margin-top: 0.36rem;
+    border: 1px solid rgba(124, 58, 237, 0.32);
+    border-radius: 10px;
+    padding: 0.3rem 0.45rem;
+    background: rgba(124, 58, 237, 0.08);
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.timeline-top-comment-label {
+    color: var(--accent-purple-light);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.timeline-top-comment-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.timeline-top-comment-like {
+    margin-left: auto;
+    color: var(--accent-gold);
+    flex-shrink: 0;
 }
 .timeline-expand-btn {
     border: 0;
@@ -851,10 +880,10 @@ body.page-motion.page-leaving {
 }
 .timeline-cover .post-image-wrap {
     aspect-ratio: 16 / 9;
-    min-height: 160px;
+    min-height: 120px;
 }
 .timeline-actions {
-    margin-top: 0.6rem;
+    margin-top: 0.45rem;
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
@@ -1179,10 +1208,10 @@ body.page-motion.page-leaving {
     }
     .timeline-item {
         border-radius: 18px;
-        padding: 0.95rem 1.05rem;
+        padding: 0.82rem 0.92rem;
     }
     .timeline-body {
-        font-size: 1.02rem;
+        font-size: 0.94rem;
     }
     .sidebar-right .utility-card-trigger {
         pointer-events: none;

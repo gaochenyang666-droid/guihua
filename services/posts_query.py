@@ -5,7 +5,53 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import joinedload
 
 from extensions import db
-from models import Bookmark, Comment, Like, Post, User, Vote
+from models import Bookmark, Comment, CommentLike, Like, Post, User, Vote
+
+
+def _build_top_comments(post_ids):
+    """返回 {post_id: {id, content, likes_count, author{...}}}"""
+    top_map = {}
+    if not post_ids:
+        return top_map
+    try:
+        comments = Comment.query.options(joinedload(Comment.author)).filter(
+            Comment.post_id.in_(post_ids)
+        ).all()
+        if not comments:
+            return top_map
+        comment_ids = [c.id for c in comments]
+        like_rows = db.session.query(
+            CommentLike.comment_id, func.count(CommentLike.id)
+        ).filter(
+            CommentLike.comment_id.in_(comment_ids)
+        ).group_by(CommentLike.comment_id).all()
+        like_counts = {r[0]: int(r[1] or 0) for r in like_rows}
+
+        for c in comments:
+            score = like_counts.get(c.id, 0)
+            current = top_map.get(c.post_id)
+            if (not current) or (score > current['_score']) or (
+                score == current['_score'] and (c.created_at or 0) < (current['_created_at'] or 0)
+            ):
+                author = c.author.to_dict() if c.author else {'id': c.author_id, 'nickname': '匿名', 'avatar': '👻'}
+                top_map[c.post_id] = {
+                    '_score': score,
+                    '_created_at': c.created_at,
+                    'id': c.id,
+                    'content': c.content or '',
+                    'likes_count': score,
+                    'author': {
+                        'id': author.get('id'),
+                        'nickname': author.get('nickname') or '匿名',
+                        'avatar': author.get('avatar') or '👻'
+                    }
+                }
+    except Exception:
+        return {}
+    for pid in list(top_map.keys()):
+        top_map[pid].pop('_score', None)
+        top_map[pid].pop('_created_at', None)
+    return top_map
 
 
 def apply_default_post_order(query):
@@ -74,12 +120,15 @@ def get_posts_fallback(page, per_page, current_user_id):
             authors_map = {}
     user_likes = set()
     user_bookmarks = set()
+    top_comments = {}
     if current_user_id and post_ids:
         try:
             user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
             user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == current_user_id, Bookmark.post_id.in_(post_ids)).all()}
         except Exception:
             pass
+    if post_ids:
+        top_comments = _build_top_comments(post_ids)
 
     posts_data = []
     for p in posts:
@@ -170,6 +219,7 @@ def get_posts_fallback(page, per_page, current_user_id):
                 'view_count': view_count,
                 'likes_count': likes_count,
                 'comments_count': comments_count,
+                'top_comment': top_comments.get(pid),
                 'votes': votes_list,
                 'is_liked': pid in user_likes,
                 'is_bookmarked': pid in user_bookmarks,
@@ -223,6 +273,7 @@ def build_posts_payload(sort_by, page, per_page, region, current_user_id):
         user_bookmarks = set()
         like_counts = {}
         comment_counts = {}
+        top_comments = {}
         if post_ids:
             if current_user_id:
                 user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
@@ -231,6 +282,7 @@ def build_posts_payload(sort_by, page, per_page, region, current_user_id):
             like_counts = {r[0]: r[1] for r in like_rows}
             comment_rows = db.session.query(Comment.post_id, func.count(Comment.id)).filter(Comment.post_id.in_(post_ids)).group_by(Comment.post_id).all()
             comment_counts = {r[0]: r[1] for r in comment_rows}
+            top_comments = _build_top_comments(post_ids)
         posts_data = []
         for p in posts:
             try:
@@ -241,6 +293,7 @@ def build_posts_payload(sort_by, page, per_page, region, current_user_id):
                 )
                 p_dict['is_liked'] = p.id in user_likes
                 p_dict['is_bookmarked'] = p.id in user_bookmarks
+                p_dict['top_comment'] = top_comments.get(p.id)
                 posts_data.append(p_dict)
             except Exception as e:
                 print(f"[get_posts] skip post id={getattr(p, 'id', None)}: {e}")

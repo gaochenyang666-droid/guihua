@@ -299,21 +299,23 @@ class Comment(db.Model):
     author = db.relationship('User', backref='comments')
     replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
 
-    def to_dict(self, recursive=False):
+    def to_dict(self, recursive=False, likes_count=0, is_liked=False):
         author_data = self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'avatar': '👻'}
         data = {
             'id': self.id,
             'content': self.content,
             'author': author_data,
             'created_at': self.created_at.isoformat(),
-            'parent_id': self.parent_id
+            'parent_id': self.parent_id,
+            'likes_count': int(likes_count or 0),
+            'is_liked': bool(is_liked)
         }
         if recursive:
             data['replies'] = [reply.to_dict(recursive=True) for reply in self.replies.all()]
         return data
 
 
-def _comment_to_dict_node(c):
+def _comment_to_dict_node(c, likes_count=0, is_liked=False):
     author_data = c.author.to_dict() if c.author else {'id': c.author_id, 'nickname': '已注销', 'avatar': '👻', 'honor_title': '新魂'}
     return {
         'id': c.id,
@@ -321,11 +323,15 @@ def _comment_to_dict_node(c):
         'author': author_data,
         'created_at': c.created_at.isoformat(),
         'parent_id': c.parent_id,
+        'likes_count': int(likes_count or 0),
+        'is_liked': bool(is_liked),
         'replies': []
     }
 
 
-def build_comment_tree(comments):
+def build_comment_tree(comments, like_counts=None, liked_comment_ids=None):
+    like_counts = like_counts or {}
+    liked_comment_ids = liked_comment_ids or set()
     by_parent = {}
     for c in comments:
         pid = c.parent_id
@@ -335,7 +341,11 @@ def build_comment_tree(comments):
 
     def fill_replies(nodes):
         for n in nodes:
-            d = _comment_to_dict_node(n)
+            d = _comment_to_dict_node(
+                n,
+                likes_count=like_counts.get(n.id, 0),
+                is_liked=(n.id in liked_comment_ids)
+            )
             children = by_parent.get(n.id) or []
             d['replies'] = list(fill_replies(children))
             yield d
@@ -350,6 +360,15 @@ class Like(db.Model):
     user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'))
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
     __table_args__ = (db.UniqueConstraint('user_id', 'post_id', name='unique_user_post_like'),)
+
+
+class CommentLike(db.Model):
+    __tablename__ = 'comment_likes'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'))
+    comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('user_id', 'comment_id', name='unique_user_comment_like'),)
 
 
 class Bookmark(db.Model):

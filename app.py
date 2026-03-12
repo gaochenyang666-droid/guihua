@@ -185,7 +185,7 @@ from extensions import db
 db.init_app(app)
 
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
-from models import (User, Post, Vote, Comment, Like, Bookmark, Notification, UsedTransaction,
+from models import (User, Post, Vote, Comment, Like, CommentLike, Bookmark, Notification, UsedTransaction,
     UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog, AppSetting, Series, SeriesPost,
     build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
     calc_level_info, checkin_exp_by_streak)
@@ -2009,7 +2009,28 @@ def get_post_detail(post_id):
         all_comments = Comment.query.filter_by(post_id=post_id).options(
             joinedload(Comment.author)
         ).order_by(Comment.created_at.asc()).all()
-        post_data['comments'] = build_comment_tree(all_comments)
+        comment_like_counts = {}
+        liked_comment_ids = set()
+        comment_ids = [c.id for c in all_comments]
+        if comment_ids:
+            like_rows = db.session.query(
+                CommentLike.comment_id, func.count(CommentLike.id)
+            ).filter(
+                CommentLike.comment_id.in_(comment_ids)
+            ).group_by(CommentLike.comment_id).all()
+            comment_like_counts = {r[0]: int(r[1] or 0) for r in like_rows}
+            if current_user_id:
+                liked_comment_ids = {
+                    row.comment_id for row in CommentLike.query.filter(
+                        CommentLike.user_id == current_user_id,
+                        CommentLike.comment_id.in_(comment_ids)
+                    ).all()
+                }
+        post_data['comments'] = build_comment_tree(
+            all_comments,
+            like_counts=comment_like_counts,
+            liked_comment_ids=liked_comment_ids
+        )
         post_data['comments_count'] = len(all_comments)
 
         series_items = []
@@ -2228,6 +2249,31 @@ def add_comment(post_id):
         print(f"Notification Error: {e}")
 
     return jsonify({'message': 'Comment added', 'comment': comment.to_dict()}), 201
+
+
+@app.route('/api/comments/<int:comment_id>/like', methods=['POST'])
+@token_required
+def toggle_comment_like(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+    post = Post.query.get(comment.post_id) if comment.post_id else None
+    if not post:
+        return jsonify({'error': 'Post not found'}), 404
+    if post.is_hidden and not (g.current_user.is_admin or post.author_id == g.current_user.id):
+        return jsonify({'error': 'Permission denied'}), 403
+
+    like = CommentLike.query.filter_by(user_id=g.current_user.id, comment_id=comment_id).first()
+    if like:
+        db.session.delete(like)
+        liked = False
+        msg = 'Comment unliked'
+    else:
+        db.session.add(CommentLike(user_id=g.current_user.id, comment_id=comment_id))
+        liked = True
+        msg = 'Comment liked'
+    db.session.commit()
+    likes_count = CommentLike.query.filter_by(comment_id=comment_id).count()
+    return jsonify({'message': msg, 'liked': liked, 'likes_count': likes_count, 'comment_id': comment_id})
+
 
 @app.route('/api/posts/<int:post_id>/like', methods=['POST'])
 @token_required
@@ -2459,6 +2505,9 @@ def delete_post(post_id):
         SeriesPost.query.filter(SeriesPost.post_id == post.id).delete(synchronize_session=False)
 
         # 删除强关联互动数据
+        comment_ids = [row[0] for row in db.session.query(Comment.id).filter(Comment.post_id == post.id).all()]
+        if comment_ids:
+            CommentLike.query.filter(CommentLike.comment_id.in_(comment_ids)).delete(synchronize_session=False)
         Comment.query.filter_by(post_id=post.id).delete(synchronize_session=False)
         Like.query.filter_by(post_id=post.id).delete(synchronize_session=False)
         Bookmark.query.filter_by(post_id=post.id).delete(synchronize_session=False)

@@ -1343,10 +1343,25 @@
                 return text.trim();
             },
             shouldCollapseSummary(text) {
-                return !!(text && text.length > 220);
+                return !!(text && text.length > 160);
             },
             formatSummaryHtml(text) {
                 return escapeHtml(text || '').replace(/\n/g, '<br>');
+            },
+            renderTopComment(post) {
+                const tc = post && post.top_comment;
+                if (!tc || !tc.content) return '';
+                const author = tc.author || {};
+                const nick = escapeHtml(author.nickname || '匿名');
+                const snippet = escapeHtml(String(tc.content || '').replace(/\s+/g, ' ').trim()).slice(0, 56);
+                const likes = Number(tc.likes_count || 0);
+                return `
+                    <div class="timeline-top-comment" onclick="Modal.openDetail(event, ${post.id})">
+                        <span class="timeline-top-comment-label">热评</span>
+                        <span class="timeline-top-comment-text">@${nick}: ${snippet}${snippet.length >= 56 ? '...' : ''}</span>
+                        <span class="timeline-top-comment-like">👍 ${likes}</span>
+                    </div>
+                `;
             },
             togglePostExpand(ev, postId) {
                 if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
@@ -1422,7 +1437,7 @@
                 const summaryText = this.getPostSummaryText(p);
                 const shouldCollapse = this.shouldCollapseSummary(summaryText);
                 const expanded = this.expandedPostIds.has(Number(p.id));
-                const summaryVisible = shouldCollapse && !expanded ? `${summaryText.slice(0, 220).trimEnd()}...` : summaryText;
+                const summaryVisible = shouldCollapse && !expanded ? `${summaryText.slice(0, 160).trimEnd()}...` : summaryText;
                 const summaryHtml = this.formatSummaryHtml(summaryVisible);
 
                 const isWeb3 = p.post_type === 1 || p.tx_hash;
@@ -1454,6 +1469,7 @@
                         </div>
                         ${badges ? `<div class="timeline-tags">${badges}</div>` : ''}
                         <div class="timeline-body" onclick="Modal.openDetail(event, ${p.id})">${summaryHtml || '（无正文）'}</div>
+                        ${this.renderTopComment(p)}
                         ${shouldCollapse ? `<button class="timeline-expand-btn" onclick="UI.togglePostExpand(event, ${p.id})">${expanded ? '收起' : '展开全文'}</button>` : ''}
                         ${imgUrl ? `<div class="timeline-cover" onclick="Modal.openDetail(event, ${p.id})">${coverHtml}</div>` : ''}
                         <div class="timeline-actions">

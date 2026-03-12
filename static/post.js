@@ -122,7 +122,10 @@
                 '<div class="comment-item" style="margin-left:' + margin + 'px; border-left:' + border + '; padding-left:' + padding + ';">' +
                 '<div class="comment-header"><span>' + escapeHtml(nick) + '</span><span>' + escapeHtml(created) + '</span></div>' +
                 '<div style="margin-bottom:0.45rem;">' + mentionifyText((c && c.content) || '') + '</div>' +
-                '<button class="btn btn-ghost btn-sm" type="button" data-action="reply" data-parent-id="' + Number(c.id) + '" data-nickname="' + escapeAttr(nick) + '">↩ 回复</button>' +
+                '<div style="display:flex; gap:0.45rem; flex-wrap:wrap;">' +
+                    '<button class="btn btn-ghost btn-sm" type="button" data-action="reply" data-parent-id="' + Number(c.id) + '" data-nickname="' + escapeAttr(nick) + '">↩ 回复</button>' +
+                    '<button class="btn btn-ghost btn-sm" type="button" data-action="like-comment" data-comment-id="' + Number(c.id) + '">' + ((c && c.is_liked) ? '👍 已赞' : '👍 点赞') + ' (' + Number((c && c.likes_count) || 0) + ')</button>' +
+                '</div>' +
                 replies +
                 '</div>'
             );
@@ -156,6 +159,19 @@
             '发布者: ' + escapeHtml((p.author && p.author.nickname) || '用户') + ' ' + renderAuthorBadge(p.author) + ' ' + ((p.author && p.author.id != null) ? formatUserId(p.author.id) : ''),
             '浏览: ' + Number(p.view_count || 0)
         ].filter(Boolean).join(' | ');
+        var adminControls = '';
+        if (currentUser && currentUser.is_admin) {
+            adminControls =
+                '<div style="margin-top:1rem; padding-top:1rem; border-top:1px dashed var(--accent-red); color:var(--accent-red);">' +
+                    '<div style="margin-bottom:0.5rem; font-size:0.82rem; font-weight:700;">👮 管理员操作</div>' +
+                    '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-delete" style="border-color:var(--accent-red); color:var(--accent-red);">删除帖子</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-toggle-hide">' + (p.is_hidden ? '取消隐藏' : '隐藏帖子') + '</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-toggle-comments">' + (p.allow_comments ? '关闭评论' : '开启评论') + '</button>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-toggle-pin" style="border-color:var(--accent-gold); color:var(--accent-gold);">' + (p.is_pinned ? '取消置顶' : '设为置顶') + '</button>' +
+                    '</div>' +
+                '</div>';
+        }
 
         body.innerHTML = '' +
             '<h2 style="margin-bottom:0.5rem;">' + escapeHtml(p.title || '') + '</h2>' +
@@ -174,6 +190,7 @@
                 '<button class="btn btn-ghost" type="button" data-action="bookmark">⭐ 收藏' + (p.is_bookmarked ? '（已收）' : '') + '</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="report">🚩 举报</button>' +
             '</div>' +
+            adminControls +
             '<section class="comments-section">' +
                 '<h4>评论</h4>' +
                 '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + (commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>') + '</div>' +
@@ -269,6 +286,76 @@
         await loadPost();
     }
 
+    async function likeComment(commentId) {
+        if (!requireLogin()) return;
+        var cid = Number(commentId);
+        if (!Number.isFinite(cid) || cid <= 0) return;
+        var res = await doPost(API_BASE + '/comments/' + cid + '/like');
+        var data = await parseJsonSafe(res, {});
+        if (!res.ok) {
+            toastError(data.error || '操作失败');
+            return;
+        }
+        await loadPost();
+    }
+
+    async function adminDeletePost() {
+        if (!currentUser || !currentUser.is_admin) return;
+        if (!confirm('确定要删除这个帖子吗？此操作不可逆。')) return;
+        var res = await fetch(API_BASE + '/posts/' + postId, {
+            method: 'DELETE',
+            headers: authHeaders(false)
+        });
+        var data = await parseJsonSafe(res, {});
+        if (!res.ok) {
+            toastError(data.error || '删除失败');
+            return;
+        }
+        toastSuccess('帖子已删除');
+        if (typeof navigateWithTransition === 'function') navigateWithTransition('/');
+        else window.location.href = '/';
+    }
+
+    async function adminToggleHide() {
+        if (!currentUser || !currentUser.is_admin) return;
+        var res = await doPost(API_BASE + '/admin/posts/' + postId + '/hide');
+        var data = await parseJsonSafe(res, {});
+        if (!res.ok) {
+            toastError(data.error || '操作失败');
+            return;
+        }
+        toastSuccess(data.message || '状态已更新');
+        await loadPost();
+    }
+
+    async function adminToggleComments() {
+        if (!currentUser || !currentUser.is_admin) return;
+        var res = await doPost(API_BASE + '/admin/posts/' + postId + '/toggle-comments');
+        var data = await parseJsonSafe(res, {});
+        if (!res.ok) {
+            toastError(data.error || '操作失败');
+            return;
+        }
+        toastSuccess(data.message || '状态已更新');
+        await loadPost();
+    }
+
+    async function adminTogglePin() {
+        if (!currentUser || !currentUser.is_admin || !currentPost) return;
+        var nextPinned = !currentPost.is_pinned;
+        var res = await doPost(API_BASE + '/admin/posts/' + postId + '/pin', {
+            pinned: nextPinned,
+            exclusive: true
+        });
+        var data = await parseJsonSafe(res, {});
+        if (!res.ok) {
+            toastError(data.error || '操作失败');
+            return;
+        }
+        toastSuccess(nextPinned ? '已置顶' : '已取消置顶');
+        await loadPost();
+    }
+
     function bindPostEvents() {
         if (!body) return;
         body.querySelectorAll('.post-detail-content img').forEach(function (im) {
@@ -296,6 +383,23 @@
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="comment"]'), function (btn) {
             btn.addEventListener('click', submitComment);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="like-comment"]'), function (btn) {
+            btn.addEventListener('click', function () {
+                likeComment(btn.getAttribute('data-comment-id'));
+            });
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="admin-delete"]'), function (btn) {
+            btn.addEventListener('click', adminDeletePost);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="admin-toggle-hide"]'), function (btn) {
+            btn.addEventListener('click', adminToggleHide);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="admin-toggle-comments"]'), function (btn) {
+            btn.addEventListener('click', adminToggleComments);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="admin-toggle-pin"]'), function (btn) {
+            btn.addEventListener('click', adminTogglePin);
         });
     }
 
