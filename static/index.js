@@ -1633,6 +1633,7 @@
                         <div class="timeline-actions">
                             <button class="btn btn-ghost btn-sm" onclick="Interact.like(${p.id}); event.stopPropagation();">😰 ${Number(p.likes_count || 0)}</button>
                             <button class="btn btn-ghost btn-sm" onclick="Interact.bookmark(${p.id}); event.stopPropagation();">${p.is_bookmarked ? '★ 已收' : '⭐ 收藏'}</button>
+                            <button class="btn btn-ghost btn-sm" data-post-id="${Number(p.id)}" data-title="${escapeAttr(titleText || '')}" onclick="Interact.share(this); event.stopPropagation();">🔗 分享</button>
                             <button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${p.id}); event.stopPropagation();">💬 详情</button>
                         </div>
                     </article>
@@ -2484,6 +2485,50 @@
 
         const Interact = {
             currentReplyParentId: null,
+            getShareUrl(postId) {
+                const id = Number(postId);
+                if (!Number.isFinite(id) || id <= 0) return '';
+                return `${window.location.origin}/post/${id}`;
+            },
+            getShareText(title) {
+                const cleanTitle = String(title || '').trim();
+                return cleanTitle ? `「${cleanTitle}」` : '来看看这篇灵异帖';
+            },
+            openXShare(postId, title) {
+                const url = this.getShareUrl(postId);
+                if (!url) return;
+                const text = this.getShareText(title);
+                const intent = `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+                window.open(intent, '_blank', 'noopener,noreferrer');
+            },
+            async share(refOrPostId, titleMaybe) {
+                let postId = null;
+                let title = '';
+                if (refOrPostId && typeof refOrPostId === 'object' && typeof refOrPostId.getAttribute === 'function') {
+                    postId = Number(refOrPostId.getAttribute('data-post-id'));
+                    title = refOrPostId.getAttribute('data-title') || '';
+                } else {
+                    postId = Number(refOrPostId);
+                    title = String(titleMaybe || '');
+                }
+                const url = this.getShareUrl(postId);
+                if (!url) return;
+                const text = this.getShareText(title);
+                if (navigator.share) {
+                    try {
+                        await navigator.share({
+                            title: title || '诡话',
+                            text: text,
+                            url: url
+                        });
+                        return;
+                    } catch (err) {
+                        if (err && err.name === 'AbortError') return;
+                    }
+                }
+                const copied = await copyTextWithFallback(url, '已复制帖子链接');
+                if (!copied) Toast.error('分享失败，请稍后重试');
+            },
 
             replyTo(postId, commentId, username) {
                 this.currentReplyParentId = commentId;

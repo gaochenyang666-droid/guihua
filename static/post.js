@@ -79,6 +79,54 @@
         if (window.Toast && Toast.success) Toast.success(msg || '操作成功');
     }
 
+    function getShareUrl() {
+        return window.location.origin + '/post/' + Number(postId);
+    }
+
+    function getShareText() {
+        var title = (currentPost && currentPost.title ? String(currentPost.title) : '').trim();
+        return title ? ('「' + title + '」') : '来看看这篇灵异帖';
+    }
+
+    async function sharePost() {
+        var url = getShareUrl();
+        var text = getShareText();
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: (currentPost && currentPost.title) || '诡话',
+                    text: text,
+                    url: url
+                });
+                return;
+            } catch (e) {
+                if (e && e.name === 'AbortError') return;
+            }
+        }
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            toastSuccess('已复制帖子链接');
+        } catch (_) {
+            toastError('分享失败，请稍后重试');
+        }
+    }
+
+    function sharePostToX() {
+        var url = getShareUrl();
+        var text = getShareText();
+        var intent = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(url);
+        window.open(intent, '_blank', 'noopener,noreferrer');
+    }
+
     function requireLogin() {
         if (currentUser) return true;
         toastError('请先登录');
@@ -188,6 +236,8 @@
             '<div style="display:flex; gap:0.5rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem; flex-wrap:wrap;">' +
                 '<button class="btn btn-ghost" type="button" data-action="like">😰 恐惧 (' + Number(p.likes_count || 0) + ')</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="bookmark">⭐ 收藏' + (p.is_bookmarked ? '（已收）' : '') + '</button>' +
+                '<button class="btn btn-ghost" type="button" data-action="share">🔗 分享</button>' +
+                '<button class="btn btn-ghost" type="button" data-action="share-x">𝕏 分享</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="report">🚩 举报</button>' +
             '</div>' +
             adminControls +
@@ -377,6 +427,12 @@
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="bookmark"]'), function (btn) {
             btn.addEventListener('click', bookmarkPost);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="share"]'), function (btn) {
+            btn.addEventListener('click', sharePost);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="share-x"]'), function (btn) {
+            btn.addEventListener('click', sharePostToX);
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="report"]'), function (btn) {
             btn.addEventListener('click', reportPost);
