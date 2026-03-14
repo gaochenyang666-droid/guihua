@@ -1197,8 +1197,17 @@ body.page-motion.page-leaving {
     color: var(--text-muted);
     font-size: 0.77rem;
 }
+.profile-quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
 .profile-quick-btn {
     width: 100%;
+}
+.profile-quick-bind-btn {
+    color: var(--accent-orange);
+    border-color: rgba(249, 115, 22, 0.55);
 }
 
 /* Bottom Nav (Mobile Only) */

@@ -90,7 +90,10 @@
                         <div class="profile-quick-sub" id="leftProfileSub">登录后可查看个人中心</div>
                     </div>
                 </div>
-                <button class="btn btn-ghost btn-sm profile-quick-btn" id="leftProfileBtn" type="button" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">查看个人页</button>
+                <div class="profile-quick-actions">
+                    <button class="btn btn-ghost btn-sm profile-quick-btn" id="leftProfileBtn" type="button" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">查看个人页</button>
+                    <button class="btn btn-ghost btn-sm profile-quick-btn profile-quick-bind-btn" id="leftBindWalletBtn" type="button" hidden>Web2 绑定钱包</button>
+                </div>
             </div>
             <div class="sidebar-card nav-sort-card glass">
                 <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')"><span class="nav-item-icon">🔥</span><span class="nav-item-label">热门</span></div>

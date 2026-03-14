@@ -117,11 +117,25 @@
                 Onboarding.load();
                 Checkin.load();
                 GroupLinks.load();
+                this.autoOpenBindWallet();
                 if (localStorage.getItem('token') && typeof Notification !== 'undefined' && Notification.load) {
                     setInterval(function() {
                         if (document.visibilityState === 'visible') Notification.load();
                     }, 60000);
                 }
+            },
+
+            autoOpenBindWallet() {
+                try {
+                    const url = new URL(window.location.href);
+                    if (url.searchParams.get('bind_wallet') !== '1') return;
+                    url.searchParams.delete('bind_wallet');
+                    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+                    if (!currentUser || currentUser.address) return;
+                    window.setTimeout(() => {
+                        this.bindWallet();
+                    }, 180);
+                } catch (_) {}
             },
 
             async fetchMe() {
@@ -1478,12 +1492,14 @@
                 const nameEl = document.getElementById('leftProfileName');
                 const subEl = document.getElementById('leftProfileSub');
                 const btnEl = document.getElementById('leftProfileBtn');
+                const bindBtnEl = document.getElementById('leftBindWalletBtn');
                 if (!avatarEl || !nameEl || !subEl || !btnEl) return;
                 if (!currentUser) {
                     avatarEl.textContent = '👻';
                     nameEl.textContent = '游客';
                     subEl.textContent = '登录后可查看个人中心';
                     btnEl.textContent = '登录 / 进入个人页';
+                    if (bindBtnEl) bindBtnEl.hidden = true;
                     return;
                 }
                 avatarEl.textContent = currentUser.avatar || '👻';
@@ -1491,6 +1507,12 @@
                 const lv = currentUser.level_label || (currentUser.level ? `Lv.${currentUser.level}` : 'Lv.1');
                 subEl.textContent = `${lv} · ${currentUser.experience_points || 0} EXP`;
                 btnEl.textContent = '查看个人页';
+                if (bindBtnEl) {
+                    const needBindWallet = !currentUser.address;
+                    bindBtnEl.hidden = !needBindWallet;
+                    bindBtnEl.textContent = 'Web2 绑定钱包';
+                    bindBtnEl.onclick = () => Auth.bindWallet();
+                }
             },
             getPostTitleText(post) {
                 return ((post && post.title) ? String(post.title) : '').trim();

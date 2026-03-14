@@ -139,9 +139,13 @@
                 return;
             }
             const profileKey = encodeURIComponent(currentUser.username || currentUser.address || currentUser.id || '');
+            const bindWalletBtn = !currentUser.address
+                ? '<a class="btn btn-ghost" href="/?bind_wallet=1" data-no-transition="1" style="color:var(--accent-orange); border-color:rgba(249,115,22,0.55);">绑定钱包</a>'
+                : '';
             area.innerHTML = `
                 <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
                     <a class="btn btn-ghost" href="/profile?user=${profileKey}" data-no-transition="1">我的主页</a>
+                    ${bindWalletBtn}
                     <button class="btn btn-ghost" type="button" onclick="localStorage.removeItem('token'); localStorage.removeItem('login_at'); navigateWithTransition('/')">退出</button>
                 </div>
             `;
