@@ -15,6 +15,17 @@
                 return fallback;
             }
         };
+        const debounce = (fn, wait = 180) => {
+            let timer = null;
+            return (...args) => {
+                if (timer) clearTimeout(timer);
+                timer = window.setTimeout(() => {
+                    timer = null;
+                    fn(...args);
+                }, wait);
+            };
+        };
+        const prefersReducedMotionUi = () => !!(document.body && document.body.classList.contains('reduce-motion'));
         const fetchJsonSafe = async (url, options = {}, cfg = {}) => {
             const conf = cfg || {};
             const fallback = Object.prototype.hasOwnProperty.call(conf, 'fallback') ? conf.fallback : {};
@@ -1624,7 +1635,8 @@
             },
 
             renderPostCard(p, idx, append=false) {
-                const stagger = append ? 0 : Math.min((idx % 8) * 18, 126);
+                const reduceMotionUi = prefersReducedMotionUi();
+                const stagger = reduceMotionUi ? 0 : (append ? 0 : Math.min((idx % 8) * 24, 168));
                 const itemClass = append ? 'masonry-item timeline-item-wrap' : 'masonry-item is-entering timeline-item-wrap';
                 const displayImages = this.resolveDisplayImages(p);
                 const coverHtml = this.renderImageGallery(displayImages);
@@ -2768,9 +2780,10 @@
                 document.addEventListener('keydown', (e) => {
                     if (e.key === 'Escape') closeMobileNav();
                 });
-                window.addEventListener('resize', () => {
+                const handleNavbarResize = debounce(() => {
                     if (!isMobileNav()) closeMobileNav();
-                });
+                }, 180);
+                window.addEventListener('resize', handleNavbarResize, { passive: true });
             }
 
             const mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
@@ -2847,7 +2860,7 @@
                     applyMobileUtilityState();
                 };
                 syncMobileUtility();
-                window.addEventListener('resize', syncMobileUtility);
+                window.addEventListener('resize', debounce(syncMobileUtility, 160), { passive: true });
             }
             if (quickActionButtons.length) {
                 quickActionButtons.forEach((btn) => {
@@ -2980,12 +2993,13 @@
             }
 
             // Mobile: Close keyboard on scroll
-            window.addEventListener('scroll', () => {
+            const handleWindowScroll = () => {
                 if(searchInput && document.activeElement === searchInput) {
                     searchInput.blur();
                 }
                 closeAdvanced(true);
-            });
+            };
+            window.addEventListener('scroll', handleWindowScroll, { passive: true });
 
             const logoutBtn = document.getElementById('logoutBtn');
             if (logoutBtn) logoutBtn.onclick = () => Auth.logout();

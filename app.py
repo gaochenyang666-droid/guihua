@@ -686,7 +686,7 @@ def user_me():
     # PUT: Update profile
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
         
     nickname = data.get('nickname')
     bio = data.get('bio')
@@ -696,22 +696,22 @@ def user_me():
         g.current_user.show_tip_thanks = bool(data.get('show_tip_thanks'))
     
     if nickname:
-        if len(nickname) > 50: return jsonify({'error': 'Nickname too long'}), 400
+        if len(nickname) > 50: return jsonify({'error': '昵称过长'}), 400
         g.current_user.nickname = bleach.clean(nickname, strip=True)
         
     if bio is not None:
-        if len(bio) > 500: return jsonify({'error': 'Bio too long'}), 400
+        if len(bio) > 500: return jsonify({'error': '简介过长'}), 400
         g.current_user.bio = bleach.clean(bio, strip=True)
         
     if avatar:
         if avatar not in ALLOWED_AVATARS:
-            return jsonify({'error': 'Invalid avatar. Only emojis are allowed.'}), 400
+            return jsonify({'error': '头像无效，仅支持系统内表情头像'}), 400
         g.current_user.avatar = avatar
     elif refresh_avatar:
         g.current_user.avatar = get_random_avatar()
         
     db.session.commit()
-    return jsonify({'message': 'Profile updated', 'user': g.current_user.to_dict()})
+    return jsonify({'message': '资料已更新', 'user': g.current_user.to_dict()})
 
 
 @app.route('/api/user/settings', methods=['GET', 'PUT'])
@@ -876,41 +876,41 @@ def set_admin_group_links():
 def change_password():
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
     old_password = data.get('old_password')
     new_password = data.get('new_password')
     
     if not old_password or not new_password:
-        return jsonify({'error': 'Missing password fields'}), 400
+        return jsonify({'error': '缺少密码字段'}), 400
         
     if not g.current_user.check_password(old_password):
-        return jsonify({'error': 'Incorrect old password'}), 401
+        return jsonify({'error': '原密码错误'}), 401
         
     g.current_user.set_password(new_password)
     db.session.commit()
-    return jsonify({'message': 'Password updated'})
+    return jsonify({'message': '密码已更新'})
 
 @app.route('/api/user/bind_wallet', methods=['POST'])
 @token_required
 def bind_wallet():
     # Only Web2 users (without address) can bind
     if g.current_user.address:
-        return jsonify({'error': 'Wallet already bound'}), 400
+        return jsonify({'error': '当前账号已绑定钱包'}), 400
         
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
     address = data.get('address')
     signature = data.get('signature')
     message = data.get('message')
     
     if not address or not signature or not message:
-        return jsonify({'error': 'Missing parameters'}), 400
+        return jsonify({'error': '缺少必要参数'}), 400
         
     try:
         address = Web3.to_checksum_address(address)
     except (ValueError, AttributeError):
-        return jsonify({'error': 'Invalid address format'}), 400
+        return jsonify({'error': '钱包地址格式无效'}), 400
 
     # Check if address already used by other account
     existing_user = User.query.filter_by(address=address).first()
@@ -2091,7 +2091,7 @@ def sync_post_to_arweave(post_id):
 def repost_post(post_id):
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
     content = data.get('content', '')
     
     original_post = Post.query.get_or_404(post_id)
@@ -2119,15 +2119,15 @@ def vote_post(post_id):
     post = Post.query.get_or_404(post_id)
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
     option_id = data.get('option_id')
     
     if not option_id:
-        return jsonify({'error': 'Option ID required'}), 400
+        return jsonify({'error': '缺少投票选项'}), 400
         
     vote_option = Vote.query.get(option_id)
     if not vote_option or vote_option.post_id != post_id:
-        return jsonify({'error': 'Invalid vote option'}), 400
+        return jsonify({'error': '投票选项无效'}), 400
     
     # 单选：同一用户在同一帖子只能投一次（不允许投多个选项）
     existing_vote = db.session.query(UserVote.id).join(
@@ -2137,7 +2137,7 @@ def vote_post(post_id):
         Vote.post_id == post_id
     ).first()
     if existing_vote:
-        return jsonify({'error': 'You have already voted for this post'}), 400
+        return jsonify({'error': '你已经参与过这篇帖子的投票'}), 400
     
     # Record vote
     try:
@@ -2147,10 +2147,10 @@ def vote_post(post_id):
         db.session.commit()
     except Exception as e: # IntegrityError catch
         db.session.rollback()
-        return jsonify({'error': 'Already voted'}), 400
+        return jsonify({'error': '你已经投过票了'}), 400
     
     return jsonify({
-        'message': 'Voted successfully',
+        'message': '投票成功',
         'votes': [v.to_dict() for v in post.votes]
     })
 
@@ -2167,12 +2167,12 @@ def add_comment(post_id):
 
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
     content = data.get('content')
     raw_parent_id = data.get('parent_id')
     parent_id = None
     
-    if not content: return jsonify({'error': 'Content empty'}), 400
+    if not content: return jsonify({'error': '评论内容不能为空'}), 400
     
     clean_content = bleach.clean(content, tags=[], strip=True)
     
@@ -2182,12 +2182,12 @@ def add_comment(post_id):
         try:
             parent_id = int(raw_parent_id)
         except Exception:
-            return jsonify({'error': 'Invalid parent comment id'}), 400
+            return jsonify({'error': '父评论参数无效'}), 400
         if parent_id <= 0:
-            return jsonify({'error': 'Invalid parent comment id'}), 400
+            return jsonify({'error': '父评论参数无效'}), 400
         parent_comment = Comment.query.get(parent_id)
         if not parent_comment or parent_comment.post_id != post_id:
-            return jsonify({'error': 'Invalid parent comment'}), 400
+            return jsonify({'error': '父评论不存在或不属于当前帖子'}), 400
     
     comment = Comment(content=clean_content, author_id=g.current_user.id, post_id=post.id, parent_id=parent_id)
     db.session.add(comment)
@@ -2244,7 +2244,7 @@ def add_comment(post_id):
     except Exception as e:
         print(f"Notification Error: {e}")
 
-    return jsonify({'message': 'Comment added', 'comment': comment.to_dict()}), 201
+    return jsonify({'message': '评论已发布', 'comment': comment.to_dict()}), 201
 
 
 @app.route('/api/comments/<int:comment_id>/like', methods=['POST'])
@@ -2423,14 +2423,14 @@ def verify_tip():
         return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
     tx_hash = data.get('tx_hash')
     post_id = data.get('post_id')
     if not tx_hash or not post_id:
-        return jsonify({'error': 'Missing parameters'}), 400
+        return jsonify({'error': '缺少必要参数'}), 400
     post = Post.query.get_or_404(post_id)
     if not post.author:
-        return jsonify({'error': 'Post author not found'}), 400
+        return jsonify({'error': '未找到帖子作者'}), 400
     author_address = (post.author.wallet_address or post.author.address or '').strip()
     if not author_address or not Web3.is_address(author_address):
         return jsonify({'error': '作者未绑定钱包，暂无法打赏'}), 400
@@ -2445,7 +2445,7 @@ def verify_tip():
         return jsonify({'error': _humanize_verify_error(result)}), 400
     amount_full = int(result)
     if Tip.query.filter_by(tx_hash=tx_hash).first():
-        return jsonify({'error': 'Tip already recorded'}), 400
+        return jsonify({'error': '该打赏交易已记录，无需重复提交'}), 400
     decimals = app.config['BSC']['USDT_DECIMALS']
     tip = Tip(
         tx_hash=tx_hash,
@@ -2491,7 +2491,7 @@ def delete_post(post_id):
     
     # Allow admin or author to delete
     if not g.current_user.is_admin and post.author_id != g.current_user.id:
-        return jsonify({'error': 'Permission denied'}), 403
+        return jsonify({'error': '没有权限删除该帖子'}), 403
     
     try:
         # 先删除 user_votes，避免 votes 被删时触发外键约束失败。
@@ -2522,7 +2522,7 @@ def delete_post(post_id):
         return jsonify({'error': '删除失败，请稍后重试'}), 500
     if g.current_user.is_admin:
         _log_admin_action('post_delete', 'post', post_id)
-    return jsonify({'message': 'Post deleted'})
+    return jsonify({'message': '帖子已删除'})
 
 @app.route('/api/posts/<int:post_id>', methods=['PUT'])
 @token_required
@@ -2531,15 +2531,15 @@ def update_post(post_id):
     
     # Only author can edit
     if post.author_id != g.current_user.id:
-        return jsonify({'error': 'Permission denied'}), 403
+        return jsonify({'error': '没有权限编辑该帖子'}), 403
         
     # Cannot edit if on-chain (immutable)
     if post.is_on_chain:
-        return jsonify({'error': 'Cannot edit on-chain content'}), 400
+        return jsonify({'error': '链上内容不可编辑'}), 400
         
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        return jsonify({'error': '请求体不能为空'}), 400
     title = data.get('title')
     content = data.get('content')
     
@@ -2551,7 +2551,7 @@ def update_post(post_id):
         post.tags = json.dumps(_normalize_tags(data.get('tags') or data.get('tag_names')), ensure_ascii=False)
         
     db.session.commit()
-    return jsonify({'message': 'Post updated', 'post': post.to_dict()})
+    return jsonify({'message': '帖子已更新', 'post': post.to_dict()})
 
 @app.route('/api/admin/posts/<int:post_id>/hide', methods=['POST'])
 @token_required
@@ -2561,7 +2561,7 @@ def toggle_hide_post(post_id):
     post.is_hidden = not post.is_hidden
     db.session.commit()
     _log_admin_action('post_toggle_hide', 'post', post_id, f"is_hidden={post.is_hidden}")
-    return jsonify({'message': 'Toggled hide status', 'is_hidden': post.is_hidden})
+    return jsonify({'message': '帖子可见状态已更新', 'is_hidden': post.is_hidden})
 
 
 @app.route('/api/admin/posts/<int:post_id>/pin', methods=['POST'])
@@ -2590,7 +2590,7 @@ def toggle_pin_post(post_id):
     db.session.commit()
     _log_admin_action('post_pin_toggle', 'post', post_id, f"is_pinned={post.is_pinned}")
     return jsonify({
-        'message': 'Pinned' if should_pin else 'Unpinned',
+        'message': '已置顶' if should_pin else '已取消置顶',
         'is_pinned': post.is_pinned,
         'pinned_at': post.pinned_at.isoformat() if post.pinned_at else None
     })
@@ -2604,7 +2604,7 @@ def toggle_post_comments(post_id):
     post.allow_comments = not post.allow_comments
     db.session.commit()
     _log_admin_action('post_toggle_comments', 'post', post_id, f"allow_comments={post.allow_comments}")
-    return jsonify({'message': 'Toggled comments status', 'allow_comments': post.allow_comments})
+    return jsonify({'message': '评论权限已更新', 'allow_comments': post.allow_comments})
 
 @app.route('/api/admin/users/<int:user_id>/ban', methods=['POST'])
 @token_required
@@ -2612,12 +2612,12 @@ def toggle_post_comments(post_id):
 def ban_user(user_id):
     user = User.query.get_or_404(user_id)
     if user.is_admin:
-        return jsonify({'error': 'Cannot ban admin'}), 400
+        return jsonify({'error': '不能封禁管理员'}), 400
         
     user.is_banned = not user.is_banned
     db.session.commit()
     _log_admin_action('user_ban_toggle', 'user', user_id, f"is_banned={user.is_banned}")
-    return jsonify({'message': 'User ban status toggled', 'is_banned': user.is_banned})
+    return jsonify({'message': '用户封禁状态已更新', 'is_banned': user.is_banned})
 
 @app.route('/api/admin/users', methods=['GET'])
 @token_required

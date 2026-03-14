@@ -241,7 +241,7 @@
         }
     };
 
-    var PAGE_TRANSITION_MS = 260;
+    var PAGE_TRANSITION_MS = 240;
     var isNavigating = false;
     var PAGE_STATE_INIT_KEY = 'pageStateInit';
 

@@ -25,6 +25,12 @@
     --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
     --font-base: 15px; /* Mobile base font */
     --nav-height: 60px; /* Mobile nav height */
+    --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 0.2, 1);
+    --dur-fast: 0.18s;
+    --dur-base: 0.26s;
+    --dur-slow: 0.32s;
+    --dur-page: 0.24s;
 }
 
 html {
@@ -45,7 +51,7 @@ body {
 }
 body.page-motion {
     opacity: 0;
-    transition: opacity 0.28s ease;
+    transition: opacity var(--dur-page) var(--ease-enter);
 }
 
 body.page-motion.page-ready {
@@ -76,7 +82,7 @@ body.page-motion.page-leaving {
     font-size: 0.95rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform var(--dur-fast) var(--ease-exit), opacity var(--dur-fast) var(--ease-exit), color var(--dur-base) var(--ease-enter), background-color var(--dur-base) var(--ease-enter), border-color var(--dur-base) var(--ease-enter), box-shadow var(--dur-base) var(--ease-enter);
     border: none;
     display: inline-flex;
     align-items: center;
@@ -192,7 +198,7 @@ body.page-motion.page-leaving {
 .search-input {
     width: 100%; padding: 0.5rem 1rem 0.5rem 2.2rem; background: rgba(0,0,0,0.2);
     border: 1px solid var(--border-color); border-radius: var(--radius-full); color: var(--text-primary);
-    font-size: 14px; transition: all 0.3s; height: 36px;
+    font-size: 14px; transition: border-color var(--dur-base) var(--ease-enter), background-color var(--dur-base) var(--ease-enter), box-shadow var(--dur-base) var(--ease-enter); height: 36px;
 }
 .search-input:focus { border-color: var(--accent-purple); background: rgba(0,0,0,0.4); outline: none; }
 .search-icon { position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); opacity: 0.6; font-size: 0.8rem; }
@@ -247,7 +253,7 @@ body.page-motion.page-leaving {
         max-height: 0;
         pointer-events: none;
         transform: translateY(-6px);
-        transition: max-height 0.24s ease, opacity 0.2s ease, transform 0.24s ease, padding 0.24s ease;
+        transition: max-height var(--dur-base) var(--ease-enter), opacity var(--dur-fast) var(--ease-enter), transform var(--dur-base) var(--ease-enter), padding var(--dur-base) var(--ease-enter);
     }
     .navbar.mobile-nav-open .mobile-nav-panel {
         opacity: 1;
@@ -255,7 +261,6 @@ body.page-motion.page-leaving {
         pointer-events: auto;
         transform: translateY(0);
         padding: 0.65rem;
-        animation: fadeIn 0.16s ease-out;
         overflow-y: auto;
         overscroll-behavior: contain;
     }
@@ -757,16 +762,27 @@ body.page-motion.page-leaving {
 .utility-card-trigger-icon {
     color: var(--text-muted);
     font-size: 0.72rem;
-    transition: transform 0.2s ease;
+    transition: transform var(--dur-base) var(--ease-enter);
 }
 .utility-card-detail {
-    display: none;
-    padding: 0.65rem 0.78rem 0.78rem;
-    border-top: 1px solid var(--border-color);
+    display: block;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    visibility: hidden;
+    padding: 0 0.78rem;
+    border-top: 1px solid transparent;
+    transform: translateY(-6px);
+    transition: max-height 0.28s var(--ease-enter), opacity var(--dur-fast) var(--ease-enter), transform var(--dur-base) var(--ease-enter), padding var(--dur-base) var(--ease-enter), border-color var(--dur-base) var(--ease-enter), visibility 0s linear var(--dur-base);
 }
 .utility-accordion-card.is-expanded .utility-card-detail {
-    display: block;
-    animation: fadeIn 0.18s ease-out;
+    max-height: 960px;
+    opacity: 1;
+    visibility: visible;
+    padding: 0.65rem 0.78rem 0.78rem;
+    border-top-color: var(--border-color);
+    transform: translateY(0);
+    transition: max-height 0.3s var(--ease-enter), opacity var(--dur-fast) var(--ease-enter), transform var(--dur-base) var(--ease-enter), padding var(--dur-base) var(--ease-enter), border-color var(--dur-base) var(--ease-enter), visibility 0s linear 0s;
 }
 .utility-accordion-card.is-expanded .utility-card-trigger-icon {
     transform: rotate(180deg);
@@ -843,7 +859,7 @@ body.page-motion.page-leaving {
     width: 0%;
     border-radius: inherit;
     background: linear-gradient(90deg, var(--accent-green), var(--accent-purple-light));
-    transition: width 0.3s ease;
+    transition: width var(--dur-base) var(--ease-enter);
 }
 .checkin-actions {
     display: flex;
@@ -1465,7 +1481,7 @@ body.page-motion.page-leaving {
 .form-input {
     width: 100%; padding: 0.8rem 1rem; background: rgba(0,0,0,0.3);
     border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary);
-    font-size: 1rem; transition: all 0.3s;
+    font-size: 1rem; transition: border-color var(--dur-base) var(--ease-enter), background-color var(--dur-base) var(--ease-enter), box-shadow var(--dur-base) var(--ease-enter);
 }
 .form-input:focus { border-color: var(--accent-purple); background: rgba(0,0,0,0.5); outline: none; }
 textarea.form-input { min-height: 100px; resize: vertical; }
@@ -1732,7 +1748,10 @@ body.reduce-motion .post-card,
 body.reduce-motion .btn,
 body.reduce-motion .modal,
 body.reduce-motion .bottom-sheet,
-body.reduce-motion #postDetailBody.detail-body-enter {
+body.reduce-motion #postDetailBody.detail-body-enter,
+body.reduce-motion .utility-card-detail,
+body.reduce-motion .utility-card-trigger-icon,
+body.reduce-motion .mobile-nav-panel {
     transition: none !important;
     animation: none !important;
 }
@@ -1967,7 +1986,7 @@ body.reduce-motion #postDetailBody.detail-body-enter {
 
 .tool-btn {
     background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary);
-    padding: 0.5rem 0.8rem; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s;
+    padding: 0.5rem 0.8rem; border-radius: var(--radius-sm); cursor: pointer; transition: color var(--dur-fast) var(--ease-enter), background-color var(--dur-fast) var(--ease-enter), border-color var(--dur-fast) var(--ease-enter), transform var(--dur-fast) var(--ease-exit);
 }
 .tool-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent-purple); }
 
@@ -1976,7 +1995,7 @@ body.reduce-motion #postDetailBody.detail-body-enter {
 .step-item {
     background: var(--bg-card); border: 1px solid var(--border-color); padding: 0.5rem 1rem;
     border-radius: var(--radius-full); z-index: 1; color: var(--text-muted); font-size: 0.9rem;
-    transition: all 0.3s;
+    transition: color var(--dur-base) var(--ease-enter), background-color var(--dur-base) var(--ease-enter), border-color var(--dur-base) var(--ease-enter), box-shadow var(--dur-base) var(--ease-enter), transform var(--dur-fast) var(--ease-exit);
 }
 .step-item.active {
     background: var(--accent-purple); color: white; border-color: var(--accent-purple);
