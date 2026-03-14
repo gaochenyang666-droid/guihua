@@ -8,6 +8,7 @@
     var currentUser = null;
     var currentPost = null;
     var replyParentId = null;
+    var commentsRenderToken = 0;
 
     function parseJsonSafe(res, fallback) {
         return res.json().catch(function () { return fallback; });
@@ -180,6 +181,53 @@
         }).join('');
     }
 
+    function renderPostLoadingShell() {
+        return '' +
+            '<div class="post-page-loading-shell">' +
+                '<div class="skeleton-block skeleton-title"></div>' +
+                '<div class="skeleton-block skeleton-meta"></div>' +
+                '<div class="skeleton-block skeleton-line"></div>' +
+                '<div class="skeleton-block skeleton-line"></div>' +
+                '<div class="skeleton-block skeleton-line short"></div>' +
+                '<div class="post-page-loading-gallery">' +
+                    '<div class="skeleton-block skeleton-thumb"></div>' +
+                    '<div class="skeleton-block skeleton-thumb"></div>' +
+                    '<div class="skeleton-block skeleton-thumb"></div>' +
+                '</div>' +
+                '<div class="skeleton-block skeleton-line"></div>' +
+                '<div class="skeleton-block skeleton-line medium"></div>' +
+            '</div>';
+    }
+
+    function renderCommentsLoadingState() {
+        return '' +
+            '<div class="comments-loading-state">' +
+                '<div class="skeleton-block skeleton-line"></div>' +
+                '<div class="skeleton-block skeleton-line short"></div>' +
+                '<div class="skeleton-block skeleton-line"></div>' +
+            '</div>';
+    }
+
+    function scheduleCommentsRender(post) {
+        commentsRenderToken += 1;
+        var token = commentsRenderToken;
+        var run = function () {
+            if (token !== commentsRenderToken) return;
+            var host = document.getElementById('postCommentsList');
+            if (!host) return;
+            var commentsHtml = renderComments((post && post.comments) || [], 0);
+            host.innerHTML = commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>';
+            bindCommentListEvents();
+        };
+        if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(function () {
+                window.setTimeout(run, 40);
+            });
+            return;
+        }
+        window.setTimeout(run, 40);
+    }
+
     function renderSeries(series) {
         if (!Array.isArray(series) || !series.length) return '';
         return series.map(function (s) {
@@ -197,8 +245,8 @@
 
     function renderPost(p) {
         currentPost = p;
+        commentsRenderToken += 1;
         var isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
-        var commentsHtml = renderComments(p.comments || [], 0);
         var seriesHtml = renderSeries(p.series || []);
         var canComment = !!(p.allow_comments || (currentUser && currentUser.is_admin));
         var meta = [
@@ -243,7 +291,7 @@
             adminControls +
             '<section class="comments-section">' +
                 '<h4>评论</h4>' +
-                '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + (commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>') + '</div>' +
+                '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + renderCommentsLoadingState() + '</div>' +
                 '<div id="replyTarget" style="display:none; font-size:0.8rem; color:var(--accent-purple); padding:0.2rem 0;">回复 @<span id="replyTargetName"></span> <button class="btn btn-ghost" style="padding:0 0.3rem; height:auto;" type="button" data-action="cancel-reply">✕</button></div>' +
                 '<div style="display:flex; gap:0.5rem;">' +
                     '<input type="text" id="commentInput" class="form-input" placeholder="' + (canComment ? '发表评论...' : '评论区已关闭') + '" ' + (canComment ? '' : 'disabled') + '>' +
@@ -251,7 +299,14 @@
                 '</div>' +
             '</section>';
 
+        body.classList.remove('is-ready');
+        body.classList.add('is-entering');
         bindPostEvents();
+        scheduleCommentsRender(p);
+        window.requestAnimationFrame(function () {
+            body.classList.add('is-ready');
+            body.classList.remove('is-entering');
+        });
     }
 
     function setReply(parentId, nickname) {
@@ -406,18 +461,28 @@
         await loadPost();
     }
 
-    function bindPostEvents() {
+    function bindCommentListEvents() {
         if (!body) return;
-        body.querySelectorAll('.post-detail-content img').forEach(function (im) {
-            im.setAttribute('referrerpolicy', 'no-referrer');
-            im.loading = 'lazy';
-        });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="reply"]'), function (btn) {
             btn.addEventListener('click', function () {
                 var pid = Number(btn.getAttribute('data-parent-id'));
                 var nick = btn.getAttribute('data-nickname') || '匿名';
                 setReply(pid, nick);
             });
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="like-comment"]'), function (btn) {
+            btn.addEventListener('click', function () {
+                likeComment(btn.getAttribute('data-comment-id'));
+            });
+        });
+    }
+
+    function bindPostEvents() {
+        if (!body) return;
+        body.querySelectorAll('.post-detail-content img').forEach(function (im) {
+            im.setAttribute('referrerpolicy', 'no-referrer');
+            im.loading = 'lazy';
+            im.decoding = 'async';
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="cancel-reply"]'), function (btn) {
             btn.addEventListener('click', cancelReply);
@@ -440,11 +505,6 @@
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="comment"]'), function (btn) {
             btn.addEventListener('click', submitComment);
         });
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="like-comment"]'), function (btn) {
-            btn.addEventListener('click', function () {
-                likeComment(btn.getAttribute('data-comment-id'));
-            });
-        });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="admin-delete"]'), function (btn) {
             btn.addEventListener('click', adminDeletePost);
         });
@@ -461,7 +521,9 @@
 
     async function loadPost() {
         if (!body) return;
-        body.textContent = '加载中...';
+        body.classList.remove('is-ready');
+        body.classList.remove('is-entering');
+        body.innerHTML = renderPostLoadingShell();
         try {
             var res = await fetch(API_BASE + '/posts/' + postId, { headers: authHeaders(false) });
             var data = await parseJsonSafe(res, {});

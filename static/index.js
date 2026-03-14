@@ -1610,6 +1610,7 @@
                 }
                 const imgSrc = escapeAttr(imageUrl);
                 return `<div class="post-image-wrap">
+                    <span class="post-image-skeleton" aria-hidden="true"></span>
                     <div class="post-image-placeholder">📝</div>
                     <img src="${imgSrc}" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image');this.parentElement.classList.remove('is-fallback')" onerror="this.remove();this.parentElement.classList.add('is-fallback')">
                 </div>`;
@@ -1627,6 +1628,7 @@
                         ? `<span class="timeline-more-mask">+${more}</span>`
                         : '';
                     return `<div class="timeline-thumb-wrap">
+                        <span class="post-image-skeleton" aria-hidden="true"></span>
                         <div class="post-image-placeholder">🖼️</div>
                         <img src="${safe}" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image')" onerror="this.remove();this.parentElement.classList.add('is-fallback')">
                         ${mask}
