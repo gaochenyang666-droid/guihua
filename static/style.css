@@ -291,12 +291,51 @@ body.page-motion.page-leaving {
     }
     .mobile-nav-panel .user-menu {
         width: 100%;
-        justify-content: space-between;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 0.5rem;
         border-top: 1px dashed var(--border-color);
         padding-top: 0.5rem;
     }
+    .mobile-nav-panel .user-menu #userDisplayName {
+        flex: 1 1 calc(100% - 52px);
+        min-width: 0;
+    }
+    .mobile-nav-panel .user-menu #userAvatarEmoji {
+        margin-left: auto;
+        flex: 0 0 36px;
+    }
     .mobile-nav-panel .user-menu .btn {
-        width: auto;
+        width: calc(50% - 0.25rem);
+        min-width: 0;
+    }
+    .mobile-nav-panel .user-menu a.btn,
+    .mobile-nav-panel .user-menu button.btn,
+    .mobile-nav-panel .user-menu #notifBtn {
+        min-height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .mobile-nav-panel .user-menu #notifBtn {
+        width: calc(50% - 0.25rem);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        margin-right: 0;
+    }
+    .mobile-nav-panel .user-menu #profileLink,
+    .mobile-nav-panel .user-menu #bindWalletBtn,
+    .mobile-nav-panel .user-menu #adminUsersBtn,
+    .mobile-nav-panel .user-menu #adminReportsBtn,
+    .mobile-nav-panel .user-menu #adminAnnBtn,
+    .mobile-nav-panel .user-menu #adminGroupLinksBtn,
+    .mobile-nav-panel .user-menu #adminAuditBtn,
+    .mobile-nav-panel .user-menu #adminStatsBtn,
+    .mobile-nav-panel .user-menu #logoutBtn {
+        flex: 1 1 calc(50% - 0.25rem);
     }
     .site-announcement-inner {
         flex-wrap: nowrap;
@@ -1964,11 +2003,13 @@ body.reduce-motion #postDetailBody.detail-body-enter {
     border-radius: 12px;
     font-weight: bold;
     font-family: 'Courier New', monospace;
-    text-shadow: 0 0 5px currentColor;
-    border: 1px solid currentColor;
-    background: rgba(0, 0, 0, 0.2);
+    text-shadow: 0 0 5px var(--badge-glow, currentColor);
+    border: 1px solid var(--badge-color, currentColor);
+    background: var(--badge-bg, rgba(0, 0, 0, 0.2));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 0 12px var(--badge-glow, transparent);
     display: inline-flex;
     align-items: center;
     gap: 4px;
     font-size: 0.8rem;
+    white-space: nowrap;
 }

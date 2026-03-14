@@ -1670,7 +1670,7 @@
                                     <div class="timeline-author-line">
                                         <span class="timeline-author-name">${escapeHtml(author.nickname || '用户')}</span>
                                         ${this.renderAuthorBadge(author)}
-                                        ${author.id != null ? formatUserId(author.id) : ''}
+                                        ${author.id != null ? formatUserId(author.id, author) : ''}
                                     </div>
                                     <div class="timeline-author-sub">浏览 ${Number(p.view_count || 0)} · 恐惧 ${Number(p.likes_count || 0)}</div>
                                 </div>
@@ -2432,7 +2432,7 @@
                     <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                         ${p.is_special_announcement ? '<span style="color:var(--accent-orange); font-weight:700;">📜 长公告</span> |' : ''}
                         ${p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span> |' : ''}
-                        发布者: ${escapeHtml(p.author.nickname)} ${UI.renderAuthorBadge(p.author)} ${p.author.id != null ? formatUserId(p.author.id) : ''} | 浏览: ${p.view_count}
+                        发布者: ${escapeHtml(p.author.nickname)} ${UI.renderAuthorBadge(p.author)} ${p.author.id != null ? formatUserId(p.author.id, p.author) : ''} | 浏览: ${p.view_count}
                     </div>
                     ${resumeHtml}
                     <div class="post-detail-content">

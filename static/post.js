@@ -204,7 +204,7 @@
         var meta = [
             (p.is_special_announcement ? '<span style="color:var(--accent-orange); font-weight:700;">📜 长公告</span>' : ''),
             (p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span>' : ''),
-            '发布者: ' + escapeHtml((p.author && p.author.nickname) || '用户') + ' ' + renderAuthorBadge(p.author) + ' ' + ((p.author && p.author.id != null) ? formatUserId(p.author.id) : ''),
+            '发布者: ' + escapeHtml((p.author && p.author.nickname) || '用户') + ' ' + renderAuthorBadge(p.author) + ' ' + ((p.author && p.author.id != null) ? formatUserId(p.author.id, p.author) : ''),
             '浏览: ' + Number(p.view_count || 0)
         ].filter(Boolean).join(' | ');
         var adminControls = '';

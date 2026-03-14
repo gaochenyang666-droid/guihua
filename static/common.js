@@ -26,17 +26,77 @@
         return false;
     };
 
-    window.formatUserId = function (userId) {
+    function getBadgeLevel(user) {
+        if (!user) return 1;
+        if (user.is_admin || user.admin_infinite_level) return 9999;
+        var lv = parseInt(user.level, 10);
+        if (Number.isFinite(lv) && lv > 0) return lv;
+        var label = String(user.level_label || '').trim();
+        var m = label.match(/(\d+)/);
+        if (m) return parseInt(m[1], 10) || 1;
+        return 1;
+    }
+
+    function getLevelBadgeStyle(level, isAdmin) {
+        if (isAdmin || level >= 9999) {
+            return { color: '#facc15', bg: 'rgba(120, 53, 15, 0.26)', glow: 'rgba(250, 204, 21, 0.35)' };
+        }
+        if (level >= 10) {
+            return { color: '#facc15', bg: 'rgba(113, 63, 18, 0.22)', glow: 'rgba(250, 204, 21, 0.28)' };
+        }
+        if (level >= 8) {
+            return { color: '#a78bfa', bg: 'rgba(76, 29, 149, 0.2)', glow: 'rgba(167, 139, 250, 0.24)' };
+        }
+        if (level >= 5) {
+            return { color: '#38bdf8', bg: 'rgba(8, 47, 73, 0.24)', glow: 'rgba(56, 189, 248, 0.24)' };
+        }
+        if (level >= 3) {
+            return { color: '#34d399', bg: 'rgba(6, 78, 59, 0.24)', glow: 'rgba(52, 211, 153, 0.24)' };
+        }
+        return { color: '#9ca3af', bg: 'rgba(31, 41, 55, 0.26)', glow: 'rgba(156, 163, 175, 0.18)' };
+    }
+
+    function getAchievementEmoji(user, level) {
+        var equipped = String((user && user.equipped_achievement_key) || '').trim();
+        var emojiByAchievement = {
+            report_privilege: '🚩',
+            wearable_unlock: '🏅',
+            co_create_group: '🛰️',
+            core_group: '👁️',
+            legacy_new_soul: '👻',
+            legacy_chain_traveler: '⛓️',
+            legacy_wallet_bound: '🔗',
+            legacy_dual_identity: '🌓',
+            legacy_contract_psychic: '🔮',
+            legacy_first_post: '✍️',
+            legacy_post_10: '📚',
+            legacy_post_100: '🏮',
+            legacy_post_1000: '👑',
+            legacy_year_1: '🕯️',
+            legacy_year_5: '🌙',
+            legacy_year_10: '🗝️',
+            legacy_admin_guardian: '👺'
+        };
+        if (equipped && emojiByAchievement[equipped]) return emojiByAchievement[equipped];
+        if (user && (user.is_admin || user.admin_infinite_level)) return '👺';
+        if (level >= 10) return '👁️';
+        if (level >= 8) return '🌌';
+        if (level >= 5) return '🛰️';
+        if (level >= 3) return '🔮';
+        if (level >= 2) return '🕯️';
+        return '👻';
+    }
+
+    window.formatUserId = function (userId, user) {
         var idStr = String(userId);
         if (idStr.length < 10) {
             return '<span class="user-id-badge" style="color:#9ca3af;">💀 ' + window.escapeHtml(idStr) + '</span>';
         }
-        var year = idStr.substring(0, 4);
-        var type = idStr.substring(4, 5);
-        var yearColors = { '2025': { color: '#FF00FF', emoji: '🕯️' }, '2026': { color: '#00FFCC', emoji: '👻' } };
-        var typeConfigs = { '1': { color: '#A855F7', emoji: '🔮' }, '9': { color: '#FFD700', emoji: '👁️' } };
-        var res = typeConfigs[type] || yearColors[year] || { color: '#FFFFFF', emoji: '💀' };
-        return '<span class="user-id-badge" style="color:' + res.color + '">' + res.emoji + ' ' + window.escapeHtml(idStr) + '</span>';
+        var level = getBadgeLevel(user);
+        var isAdmin = !!(user && (user.is_admin || user.admin_infinite_level));
+        var style = getLevelBadgeStyle(level, isAdmin);
+        var emoji = getAchievementEmoji(user, level);
+        return '<span class="user-id-badge" style="--badge-color:' + style.color + '; --badge-bg:' + style.bg + '; --badge-glow:' + style.glow + '; color:' + style.color + '">' + emoji + ' ' + window.escapeHtml(idStr) + '</span>';
     };
 
     window.openLoginPage = function (nextPath) {

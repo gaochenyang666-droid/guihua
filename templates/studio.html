@@ -1055,7 +1055,7 @@
                     const nameEl = document.getElementById('userDisplayName');
                     if (nameEl) nameEl.textContent = displayName;
                     const badgeEl = document.getElementById('userIdBadge');
-                    if (badgeEl && currentUser.id != null) badgeEl.innerHTML = formatUserId(currentUser.id);
+                    if (badgeEl && currentUser.id != null) badgeEl.innerHTML = formatUserId(currentUser.id, currentUser);
                     const avatarEl = document.getElementById('userAvatarEmoji');
                     if (avatarEl) avatarEl.textContent = currentUser.avatar || '👻';
                 }
