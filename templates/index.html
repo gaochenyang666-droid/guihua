@@ -62,11 +62,22 @@
                 </div>
 
                 <div class="user-menu" id="userMenu" style="display: none;">
-                    <span id="userDisplayName" style="font-size: 0.9rem;"></span>
-                    <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
-                    <button class="btn btn-ghost user-logout-btn" id="logoutBtn">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </button>
+                    <div class="user-menu-header" id="userMenuHeader">
+                        <span id="userDisplayName" style="font-size: 0.9rem;"></span>
+                        <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
+                    </div>
+                    <div class="user-menu-section">
+                        <div class="user-menu-section-title">常用</div>
+                        <div class="user-menu-grid" id="userMenuMain">
+                            <button class="btn btn-ghost user-logout-btn" id="logoutBtn">
+                                <i class="fas fa-sign-out-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="user-menu-section" id="userMenuAdminSection" hidden>
+                        <div class="user-menu-section-title">管理工具</div>
+                        <div class="user-menu-grid" id="userMenuAdmin"></div>
+                    </div>
                 </div>
             </div>
         </div>

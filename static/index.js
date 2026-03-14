@@ -1337,7 +1337,10 @@
             updateAuth() {
                 const authBtns = document.getElementById('authButtons');
                 const userMenu = document.getElementById('userMenu');
-                if (!authBtns || !userMenu) {
+                const userMenuMain = document.getElementById('userMenuMain');
+                const userMenuAdmin = document.getElementById('userMenuAdmin');
+                const userMenuAdminSection = document.getElementById('userMenuAdminSection');
+                if (!authBtns || !userMenu || !userMenuMain || !userMenuAdmin || !userMenuAdminSection) {
                     this.syncLeftProfile();
                     Onboarding.load();
                     Checkin.load();
@@ -1363,13 +1366,8 @@
                             if (typeof navigateWithTransition === 'function') navigateWithTransition('/notifications');
                             else window.location.href = '/notifications';
                         };
-                        const avatarBtn = document.getElementById('userAvatarEmoji');
-                        if (avatarBtn && avatarBtn.parentNode) {
-                            avatarBtn.parentNode.insertBefore(notifBtn, avatarBtn);
-                        } else {
-                            userMenu.insertBefore(notifBtn, userMenu.firstChild || null);
-                        }
                     }
+                    if (notifBtn.parentNode !== userMenuMain) userMenuMain.insertBefore(notifBtn, userMenuMain.firstChild || null);
                     Notification.load();
 
                     let profileLink = document.getElementById('profileLink');
@@ -1380,14 +1378,9 @@
                         profileLink.style.padding = '0.3rem 0.6rem';
                         profileLink.style.fontSize = '0.8rem';
                         profileLink.textContent = '👤 我的主页';
-                        profileLink.href = `/profile?user=${currentUser.username || currentUser.address}`;
-                        const logoutBtn = document.getElementById('logoutBtn');
-                        if (logoutBtn && logoutBtn.parentNode) {
-                            logoutBtn.parentNode.insertBefore(profileLink, logoutBtn);
-                        } else {
-                            userMenu.appendChild(profileLink);
-                        }
                     }
+                    profileLink.href = `/profile?user=${currentUser.username || currentUser.address}`;
+                    if (profileLink.parentNode !== userMenuMain) userMenuMain.appendChild(profileLink);
 
                     let bindBtn = document.getElementById('bindWalletBtn');
                     if(!bindBtn) {
@@ -1400,13 +1393,10 @@
                         bindBtn.style.borderColor = 'var(--accent-orange)';
                         bindBtn.textContent = '🔗 绑定钱包';
                         bindBtn.onclick = Auth.bindWallet;
-                        const logoutBtn = document.getElementById('logoutBtn');
-                        if (logoutBtn && logoutBtn.parentNode) {
-                            logoutBtn.parentNode.insertBefore(bindBtn, logoutBtn);
-                        } else {
-                            userMenu.appendChild(bindBtn);
-                        }
                     }
+                    if (bindBtn.parentNode !== userMenuMain) userMenuMain.appendChild(bindBtn);
+                    const logoutBtn = document.getElementById('logoutBtn');
+                    if (logoutBtn) userMenuMain.appendChild(logoutBtn);
 
                     if(bindBtn && currentUser.address) {
                         bindBtn.style.display = 'none';
@@ -1415,6 +1405,7 @@
                     }
 
                     if(currentUser.is_admin) {
+                        userMenuAdminSection.hidden = false;
                         let statsBtn = document.getElementById('adminStatsBtn');
                         if(!statsBtn) {
                             statsBtn = document.createElement('button');
@@ -1458,12 +1449,8 @@
                             auditBtn.style.color = 'var(--text-secondary)';
                             auditBtn.textContent = '🧾 日志';
                             auditBtn.onclick = Admin.openAuditLogs;
-                            const logoutBtn = document.getElementById('logoutBtn');
-                            const menuAnchor = (logoutBtn && logoutBtn.parentNode) ? logoutBtn : null;
-                            const menuParent = menuAnchor ? menuAnchor.parentNode : userMenu;
                             const addAdminAction = (el) => {
-                                if (menuAnchor) menuParent.insertBefore(el, menuAnchor);
-                                else menuParent.appendChild(el);
+                                if (el.parentNode !== userMenuAdmin) userMenuAdmin.appendChild(el);
                             };
                             addAdminAction(usersBtn);
                             addAdminAction(reportsBtn);
@@ -1472,6 +1459,8 @@
                             addAdminAction(auditBtn);
                             addAdminAction(statsBtn);
                         }
+                    } else {
+                        userMenuAdminSection.hidden = true;
                     }
 
                     if(currentUser.avatar) {
