@@ -56,19 +56,67 @@
         if (modal) modal.classList.remove('active');
     }
 
-    function getWalletChoices() {
+    async function copyText(text, successMsg) {
+        const value = (text || '').trim();
+        if (!value) return false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(value);
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = value;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            if (successMsg && window.Toast && Toast.success) Toast.success(successMsg);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    async function openBinanceAppGuide() {
+        const copied = await copyText(window.location.href, '已复制当前页面链接');
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+        if (isMobile) {
+            Toast.info(copied ? '请到币安 App 的钱包浏览器中粘贴刚复制的链接打开本站' : '请在币安 App 的钱包浏览器中打开本站');
+        } else {
+            Toast.info(copied ? '请在手机币安 App 的钱包浏览器中粘贴刚复制的链接打开本站' : '请在手机币安 App 的钱包浏览器中打开本站');
+        }
+    }
+
+    async function getWalletChoices() {
         const installed = [];
-        if (window.BinanceChain) {
+        const hasBinance = !!window.BinanceChain;
+        const hasMetaMask = !!(window.ethereum && window.ethereum.isMetaMask);
+        const hasGenericInjected = !!(window.ethereum && !hasMetaMask && !hasBinance);
+        if (hasBinance) {
             installed.push({ id: 'binance', icon: '🟡', name: 'Binance Wallet', sub: '已安装 · 推荐（BSC）' });
         }
-        if (window.ethereum) {
+        if (hasMetaMask) {
             installed.push({ id: 'metamask', icon: '🦊', name: 'MetaMask', sub: '已安装' });
         }
-        const hasInjected = !!(window.BinanceChain || window.ethereum);
+        let walletConnectEnabled = false;
+        let walletConnectSub = '扫码登录（手机钱包）';
+        try {
+            const cfgRes = await fetch(API_BASE + '/config/public');
+            const cfg = await parseJsonSafe(cfgRes, {});
+            const projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
+            walletConnectEnabled = !!(projectId && window.UniversalProvider);
+            if (!projectId) walletConnectSub = '站点暂未配置 WalletConnect';
+            else if (!window.UniversalProvider) walletConnectSub = 'WalletConnect 组件未加载';
+        } catch (_) {
+            walletConnectSub = 'WalletConnect 配置读取失败';
+        }
         const others = [
-            { id: 'walletconnect', icon: '🔗', name: 'WalletConnect', sub: '扫码登录（手机钱包）' },
-            { id: 'browser', icon: '🌐', name: 'Browser Wallet', sub: hasInjected ? '使用当前浏览器钱包' : '未检测到注入钱包', disabled: !hasInjected }
+            { id: 'binance_app', icon: '🟨', name: 'Binance App', sub: '手机端在币安 App 内置钱包/浏览器打开本站' },
+            { id: 'walletconnect', icon: '🔗', name: 'WalletConnect', sub: walletConnectSub, disabled: !walletConnectEnabled }
         ];
+        if (hasGenericInjected) {
+            others.push({ id: 'browser', icon: '🌐', name: 'Browser Wallet', sub: '使用当前浏览器注入钱包' });
+        }
         return { installed, others };
     }
 
@@ -178,7 +226,7 @@
         }
     }
 
-    function openWalletSelector() {
+    async function openWalletSelector() {
         const modal = document.getElementById('loginWalletSelectModal');
         const listEl = document.getElementById('loginWalletSelectList');
         const qrWrap = document.getElementById('loginWalletSelectQr');
@@ -190,7 +238,7 @@
             qrWrap.style.display = 'none';
             qrWrap.innerHTML = '';
         }
-        const groups = getWalletChoices();
+        const groups = await getWalletChoices();
         const renderItem = function (item) {
             return `
                 <button type="button" class="wallet-select-item" data-wallet="${item.id}" ${item.disabled ? 'disabled' : ''}>
@@ -207,7 +255,7 @@
             <div class="wallet-select-list">
                 ${groups.installed.length ? groups.installed.map(renderItem).join('') : '<div class="wallet-select-sub" style="padding:0.35rem 0.2rem;">未检测到注入钱包，可使用 WalletConnect 扫码登录。</div>'}
             </div>
-            <div class="wallet-select-group-title">Other Wallets</div>
+            <div class="wallet-select-group-title">其他方式</div>
             <div class="wallet-select-list">${groups.others.map(renderItem).join('')}</div>
         `;
 
@@ -217,6 +265,10 @@
                 if (!key || btn.disabled) return;
                 if (key === 'walletconnect') {
                     await loginWithWalletConnect('loginWalletSelectQr');
+                    return;
+                }
+                if (key === 'binance_app') {
+                    await openBinanceAppGuide();
                     return;
                 }
                 if (key === 'binance') {
