@@ -199,6 +199,14 @@ from services.posts_query import (
     build_posts_payload as _build_posts_payload,
     get_posts_fallback as _posts_get_posts_fallback,
 )
+from services.user_progress import (
+    china_today as _svc_china_today,
+    get_user_level as _svc_get_user_level,
+    build_group_links_for_user as _svc_build_group_links_for_user,
+    build_legacy_achievements as _svc_build_legacy_achievements,
+    build_achievements_for_user as _svc_build_achievements_for_user,
+    build_checkin_status as _svc_build_checkin_status,
+)
 
 
 def _new_user(**kwargs):
@@ -271,10 +279,7 @@ TELEGRAM_GROUP_SETTING_KEYS = {
 
 
 def _get_user_level(user):
-    if getattr(user, 'is_admin', False):
-        return 9999
-    info = calc_level_info(getattr(user, 'experience_points', 0) or 0)
-    return int(info.get('level', 1) or 1)
+    return _svc_get_user_level(user, calc_level_info)
 
 
 def _get_setting_value(setting_key, default_value=''):
@@ -294,34 +299,9 @@ def _set_setting_value(setting_key, setting_value):
 
 
 def _build_group_links_for_user(user):
-    level = _get_user_level(user)
-    is_admin = bool(getattr(user, 'is_admin', False))
     co_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], '')
     core_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], '')
-    items = [
-        {
-            'key': 'co_create',
-            'title': '共创群',
-            'required_level': 5,
-            'unlocked': is_admin or level >= 5,
-            'configured': bool(co_url),
-            'url': co_url if (is_admin or level >= 5) and co_url else None
-        },
-        {
-            'key': 'core',
-            'title': '核心群',
-            'required_level': 10,
-            'unlocked': is_admin or level >= 10,
-            'configured': bool(core_url),
-            'url': core_url if (is_admin or level >= 10) and core_url else None
-        }
-    ]
-    return {
-        'level': level,
-        'level_label': '∞' if is_admin else f'Lv.{max(1, level)}',
-        'admin_infinite_level': is_admin,
-        'groups': items
-    }
+    return _svc_build_group_links_for_user(user, co_url, core_url, calc_level_info)
 
 
 def _build_legacy_achievements(user, is_admin=False):
@@ -329,77 +309,21 @@ def _build_legacy_achievements(user, is_admin=False):
         post_count = Post.query.filter_by(author_id=user.id).count()
     except Exception:
         post_count = 0
-    years = 0
-    if getattr(user, 'created_at', None):
-        years = max(0, int((datetime.utcnow() - user.created_at).days // 365))
-    has_wallet = bool(getattr(user, 'address', None))
-    has_web2 = bool(getattr(user, 'username', None))
-    onboarding_completed = has_wallet and has_web2 and post_count > 0
-    unlocked_map = {
-        'legacy_new_soul': True,
-        'legacy_chain_traveler': is_admin or has_wallet,
-        'legacy_wallet_bound': is_admin or has_wallet,
-        'legacy_dual_identity': is_admin or (has_wallet and has_web2),
-        'legacy_contract_psychic': is_admin or onboarding_completed,
-        'legacy_first_post': is_admin or post_count >= 1,
-        'legacy_post_10': is_admin or post_count >= 10,
-        'legacy_post_100': is_admin or post_count >= 100,
-        'legacy_post_1000': is_admin or post_count >= 1000,
-        'legacy_year_1': is_admin or years >= 1,
-        'legacy_year_5': is_admin or years >= 5,
-        'legacy_year_10': is_admin or years >= 10,
-        'legacy_admin_guardian': is_admin,
-    }
-    items = []
-    for definition in LEGACY_ACHIEVEMENT_DEFINITIONS:
-        items.append({
-            'key': definition['key'],
-            'title': definition['title'],
-            'description': definition['description'],
-            'min_level': 1,
-            'wearable': bool(definition.get('wearable')),
-            'legacy': True,
-            'unlocked': bool(unlocked_map.get(definition['key'], False)),
-            'equipped': False
-        })
-    return items
+    return _svc_build_legacy_achievements(user, LEGACY_ACHIEVEMENT_DEFINITIONS, post_count, is_admin=is_admin)
 
 
 def _build_achievements_for_user(user):
-    level = _get_user_level(user)
-    is_admin = bool(getattr(user, 'is_admin', False))
-    equipped_key = (getattr(user, 'equipped_achievement_key', None) or '').strip() or None
-    can_equip = is_admin or level >= 3
-    items = []
-    for definition in BASE_ACHIEVEMENT_DEFINITIONS:
-        min_level = int(definition.get('min_level', 1))
-        unlocked = is_admin or level >= min_level
-        items.append({
-            'key': definition['key'],
-            'title': definition['title'],
-            'description': definition['description'],
-            'min_level': min_level,
-            'wearable': bool(definition.get('wearable')),
-            'legacy': False,
-            'unlocked': unlocked,
-            'equipped': bool(equipped_key and equipped_key == definition['key'])
-        })
-    items.extend(_build_legacy_achievements(user, is_admin=is_admin))
-    item_map = {item.get('key'): item for item in items}
-    if equipped_key:
-        equipped_item = item_map.get(equipped_key)
-        if (not can_equip) or (not equipped_item) or (not equipped_item.get('wearable')) or (not equipped_item.get('unlocked')):
-            equipped_key = None
-    for item in items:
-        item['equipped'] = bool(equipped_key and equipped_key == item.get('key'))
-    return {
-        'level': level,
-        'level_label': '∞' if is_admin else f'Lv.{max(1, level)}',
-        'admin_infinite_level': is_admin,
-        'can_equip': can_equip,
-        'equipped_key': equipped_key,
-        'achievements': items
-    }
+    try:
+        post_count = Post.query.filter_by(author_id=user.id).count()
+    except Exception:
+        post_count = 0
+    return _svc_build_achievements_for_user(
+        user,
+        BASE_ACHIEVEMENT_DEFINITIONS,
+        LEGACY_ACHIEVEMENT_DEFINITIONS,
+        post_count,
+        calc_level_info
+    )
 
 
 def _compute_asset_version():
@@ -1047,54 +971,18 @@ def _humanize_verify_error(message):
 
 
 def _china_today():
-    # 签到按中国时区自然日计算，避免 UTC 跨日导致用户体验错乱
-    return (datetime.utcnow() + timedelta(hours=8)).date()
+    return _svc_china_today()
 
 
 def _build_checkin_status(user):
-    today = _china_today()
-    last_date = getattr(user, 'last_checkin_date', None)
-    is_admin = bool(getattr(user, 'is_admin', False))
-    already_checked = bool(last_date and last_date == today) or is_admin
-    if is_admin:
-        level_info = {
-            'level': 9999,
-            'total_exp': int(getattr(user, 'experience_points', 0) or 0),
-            'level_current_exp': 0,
-            'level_next_exp': 1,
-            'level_progress': 1.0
-        }
-    else:
-        level_info = calc_level_info(getattr(user, 'experience_points', 0) or 0)
-    streak = int(getattr(user, 'checkin_streak', 0) or 0)
-    if is_admin:
-        base_reward = 0
-        bonus_reward = 0
-    else:
-        base_reward = checkin_exp_by_streak(max(1, streak + 1))
-        bonus_reward = CHECKIN_STREAK_BONUS_EXP if ((streak + 1) % CHECKIN_STREAK_BONUS_DAYS == 0) else 0
-    return {
-        'today': today.isoformat(),
-        'admin_exempt': is_admin,
-        'already_checked': already_checked,
-        'last_checkin_date': last_date.isoformat() if last_date else None,
-        'streak': streak,
-        'experience_points': level_info['total_exp'],
-        'level': level_info['level'],
-        'level_label': '∞' if is_admin else f"Lv.{level_info['level']}",
-        'level_current_exp': level_info['level_current_exp'],
-        'level_next_exp': level_info['level_next_exp'],
-        'level_progress': level_info['level_progress'],
-        'next_reward': base_reward + bonus_reward,
-        'next_bonus_reward': bonus_reward,
-        'rule': {
-            'base': 2,
-            'max': 12,
-            'streak_bonus_days': CHECKIN_STREAK_BONUS_DAYS,
-            'streak_bonus_exp': CHECKIN_STREAK_BONUS_EXP,
-            'formula': f'连续签到第N天经验=MIN(12, N*2)，每连续{CHECKIN_STREAK_BONUS_DAYS}天额外+{CHECKIN_STREAK_BONUS_EXP}'
-        }
-    }
+    return _svc_build_checkin_status(
+        user,
+        calc_level_info,
+        checkin_exp_by_streak,
+        CHECKIN_STREAK_BONUS_DAYS,
+        CHECKIN_STREAK_BONUS_EXP,
+        today=_china_today()
+    )
 
 
 def _build_post_precheck(user, data):
