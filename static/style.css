@@ -1102,7 +1102,9 @@ body.page-motion.page-leaving {
     opacity: 0;
 }
 .timeline-cover-gallery .timeline-thumb-wrap .post-image-placeholder {
-    font-size: 1.2rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 .timeline-cover-gallery .timeline-thumb-wrap.has-image .post-image-placeholder {
     display: none;
@@ -1180,8 +1182,9 @@ body.page-motion.page-leaving {
     justify-content: center;
     line-height: 1;
     background: var(--bg-secondary);
-    color: var(--text-muted);
-    font-size: 2rem;
+    color: rgba(156, 163, 175, 0.72);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
     z-index: 1;
 }
 .post-image-wrap.has-image .post-image {
@@ -1191,10 +1194,17 @@ body.page-motion.page-leaving {
 .timeline-thumb-wrap.has-image .post-image-skeleton {
     opacity: 0;
 }
+.post-image-wrap.is-fallback .post-image-skeleton,
+.timeline-thumb-wrap.is-fallback .post-image-skeleton {
+    opacity: 0;
+}
 .post-image-wrap.has-image .post-image-placeholder {
     display: none;
 }
 .post-image-wrap.is-fallback .post-image-placeholder {
+    display: flex;
+}
+.timeline-thumb-wrap.is-fallback .post-image-placeholder {
     display: flex;
 }
 .post-image-placeholder.hidden {
@@ -1202,6 +1212,10 @@ body.page-motion.page-leaving {
     position: absolute;
     inset: 0;
     min-height: 0;
+}
+.post-image-wrap.is-fallback .post-image-placeholder,
+.timeline-thumb-wrap.is-fallback .post-image-placeholder {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
 }
 .post-card--web3 {
     border-color: var(--accent-gold);
@@ -1663,6 +1677,16 @@ textarea.form-input { min-height: 100px; resize: vertical; }
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.3rem 0;
+}
+.comment-thread-toggle-wrap {
+    margin-top: 0.45rem;
+}
+.comment-thread-toggle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+.comment-thread-group {
+    margin-top: 0.55rem;
 }
 .comments-more-wrap {
     display: flex;

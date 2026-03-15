@@ -1645,12 +1645,12 @@
 
             renderCover(imageUrl) {
                 if (!imageUrl) {
-                    return '<div class="post-image-wrap is-fallback"><div class="post-image-placeholder">📝</div></div>';
+                    return '<div class="post-image-wrap is-fallback"><div class="post-image-placeholder">暂无图片</div></div>';
                 }
                 const imgSrc = escapeAttr(imageUrl);
                 return `<div class="post-image-wrap">
                     <span class="post-image-skeleton" aria-hidden="true"></span>
-                    <div class="post-image-placeholder">📝</div>
+                    <div class="post-image-placeholder">加载中</div>
                     <img src="${imgSrc}" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image');this.parentElement.classList.remove('is-fallback')" onerror="this.remove();this.parentElement.classList.add('is-fallback')">
                 </div>`;
             },
@@ -1668,7 +1668,7 @@
                         : '';
                     return `<div class="timeline-thumb-wrap">
                         <span class="post-image-skeleton" aria-hidden="true"></span>
-                        <div class="post-image-placeholder">🖼️</div>
+                        <div class="post-image-placeholder">图片</div>
                         <img src="${safe}" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add('has-image')" onerror="this.remove();this.parentElement.classList.add('is-fallback')">
                         ${mask}
                     </div>`;

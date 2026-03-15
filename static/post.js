@@ -167,6 +167,9 @@
             var nick = author.nickname || '匿名';
             var created = c && c.created_at ? new Date(c.created_at).toLocaleString() : '';
             var replies = renderComments(c && c.replies, depth + 1);
+            var replyCount = Array.isArray(c && c.replies) ? c.replies.length : 0;
+            var collapseDeepReplies = depth >= 1 && replyCount > 0;
+            var replyThreadId = 'reply-thread-' + Number(c.id || 0) + '-' + depth;
             var margin = depth * 20;
             var border = depth > 0 ? '2px solid var(--border-color)' : 'none';
             var padding = depth > 0 ? '0.9rem' : '0';
@@ -178,7 +181,9 @@
                     '<button class="btn btn-ghost btn-sm" type="button" data-action="reply" data-parent-id="' + Number(c.id) + '" data-nickname="' + escapeAttr(nick) + '">↩ 回复</button>' +
                     '<button class="btn btn-ghost btn-sm" type="button" data-action="like-comment" data-comment-id="' + Number(c.id) + '">' + ((c && c.is_liked) ? '👍 已赞' : '👍 点赞') + ' (' + Number((c && c.likes_count) || 0) + ')</button>' +
                 '</div>' +
-                replies +
+                (collapseDeepReplies
+                    ? '<div class="comment-thread-toggle-wrap"><button class="btn btn-ghost btn-sm comment-thread-toggle" type="button" data-action="toggle-replies" data-target-id="' + replyThreadId + '" data-collapsed-label="展开 ' + replyCount + ' 条深层回复" data-expanded-label="收起深层回复" aria-expanded="false">展开 ' + replyCount + ' 条深层回复</button></div><div class="comment-thread-group" id="' + replyThreadId + '" hidden>' + replies + '</div>'
+                    : replies) +
                 '</div>'
             );
         }).join('');
@@ -510,6 +515,20 @@
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="like-comment"]'), function (btn) {
             btn.addEventListener('click', function () {
                 likeComment(btn.getAttribute('data-comment-id'));
+            });
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="toggle-replies"]'), function (btn) {
+            btn.addEventListener('click', function () {
+                var targetId = btn.getAttribute('data-target-id') || '';
+                if (!targetId) return;
+                var thread = document.getElementById(targetId);
+                if (!thread) return;
+                var nextHidden = !thread.hidden;
+                thread.hidden = nextHidden;
+                btn.setAttribute('aria-expanded', String(!nextHidden));
+                btn.textContent = nextHidden
+                    ? (btn.getAttribute('data-collapsed-label') || '展开回复')
+                    : (btn.getAttribute('data-expanded-label') || '收起回复');
             });
         });
     }
