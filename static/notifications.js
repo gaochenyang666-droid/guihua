@@ -5,11 +5,7 @@
     var body = document.getElementById('notificationsBody');
     var readAllBtn = document.getElementById('readAllBtn');
 
-    function authHeaders() {
-        var token = localStorage.getItem('token');
-        return token ? { 'Authorization': 'Bearer ' + token } : {};
-    }
-    var parseJsonSafe = window.parseJsonSafe;
+    var apiJson = window.apiJson;
 
     function typeText(n) {
         if (!n) return '';
@@ -29,9 +25,9 @@
 
     async function markRead(id, postId) {
         try {
-            await fetch(API_BASE + '/notifications/' + id + '/read', {
+            await apiJson(API_BASE + '/notifications/' + id + '/read', {
                 method: 'PUT',
-                headers: authHeaders()
+                fallback: {}
             });
             if (postId != null) {
                 var next = '/post/' + Number(postId);
@@ -47,12 +43,13 @@
 
     async function markAllRead() {
         try {
-            var res = await fetch(API_BASE + '/notifications/read_all', {
+            var result = await apiJson(API_BASE + '/notifications/read_all', {
                 method: 'PUT',
-                headers: authHeaders()
+                fallback: {}
             });
+            var res = result.res;
             if (!res.ok) {
-                var data = await parseJsonSafe(res, {});
+                var data = result.data;
                 throw new Error((data && data.error) || '操作失败');
             }
             if (window.Toast && Toast.success) Toast.success('已全部标记已读');
@@ -100,8 +97,12 @@
 
         body.textContent = '加载中...';
         try {
-            var res = await fetch(API_BASE + '/notifications', { headers: authHeaders() });
-            var data = await parseJsonSafe(res, {});
+            var result = await apiJson(API_BASE + '/notifications', {
+                fallback: {},
+                check401: false
+            });
+            var res = result.res;
+            var data = result.data;
             if (typeof handle401 === 'function' && handle401(res)) return;
             if (!res.ok) {
                 throw new Error((data && data.error) || '加载失败');

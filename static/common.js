@@ -79,31 +79,40 @@
     /**
      * 轻量请求层：自动带 token、parseJsonSafe、可选 401 与错误 Toast
      * @param {string} url
-     * @param {Object} opts - method, body, toastOnError, check401
+     * @param {Object} opts - method, body, toastOnError, check401, fallback, auth
      * @returns {Promise<{ res: Response, data: any }>}
      */
     window.apiJson = function (url, opts) {
         opts = opts || {};
-        var method = (opts.method || 'GET').toUpperCase();
-        var body = opts.body;
-        var headers = opts.headers || {};
+        var fetchOpts = {};
+        Object.keys(opts).forEach(function (key) {
+            if (key === 'toastOnError' || key === 'check401' || key === 'fallback' || key === 'auth') return;
+            fetchOpts[key] = opts[key];
+        });
+        var method = (fetchOpts.method || 'GET').toUpperCase();
+        var body = fetchOpts.body;
+        var headers = fetchOpts.headers || {};
         var token = null;
         try { token = localStorage.getItem('token'); } catch (e) {}
-        if (token) headers['Authorization'] = 'Bearer ' + token;
+        if (opts.auth !== false && token && !headers['Authorization']) headers['Authorization'] = 'Bearer ' + token;
         if (body !== undefined && body !== null) {
             headers['Content-Type'] = 'application/json';
             if (typeof body !== 'string') body = JSON.stringify(body);
         }
         var toastOnError = !!opts.toastOnError;
         var check401 = opts.check401 !== false;
-        return fetch(url, { method: method, headers: headers, body: body }).then(function (res) {
+        var fallback = Object.prototype.hasOwnProperty.call(opts, 'fallback') ? opts.fallback : {};
+        fetchOpts.method = method;
+        fetchOpts.headers = headers;
+        fetchOpts.body = body;
+        return fetch(url, fetchOpts).then(function (res) {
             if (check401 && res.status === 401 && typeof window.handle401 === 'function' && window.handle401(res)) {
                 var err = new Error('登录已失效');
                 err.code = 'AUTH_401';
                 err.response = res;
                 throw err;
             }
-            return window.parseJsonSafe(res, {}).then(function (data) {
+            return window.parseJsonSafe(res, fallback).then(function (data) {
                 if (toastOnError && !res.ok && window.Toast && window.Toast.error) {
                     window.Toast.error((data && data.error) || '请求失败');
                 }

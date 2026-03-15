@@ -2,7 +2,7 @@
     'use strict';
 
     const API_BASE = window.location.origin + '/api';
-    const parseJsonSafe = window.parseJsonSafe;
+    const apiJson = window.apiJson;
 
     function getSafeNextPath() {
         const params = new URLSearchParams(window.location.search || '');
@@ -98,8 +98,8 @@
         let walletConnectEnabled = false;
         let walletConnectSub = '扫码登录（手机钱包）';
         try {
-            const cfgRes = await fetch(API_BASE + '/config/public');
-            const cfg = await parseJsonSafe(cfgRes, {});
+            const cfgResult = await apiJson(API_BASE + '/config/public', { auth: false, fallback: {} });
+            const cfg = cfgResult.data;
             const projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
             walletConnectEnabled = !!(projectId && window.UniversalProvider);
             if (!projectId) walletConnectSub = '站点暂未配置 WalletConnect';
@@ -130,19 +130,25 @@
     }
 
     async function verifyAddressLogin(address, provider) {
-        const nonceRes = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
-        const nonceData = await parseJsonSafe(nonceRes, {});
+        const nonceResult = await apiJson(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address), {
+            auth: false,
+            fallback: {}
+        });
+        const nonceRes = nonceResult.res;
+        const nonceData = nonceResult.data;
         if (!nonceRes.ok || !nonceData.nonce) {
             throw new Error((nonceData && nonceData.error) || '获取签名挑战失败');
         }
         const message = 'Sign this message to login to ' + window.location.host + ': ' + nonceData.nonce;
         const signature = await requestPersonalSign(provider, address, message);
-        const verifyRes = await fetch(API_BASE + '/auth/verify', {
+        const verifyResult = await apiJson(API_BASE + '/auth/verify', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: address, signature: signature, message: message })
+            body: { address: address, signature: signature, message: message },
+            auth: false,
+            fallback: {}
         });
-        const verifyData = await parseJsonSafe(verifyRes, {});
+        const verifyRes = verifyResult.res;
+        const verifyData = verifyResult.data;
         if (!verifyRes.ok || !verifyData.token) {
             throw new Error((verifyData && verifyData.error) || '钱包登录失败');
         }
@@ -171,8 +177,8 @@
 
     async function loginWithWalletConnect(qrContainerId) {
         try {
-            const cfgRes = await fetch(API_BASE + '/config/public');
-            const cfg = await parseJsonSafe(cfgRes, {});
+            const cfgResult = await apiJson(API_BASE + '/config/public', { auth: false, fallback: {} });
+            const cfg = cfgResult.data;
             const projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
             if (!projectId) throw new Error('WalletConnect 未配置');
             const UC = window.UniversalProvider && (window.UniversalProvider.UniversalProvider || window.UniversalProvider);
@@ -306,12 +312,14 @@
             const username = (document.getElementById('loginUsername').value || '').trim();
             const password = (document.getElementById('loginPassword').value || '');
             try {
-                const res = await fetch(API_BASE + '/auth/web2/login', {
+                const result = await apiJson(API_BASE + '/auth/web2/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: username, password: password })
+                    body: { username: username, password: password },
+                    auth: false,
+                    fallback: {}
                 });
-                const data = await parseJsonSafe(res, {});
+                const res = result.res;
+                const data = result.data;
                 if (!res.ok || !saveLogin(data)) {
                     Toast.error((data && data.error) || '登录失败');
                     return;
@@ -346,12 +354,14 @@
                 return;
             }
             try {
-                const res = await fetch(API_BASE + '/auth/web2/register', {
+                const result = await apiJson(API_BASE + '/auth/web2/register', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: username, password: password })
+                    body: { username: username, password: password },
+                    auth: false,
+                    fallback: {}
                 });
-                const data = await parseJsonSafe(res, {});
+                const res = result.res;
+                const data = result.data;
                 if (!res.ok || !saveLogin(data)) {
                     Toast.error((data && data.error) || '注册失败');
                     return;
@@ -387,16 +397,18 @@
                 return;
             }
             try {
-                const res = await fetch(API_BASE + '/auth/web2/change-password', {
+                const result = await apiJson(API_BASE + '/auth/web2/change-password', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                    body: {
                         username: username,
                         old_password: oldPassword,
                         new_password: newPassword
-                    })
+                    },
+                    auth: false,
+                    fallback: {}
                 });
-                const data = await parseJsonSafe(res, {});
+                const res = result.res;
+                const data = result.data;
                 if (!res.ok) {
                     Toast.error((data && data.error) || '修改失败');
                     return;
@@ -414,9 +426,12 @@
         const token = localStorage.getItem('token');
         if (token) {
             try {
-                const res = await fetch(API_BASE + '/user/me', {
-                    headers: { 'Authorization': 'Bearer ' + token }
+                const result = await apiJson(API_BASE + '/user/me', {
+                    headers: { 'Authorization': 'Bearer ' + token },
+                    check401: false,
+                    fallback: {}
                 });
+                const res = result.res;
                 if (res.ok) {
                     Toast.info('你已登录，正在进入页面...');
                     setTimeout(goAfterLogin, 120);

@@ -5,7 +5,6 @@
         var API_BASE = deps.API_BASE;
         var getCurrentUser = deps.getCurrentUser;
         var fetchJsonSafe = deps.fetchJsonSafe;
-        var parseJsonSafe = deps.parseJsonSafe;
         var Modal = deps.Modal;
         var navigateWithTransition = deps.navigateWithTransition;
         var apiJson = window.apiJson;
@@ -69,8 +68,9 @@
         var SiteNotice = {
             async load() {
                 try {
-                    var res = await fetch(API_BASE + '/announcements/active');
-                    var data = await parseJsonSafe(res, {});
+                    var result = await apiJson(API_BASE + '/announcements/active', { auth: false, fallback: {} });
+                    var res = result.res;
+                    var data = result.data;
                     var bar = document.getElementById('siteAnnouncementBar');
                     var titleEl = document.getElementById('siteAnnouncementTitle');
                     var contentEl = document.getElementById('siteAnnouncementContent');

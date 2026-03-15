@@ -4,7 +4,6 @@
     window.GHModalInteractFactory = function GHModalInteractFactory(deps) {
         var API_BASE = deps.API_BASE;
         var getCurrentUser = deps.getCurrentUser;
-        var parseJsonSafe = deps.parseJsonSafe;
         var Toast = deps.Toast;
         var detailScrollStore = deps.detailScrollStore;
         var navigateWithTransition = deps.navigateWithTransition;
@@ -167,8 +166,12 @@
                     var provider = await ensureWalletProvider(tipAuthorWallet);
                     if (!provider) return;
                     var web3 = new Web3(provider);
-                    var cRes = await fetch(API_BASE + '/config/fees');
-                    var config = await parseJsonSafe(cRes, {});
+                    var configResult = await apiJson(API_BASE + '/config/fees', {
+                        auth: false,
+                        fallback: {}
+                    });
+                    var cRes = configResult.res;
+                    var config = configResult.data;
                     if (!cRes.ok || !config.usdt_contract) {
                         Toast.error('无法获取 USDT 合约配置');
                         return;
@@ -217,8 +220,13 @@
                 forceRefresh = !!forceRefresh;
                 if (!forceRefresh && this.cachedConfig) return this.cachedConfig;
                 try {
-                    var r = await fetch(API_BASE + '/config/fees', { cache: 'no-store' });
-                    var c = await parseJsonSafe(r, {});
+                    var result = await apiJson(API_BASE + '/config/fees', {
+                        cache: 'no-store',
+                        auth: false,
+                        fallback: {}
+                    });
+                    var r = result.res;
+                    var c = result.data;
                     if (!r.ok) return null;
                     this.cachedConfig = c;
                     return c;
@@ -321,12 +329,13 @@
                     return;
                 }
                 try {
-                    var res = await fetch(API_BASE + '/reports', {
+                    var result = await apiJson(API_BASE + '/reports', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-                        body: JSON.stringify({ post_id: postId, reason: reason.trim() })
+                        body: { post_id: postId, reason: reason.trim() },
+                        fallback: {}
                     });
-                    var data = await parseJsonSafe(res, {});
+                    var res = result.res;
+                    var data = result.data;
                     if (res.ok) Toast.success(data.message || '举报已提交');
                     else Toast.error(data.error || '提交失败');
                 } catch (_) {

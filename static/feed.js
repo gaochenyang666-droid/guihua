@@ -3,13 +3,13 @@
 
     window.GHFeedFactory = function GHFeedFactory(deps) {
         var API_BASE = deps.API_BASE;
-        var parseJsonSafe = deps.parseJsonSafe;
         var stripHtml = deps.stripHtml;
         var escapeAttr = deps.escapeAttr;
         var prefersReducedMotionUi = deps.prefersReducedMotionUi;
         var Modal = deps.Modal;
         var getUI = deps.getUI;
         var getCurrentUser = deps.getCurrentUser;
+        var apiJson = window.apiJson;
 
         var feedUi = {
             expandedPostIds: new Set(),
@@ -270,8 +270,9 @@
             },
             async loadPinnedGuide() {
                 try {
-                    var res = await fetch(API_BASE + '/posts/pinned');
-                    var data = await parseJsonSafe(res, {});
+                    var result = await apiJson(API_BASE + '/posts/pinned', { fallback: {}, auth: false });
+                    var res = result.res;
+                    var data = result.data;
                     var banner = document.getElementById('pinnedGuideBanner');
                     var titleEl = document.getElementById('pinnedGuideTitle');
                     var previewEl = document.getElementById('pinnedGuidePreview');
@@ -340,13 +341,15 @@
                     if (this.currentFilters.to_date) qParams.append('to_date', this.currentFilters.to_date);
                     if (this.currentFilters.permanent_only) qParams.append('permanent_only', '1');
                     if (this.currentFilters.tags) qParams.append('tags', this.currentFilters.tags);
-                    var headers = {};
-                    var token = localStorage.getItem('token');
-                    if (token) headers.Authorization = 'Bearer ' + token;
                     var endpoint = API_BASE + '/posts';
                     if (this.currentQuery || this.hasAdvancedFilters()) endpoint = API_BASE + '/search';
-                    var res = await fetch(endpoint + '?' + qParams.toString(), { headers: headers });
-                    var data = await parseJsonSafe(res, {});
+                    var token = localStorage.getItem('token');
+                    var result = await apiJson(endpoint + '?' + qParams.toString(), {
+                        fallback: {},
+                        auth: !!token
+                    });
+                    var res = result.res;
+                    var data = result.data;
                     if (!res.ok) {
                         var msg = (data && data.error) || (res.status >= 500 ? '服务暂时不可用，请稍后重试' : ('请求失败(' + res.status + ')'));
                         throw new Error(msg);
@@ -418,20 +421,17 @@
                 if (!getCurrentUser()) return Modal.open('loginModal');
                 var content = prompt('转发附言:');
                 if (content === null) return;
-                var res = await fetch(API_BASE + '/posts/' + id + '/repost', {
+                var result = await apiJson(API_BASE + '/posts/' + id + '/repost', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + localStorage.getItem('token')
-                    },
-                    body: JSON.stringify({ content: content })
+                    body: { content: content },
+                    fallback: {}
                 });
+                var res = result.res;
                 if (res.ok) {
                     if (window.Toast && Toast.success) Toast.success('转发成功');
                     this.load();
                 } else {
-                    var data = await parseJsonSafe(res, {});
-                    if (window.Toast && Toast.error) Toast.error(data.error || '转发失败');
+                    if (window.Toast && Toast.error) Toast.error((result.data && result.data.error) || '转发失败');
                 }
             }
         };

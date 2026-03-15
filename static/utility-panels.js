@@ -6,7 +6,7 @@
         var getCurrentUser = deps.getCurrentUser;
         var Toast = deps.Toast;
         var Modal = deps.Modal;
-        var parseJsonSafe = deps.parseJsonSafe;
+        var apiJson = window.apiJson;
 
         var Onboarding = {
             dismissedInMemory: false,
@@ -126,11 +126,12 @@
                         this.hideCard();
                         return;
                     }
-                    var res = await fetch(API_BASE + '/onboarding/tasks', {
-                        headers: { 'Authorization': 'Bearer ' + token },
-                        cache: 'no-store'
+                    var result = await apiJson(API_BASE + '/onboarding/tasks', {
+                        cache: 'no-store',
+                        fallback: {}
                     });
-                    var data = await parseJsonSafe(res, {});
+                    var res = result.res;
+                    var data = result.data;
                     if (res.status === 401) {
                         this.hideCard();
                         return;
@@ -239,11 +240,12 @@
                         this.hideCard();
                         return;
                     }
-                    var res = await fetch(API_BASE + '/checkin/status', {
-                        headers: { 'Authorization': 'Bearer ' + token },
-                        cache: 'no-store'
+                    var result = await apiJson(API_BASE + '/checkin/status', {
+                        cache: 'no-store',
+                        fallback: {}
                     });
-                    var data = await parseJsonSafe(res, {});
+                    var res = result.res;
+                    var data = result.data;
                     if (!res.ok) {
                         this.hideCard();
                         return;
@@ -265,11 +267,12 @@
                     btn.textContent = '签到中...';
                 }
                 try {
-                    var res = await fetch(API_BASE + '/checkin', {
+                    var result = await apiJson(API_BASE + '/checkin', {
                         method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                        fallback: {}
                     });
-                    var data = await parseJsonSafe(res, {});
+                    var res = result.res;
+                    var data = result.data;
                     if (!res.ok) {
                         if (btn) btn.disabled = false;
                         Toast.error(data.error || '签到失败');
@@ -339,11 +342,12 @@
                         this.hideCard();
                         return;
                     }
-                    var res = await fetch(API_BASE + '/group-links', {
-                        headers: { 'Authorization': 'Bearer ' + token },
-                        cache: 'no-store'
+                    var result = await apiJson(API_BASE + '/group-links', {
+                        cache: 'no-store',
+                        fallback: {}
                     });
-                    var data = await parseJsonSafe(res, {});
+                    var res = result.res;
+                    var data = result.data;
                     if (!res.ok) {
                         this.hideCard();
                         return;

@@ -5,7 +5,6 @@
         var API_BASE = deps.API_BASE;
         var getCurrentUser = deps.getCurrentUser;
         var setCurrentUser = deps.setCurrentUser;
-        var parseJsonSafe = deps.parseJsonSafe;
         var fetchJsonSafe = deps.fetchJsonSafe;
         var handle401 = deps.handle401;
         var Toast = deps.Toast;
@@ -19,6 +18,7 @@
         var Notification = deps.Notification;
         var copyTextWithFallback = deps.copyTextWithFallback;
         var navigateWithTransition = deps.navigateWithTransition;
+        var apiJson = window.apiJson;
 
         return {
             async init() {
@@ -59,11 +59,10 @@
 
             async fetchMe() {
                 try {
-                    var res = await fetch(API_BASE + '/user/me', {
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-                    });
+                    var result = await apiJson(API_BASE + '/user/me', { fallback: {}, check401: false });
+                    var res = result.res;
                     if (handle401(res)) return;
-                    if (res.ok) setCurrentUser(await parseJsonSafe(res, {}));
+                    if (res.ok) setCurrentUser(result.data);
                     else this.logout();
                 } catch (_) {}
             },
@@ -76,14 +75,13 @@
                 if (reg) reg.style.display = (mode === 'register') ? 'block' : 'none';
                 if (cp) cp.style.display = (mode === 'changePassword') ? 'block' : 'none';
             },
-
-            async parseJsonSafe(res) {
-                return parseJsonSafe(res, {});
-            },
-
             async fetchNonceForAddress(address) {
-                var nonceRes = await fetch(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address));
-                var nonceData = await this.parseJsonSafe(nonceRes);
+                var nonceResult = await apiJson(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address), {
+                    auth: false,
+                    fallback: {}
+                });
+                var nonceRes = nonceResult.res;
+                var nonceData = nonceResult.data;
                 if (!nonceRes.ok || !nonceData || !nonceData.nonce) {
                     throw new Error((nonceData && nonceData.error) || '获取签名消息失败，请重试');
                 }
@@ -165,12 +163,14 @@
                     var message = 'Sign this message to login to ' + location.host + ': ' + nonce;
                     var signature = await this.requestPersonalSign(provider, address, message);
                     if (!signature) throw new Error('签名结果为空，请重试');
-                    var verifyRes = await fetch(API_BASE + '/auth/verify', {
+                    var verifyResult = await apiJson(API_BASE + '/auth/verify', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ address: address, signature: signature, message: message })
+                        body: { address: address, signature: signature, message: message },
+                        auth: false,
+                        fallback: {}
                     });
-                    var verifyData = await this.parseJsonSafe(verifyRes);
+                    var verifyRes = verifyResult.res;
+                    var verifyData = verifyResult.data;
                     if (!verifyRes.ok) throw new Error((verifyData && verifyData.error) || '验证失败，请稍后重试');
                     if (!verifyData || !verifyData.token) throw new Error('服务返回异常，请稍后重试');
                     this.success(verifyData);
@@ -191,8 +191,8 @@
                 var walletConnectEnabled = false;
                 var walletConnectSub = '扫码登录（手机钱包）';
                 try {
-                    var cfgRes = await fetch(API_BASE + '/config/public');
-                    var cfg = await this.parseJsonSafe(cfgRes);
+                    var cfgResult = await apiJson(API_BASE + '/config/public', { auth: false, fallback: {} });
+                    var cfg = cfgResult.data;
                     var projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
                     walletConnectEnabled = !!(projectId && window.UniversalProvider);
                     if (!projectId) walletConnectSub = '站点暂未配置 WalletConnect';
@@ -279,8 +279,8 @@
 
             async loginWithWalletConnect(qrContainerId) {
                 try {
-                    var cfgRes = await fetch(API_BASE + '/config/public');
-                    var cfg = await this.parseJsonSafe(cfgRes);
+                    var cfgResult = await apiJson(API_BASE + '/config/public', { auth: false, fallback: {} });
+                    var cfg = cfgResult.data;
                     var projectId = cfg && cfg.walletconnect_project_id ? cfg.walletconnect_project_id.trim() : '';
                     if (!projectId) throw new Error('WalletConnect 未配置');
                     var UC = window.UniversalProvider && (window.UniversalProvider.UniversalProvider || window.UniversalProvider);
@@ -382,12 +382,14 @@
                 if (!username) return Toast.error('请填写用户名');
                 if (!password) return Toast.error('请填写密码');
                 if (password.length < 6) return Toast.error('密码至少 6 位');
-                var res = await fetch(API_BASE + '/auth/web2/register', {
+                var result = await apiJson(API_BASE + '/auth/web2/register', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: username, password: password })
+                    body: { username: username, password: password },
+                    auth: false,
+                    fallback: {}
                 });
-                var data = await parseJsonSafe(res, {});
+                var res = result.res;
+                var data = result.data;
                 if (res.ok) this.success(data);
                 else Toast.error(data.error || '注册失败');
             },

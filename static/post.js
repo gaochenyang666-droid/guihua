@@ -19,19 +19,11 @@
     var INITIAL_COMMENT_BATCH = 6;
     var COMMENT_BATCH_SIZE = 6;
 
-    var parseJsonSafe = window.parseJsonSafe;
+    var apiJson = window.apiJson;
     var escapeAttr = window.escapeAttr;
     var mentionifyText = window.mentionifyText;
     var equippedTitleByKey = window.equippedTitleByKey;
     var renderAuthorBadge = window.renderAuthorBadge;
-
-    function authHeaders(withJson) {
-        var token = localStorage.getItem('token');
-        var h = {};
-        if (withJson) h['Content-Type'] = 'application/json';
-        if (token) h['Authorization'] = 'Bearer ' + token;
-        return h;
-    }
 
     function toastError(msg) {
         if (window.Toast && Toast.error) Toast.error(msg || '操作失败');
@@ -39,6 +31,11 @@
 
     function toastSuccess(msg) {
         if (window.Toast && Toast.success) Toast.success(msg || '操作成功');
+    }
+
+    async function requestJson(url, opts) {
+        opts = opts || {};
+        return apiJson(url, Object.assign({ fallback: {} }, opts));
     }
 
     function getShareUrl() {
@@ -104,8 +101,11 @@
             return;
         }
         try {
-            var res = await fetch(API_BASE + '/user/me', { headers: authHeaders(false) });
-            var data = await parseJsonSafe(res, {});
+            var result = await requestJson(API_BASE + '/user/me', {
+                check401: false
+            });
+            var res = result.res;
+            var data = result.data;
             if (!res.ok) {
                 if (typeof handle401 === 'function' && handle401(res)) return;
                 currentUser = null;
@@ -441,19 +441,18 @@
         currentPost.comments.unshift(comment);
     }
 
-    async function doPost(url, payload) {
-        var opts = {
+    async function doPost(url, payload, extraOpts) {
+        return requestJson(url, Object.assign({
             method: 'POST',
-            headers: authHeaders(!!payload)
-        };
-        if (payload) opts.body = JSON.stringify(payload);
-        return fetch(url, opts);
+            body: payload
+        }, extraOpts || {}));
     }
 
     async function likePost() {
         if (!requireLogin()) return;
-        var res = await doPost(API_BASE + '/posts/' + postId + '/like');
-        var data = await parseJsonSafe(res, {});
+        var result = await doPost(API_BASE + '/posts/' + postId + '/like');
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError((data && (data.error || data.message)) || '操作失败');
             return;
@@ -465,8 +464,9 @@
 
     async function bookmarkPost() {
         if (!requireLogin()) return;
-        var res = await doPost(API_BASE + '/posts/' + postId + '/bookmark');
-        var data = await parseJsonSafe(res, {});
+        var result = await doPost(API_BASE + '/posts/' + postId + '/bookmark');
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError((data && (data.error || data.message)) || '操作失败');
             return;
@@ -483,8 +483,9 @@
             toastError('原因最多500字');
             return;
         }
-        var res = await doPost(API_BASE + '/reports', { post_id: postId, reason: reason.trim() });
-        var data = await parseJsonSafe(res, {});
+        var result = await doPost(API_BASE + '/reports', { post_id: postId, reason: reason.trim() });
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError(data.error || '举报失败');
             return;
@@ -510,8 +511,9 @@
         if (submitBtn) submitBtn.disabled = true;
         var payload = { content: content };
         if (replyParentId) payload.parent_id = replyParentId;
-        var res = await doPost(API_BASE + '/posts/' + postId + '/comments', payload);
-        var data = await parseJsonSafe(res, {});
+        var result = await doPost(API_BASE + '/posts/' + postId + '/comments', payload);
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             input.disabled = false;
             if (submitBtn) submitBtn.disabled = false;
@@ -534,8 +536,9 @@
         if (!requireLogin()) return;
         var cid = Number(commentId);
         if (!Number.isFinite(cid) || cid <= 0) return;
-        var res = await doPost(API_BASE + '/comments/' + cid + '/like');
-        var data = await parseJsonSafe(res, {});
+        var result = await doPost(API_BASE + '/comments/' + cid + '/like');
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError(data.error || '操作失败');
             return;
@@ -572,11 +575,12 @@
     async function adminDeletePost() {
         if (!currentUser || !currentUser.is_admin) return;
         if (!confirm('确定要删除这个帖子吗？此操作不可逆。')) return;
-        var res = await fetch(API_BASE + '/posts/' + postId, {
+        var result = await requestJson(API_BASE + '/posts/' + postId, {
             method: 'DELETE',
-            headers: authHeaders(false)
+            check401: false
         });
-        var data = await parseJsonSafe(res, {});
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError(data.error || '删除失败');
             return;
@@ -588,8 +592,9 @@
 
     async function adminToggleHide() {
         if (!currentUser || !currentUser.is_admin) return;
-        var res = await doPost(API_BASE + '/admin/posts/' + postId + '/hide');
-        var data = await parseJsonSafe(res, {});
+        var result = await doPost(API_BASE + '/admin/posts/' + postId + '/hide');
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError(data.error || '操作失败');
             return;
@@ -600,8 +605,9 @@
 
     async function adminToggleComments() {
         if (!currentUser || !currentUser.is_admin) return;
-        var res = await doPost(API_BASE + '/admin/posts/' + postId + '/toggle-comments');
-        var data = await parseJsonSafe(res, {});
+        var result = await doPost(API_BASE + '/admin/posts/' + postId + '/toggle-comments');
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError(data.error || '操作失败');
             return;
@@ -613,11 +619,12 @@
     async function adminTogglePin() {
         if (!currentUser || !currentUser.is_admin || !currentPost) return;
         var nextPinned = !currentPost.is_pinned;
-        var res = await doPost(API_BASE + '/admin/posts/' + postId + '/pin', {
+        var result = await doPost(API_BASE + '/admin/posts/' + postId + '/pin', {
             pinned: nextPinned,
             exclusive: true
         });
-        var data = await parseJsonSafe(res, {});
+        var res = result.res;
+        var data = result.data;
         if (!res.ok) {
             toastError(data.error || '操作失败');
             return;
@@ -841,8 +848,11 @@
         body.classList.remove('is-entering');
         body.innerHTML = renderPostLoadingShell();
         try {
-            var res = await fetch(API_BASE + '/posts/' + postId, { headers: authHeaders(false) });
-            var data = await parseJsonSafe(res, {});
+            var result = await requestJson(API_BASE + '/posts/' + postId, {
+                check401: false
+            });
+            var res = result.res;
+            var data = result.data;
             if (typeof handle401 === 'function' && handle401(res)) return;
             if (!res.ok) {
                 throw new Error((data && data.error) || '加载失败');

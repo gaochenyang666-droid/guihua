@@ -23,14 +23,12 @@
             const fallback = Object.prototype.hasOwnProperty.call(conf, 'fallback') ? conf.fallback : {};
             const errorMessage = conf.errorMessage || '请求失败';
             const checkUnauthorized = !!conf.checkUnauthorized;
-            const res = await fetch(url, options);
-            if (checkUnauthorized && typeof handle401 === 'function' && handle401(res)) {
-                const e = new Error('登录状态已失效');
-                e.code = 'AUTH_401';
-                e.response = res;
-                throw e;
-            }
-            const data = await parseJsonSafe(res, fallback);
+            const result = await window.apiJson(url, Object.assign({}, options, {
+                fallback,
+                check401: checkUnauthorized
+            }));
+            const res = result.res;
+            const data = result.data;
             if (conf.throwOnNotOk && !res.ok) {
                 const e = new Error((data && data.error) || `${errorMessage}(${res.status})`);
                 e.status = res.status;
@@ -302,7 +300,6 @@
         const modalInteractModule = window.GHModalInteractFactory({
             API_BASE,
             getCurrentUser,
-            parseJsonSafe,
             Toast,
             detailScrollStore,
             navigateWithTransition,
@@ -323,7 +320,6 @@
             API_BASE,
             getCurrentUser,
             fetchJsonSafe,
-            parseJsonSafe,
             Modal,
             navigateWithTransition
         });
@@ -338,8 +334,7 @@
             API_BASE,
             getCurrentUser,
             Toast,
-            Modal,
-            parseJsonSafe
+            Modal
         });
         Onboarding = utilityModule.Onboarding;
         Checkin = utilityModule.Checkin;
@@ -363,7 +358,6 @@
 
         const feedModule = window.GHFeedFactory({
             API_BASE,
-            parseJsonSafe,
             stripHtml,
             escapeAttr,
             prefersReducedMotionUi,
@@ -378,7 +372,6 @@
             API_BASE,
             getCurrentUser,
             setCurrentUser,
-            parseJsonSafe,
             fetchJsonSafe,
             handle401,
             Toast,

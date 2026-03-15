@@ -6,7 +6,7 @@
     var noticeType = (root && root.getAttribute('data-notice-type')) || 'announcement';
     if (noticeType !== 'activity') noticeType = 'announcement';
     var body = document.getElementById('noticeListBody');
-    var parseJsonSafe = window.parseJsonSafe;
+    var apiJson = window.apiJson;
 
     function renderItems(items) {
         if (!body) return;
@@ -35,8 +35,12 @@
                 page: '1',
                 per_page: '50'
             });
-            var res = await fetch(API_BASE + '/announcements?' + qs.toString());
-            var data = await parseJsonSafe(res, {});
+            var result = await apiJson(API_BASE + '/announcements?' + qs.toString(), {
+                auth: false,
+                fallback: {}
+            });
+            var res = result.res;
+            var data = result.data;
             if (!res.ok) {
                 throw new Error((data && data.error) || '加载失败');
             }
