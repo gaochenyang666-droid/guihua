@@ -215,6 +215,14 @@ from services.posts_logic import (
     series_can_view as _svc_series_can_view,
     series_can_edit as _svc_series_can_edit,
 )
+from services.app_support import (
+    parse_iso_datetime as _svc_parse_iso_datetime,
+    humanize_verify_error as _svc_humanize_verify_error,
+    is_post_permanent as _svc_is_post_permanent,
+    tip_amount_to_usdt_str as _svc_tip_amount_to_usdt_str,
+    compute_asset_version as _svc_compute_asset_version,
+    load_text_file as _svc_load_text_file,
+)
 
 
 def _new_user(**kwargs):
@@ -336,22 +344,10 @@ def _build_achievements_for_user(user):
 
 def _compute_asset_version():
     """Static asset version for cache-busting on CDN/browser."""
-    override = (os.environ.get('ASSET_VERSION') or '').strip()
-    if override:
-        return override
-    candidates = [
-        os.path.join(basedir, 'static', 'style.css'),
-        os.path.join(basedir, 'static', 'common.js'),
-        os.path.join(basedir, 'static', 'toast.js'),
-        os.path.join(basedir, 'static', 'index.js'),
-    ]
-    latest_mtime = 0
-    for path in candidates:
-        try:
-            latest_mtime = max(latest_mtime, int(os.path.getmtime(path)))
-        except Exception:
-            continue
-    return str(latest_mtime or int(time.time()))
+    return _svc_compute_asset_version(
+        basedir,
+        override=(os.environ.get('ASSET_VERSION') or '').strip()
+    )
 
 
 _ASSET_VERSION = _compute_asset_version()
@@ -931,51 +927,11 @@ def _log_admin_action(action, target_type=None, target_id=None, details=None):
 
 
 def _parse_iso_datetime(value):
-    if not value:
-        return None
-    try:
-        v = str(value).strip()
-        if v.endswith('Z'):
-            v = v[:-1] + '+00:00'
-        dt = datetime.fromisoformat(v)
-        # 统一转为 UTC naive，避免与 DB 中 naive UTC 时间比较时报 tz-aware 异常。
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        return dt
-    except Exception:
-        return None
+    return _svc_parse_iso_datetime(value)
 
 
 def _humanize_verify_error(message):
-    raw = (message or '').strip()
-    if not raw:
-        return '链上校验失败，请稍后重试'
-    low = raw.lower()
-    if 'invalid transaction hash format' in low:
-        return '交易哈希格式不正确'
-    if 'transaction hash already used' in low:
-        return '该交易哈希已被使用'
-    if 'transaction not found on chain' in low:
-        return '链上未找到该交易，请稍后重试'
-    if 'transaction needs at least' in low:
-        return '交易确认中，请稍后重试'
-    if 'transaction failed on chain' in low:
-        return '链上交易执行失败'
-    if 'sender mismatch' in low:
-        return '付款钱包与当前登录钱包不一致'
-    if 'not a usdt transfer to platform' in low:
-        return '未检测到向目标地址的 USDT 转账'
-    if 'insufficient usdt' in low or 'insufficient fee' in low:
-        return '支付金额不足'
-    if 'incorrect recipient' in low:
-        return '收款地址不正确'
-    if 'platform receive address not configured' in low:
-        return '平台收款地址未配置'
-    if 'user address not bound' in low:
-        return '当前账号未绑定钱包地址'
-    if 'verification process failed' in low or 'could not get latest block' in low:
-        return '链上校验失败，请稍后重试'
-    return raw
+    return _svc_humanize_verify_error(message)
 
 
 def _china_today():
@@ -1002,13 +958,7 @@ def _normalize_tags(raw):
 
 
 def _is_post_permanent(post_obj):
-    if not post_obj:
-        return False
-    tx_hash = getattr(post_obj, 'tx_hash', None)
-    ipfs_cid = getattr(post_obj, 'ipfs_cid', None)
-    is_on_chain = bool(getattr(post_obj, 'is_on_chain', False))
-    post_type = int(getattr(post_obj, 'post_type', 0) or 0)
-    return bool(tx_hash or ipfs_cid or is_on_chain or post_type == 1)
+    return _svc_is_post_permanent(post_obj)
 
 
 def _extract_mention_tokens(text_value):
@@ -2145,11 +2095,7 @@ TIP_MIN_USDT_RAW = 10 ** USDT_DECIMALS
 
 
 def _tip_amount_to_usdt_str(raw_amount):
-    try:
-        val = int(raw_amount or 0)
-    except Exception:
-        val = 0
-    return round(val / float(10 ** app.config['BSC']['USDT_DECIMALS']), 4)
+    return _svc_tip_amount_to_usdt_str(raw_amount, app.config['BSC']['USDT_DECIMALS'])
 
 
 @app.route('/api/users/<int:user_id>/tips-received', methods=['GET'])
@@ -2660,14 +2606,10 @@ def update_report(report_id):
 
 def _load_seed_article_content():
     path = app.config.get('SEED_ARTICLE_PATH')
-    if not path:
-        return ''
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return f.read().strip()
-    except Exception as e:
-        print(f"Init DB: failed to load seed article content: {e}")
-        return ''
+    content = _svc_load_text_file(path)
+    if not content and path:
+        print("Init DB: failed to load seed article content")
+    return content
 
 
 def _ensure_bootstrap_admin():
