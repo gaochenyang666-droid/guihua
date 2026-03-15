@@ -12,6 +12,8 @@
     var replyDraftText = '';
     var commentsRenderToken = 0;
     var visibleCommentCount = 0;
+    var commentSortMode = 'latest';
+    var showAuthorCommentsOnly = false;
     var INITIAL_COMMENT_BATCH = 6;
     var COMMENT_BATCH_SIZE = 6;
 
@@ -232,20 +234,79 @@
     }
 
     function resetCommentVisibility(post) {
-        var total = Array.isArray(post && post.comments) ? post.comments.length : 0;
+        var total = getProcessedComments(post).length;
         visibleCommentCount = Math.min(INITIAL_COMMENT_BATCH, total);
     }
 
-    function renderVisibleComments(post) {
+    function isPostAuthor(user) {
+        if (!currentPost || !currentPost.author || !user) return false;
+        var postAuthor = currentPost.author || {};
+        if (postAuthor.id != null && user.id != null && Number(postAuthor.id) === Number(user.id)) return true;
+        if (postAuthor.username && user.username && String(postAuthor.username) === String(user.username)) return true;
+        return false;
+    }
+
+    function getCommentTimestamp(comment) {
+        if (!comment || !comment.created_at) return 0;
+        var ts = new Date(comment.created_at).getTime();
+        return Number.isFinite(ts) ? ts : 0;
+    }
+
+    function compareComments(a, b) {
+        var mode = commentSortMode === 'hot' ? 'hot' : 'latest';
+        if (mode === 'hot') {
+            var hotDiff = Number((b && b.likes_count) || 0) - Number((a && a.likes_count) || 0);
+            if (hotDiff !== 0) return hotDiff;
+        }
+        return getCommentTimestamp(b) - getCommentTimestamp(a);
+    }
+
+    function buildProcessedComment(comment) {
+        if (!comment) return null;
+        var sourceReplies = Array.isArray(comment.replies) ? comment.replies : [];
+        var nextReplies = sourceReplies
+            .map(buildProcessedComment)
+            .filter(Boolean)
+            .sort(compareComments);
+        var authorMatch = isPostAuthor(comment.author || {});
+        if (showAuthorCommentsOnly && !authorMatch && !nextReplies.length) return null;
+        return Object.assign({}, comment, { replies: nextReplies });
+    }
+
+    function getProcessedComments(post) {
         var list = Array.isArray(post && post.comments) ? post.comments : [];
+        return list
+            .map(buildProcessedComment)
+            .filter(Boolean)
+            .sort(compareComments);
+    }
+
+    function renderVisibleComments(post) {
+        var list = getProcessedComments(post);
         var visible = list.slice(0, visibleCommentCount || list.length);
         return renderComments(visible, 0);
+    }
+
+    function updateCommentsToolbar(post) {
+        var latestBtn = document.getElementById('commentsSortLatestBtn');
+        var hotBtn = document.getElementById('commentsSortHotBtn');
+        var authorBtn = document.getElementById('commentsAuthorOnlyBtn');
+        var meta = document.getElementById('commentsFilterMeta');
+        var total = getProcessedComments(post).length;
+        if (latestBtn) latestBtn.classList.toggle('active', commentSortMode === 'latest');
+        if (hotBtn) hotBtn.classList.toggle('active', commentSortMode === 'hot');
+        if (authorBtn) authorBtn.classList.toggle('active', !!showAuthorCommentsOnly);
+        if (authorBtn) authorBtn.textContent = showAuthorCommentsOnly ? '查看全部回复' : '只看作者回复';
+        if (meta) {
+            var shown = Math.min(visibleCommentCount || 0, total);
+            meta.textContent = total ? ('已显示 ' + shown + ' / ' + total + ' 条') : '暂无评论';
+        }
     }
 
     function updateCommentsMoreButton(post) {
         var btn = document.getElementById('commentsMoreBtn');
         if (!btn) return;
-        var total = Array.isArray(post && post.comments) ? post.comments.length : 0;
+        var total = getProcessedComments(post).length;
         if (!total || visibleCommentCount >= total) {
             btn.hidden = true;
             btn.textContent = '';
@@ -266,6 +327,7 @@
             var commentsHtml = renderVisibleComments(post);
             host.innerHTML = commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>';
             bindCommentListEvents();
+            updateCommentsToolbar(post);
             updateCommentsMoreButton(post);
             var inlineInput = document.getElementById('inlineReplyInput');
             if (inlineInput && replyParentId) inlineInput.focus();
@@ -343,6 +405,14 @@
             adminControls +
             '<section class="comments-section">' +
                 '<h4>评论</h4>' +
+                '<div class="comments-toolbar">' +
+                    '<div class="comments-toolbar-group">' +
+                        '<button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortLatestBtn" type="button" data-action="sort-comments" data-sort-mode="latest">最新</button>' +
+                        '<button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortHotBtn" type="button" data-action="sort-comments" data-sort-mode="hot">最热</button>' +
+                        '<button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsAuthorOnlyBtn" type="button" data-action="toggle-author-comments">只看作者回复</button>' +
+                    '</div>' +
+                    '<div class="comments-filter-meta" id="commentsFilterMeta"></div>' +
+                '</div>' +
                 '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + renderCommentsLoadingState() + '</div>' +
                 '<div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>' +
                 '<div style="display:flex; gap:0.5rem;">' +
@@ -493,7 +563,10 @@
         input.disabled = false;
         if (submitBtn) submitBtn.disabled = false;
         insertCommentIntoState(data && data.comment);
-        if (!replyParentId) visibleCommentCount = Math.min((currentPost.comments || []).length, Math.max(visibleCommentCount + 1, INITIAL_COMMENT_BATCH));
+        if (!replyParentId) {
+            var nextTotal = getProcessedComments(currentPost).length;
+            visibleCommentCount = Math.min(nextTotal, Math.max(visibleCommentCount + 1, INITIAL_COMMENT_BATCH));
+        }
         cancelReply();
         scheduleCommentsRender(currentPost);
     }
@@ -517,8 +590,23 @@
     }
 
     function loadMoreComments() {
-        if (!currentPost || !Array.isArray(currentPost.comments) || !currentPost.comments.length) return;
-        visibleCommentCount = Math.min(currentPost.comments.length, visibleCommentCount + COMMENT_BATCH_SIZE);
+        var total = getProcessedComments(currentPost).length;
+        if (!total) return;
+        visibleCommentCount = Math.min(total, visibleCommentCount + COMMENT_BATCH_SIZE);
+        scheduleCommentsRender(currentPost);
+    }
+
+    function changeCommentSort(mode) {
+        var nextMode = mode === 'hot' ? 'hot' : 'latest';
+        if (commentSortMode === nextMode) return;
+        commentSortMode = nextMode;
+        resetCommentVisibility(currentPost);
+        scheduleCommentsRender(currentPost);
+    }
+
+    function toggleAuthorCommentsOnly() {
+        showAuthorCommentsOnly = !showAuthorCommentsOnly;
+        resetCommentVisibility(currentPost);
         scheduleCommentsRender(currentPost);
     }
 
@@ -617,6 +705,14 @@
                     ? (btn.getAttribute('data-collapsed-label') || '展开回复')
                     : (btn.getAttribute('data-expanded-label') || '收起回复');
             });
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="sort-comments"]'), function (btn) {
+            btn.addEventListener('click', function () {
+                changeCommentSort(btn.getAttribute('data-sort-mode'));
+            });
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="toggle-author-comments"]'), function (btn) {
+            btn.addEventListener('click', toggleAuthorCommentsOnly);
         });
     }
 

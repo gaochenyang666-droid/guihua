@@ -2470,61 +2470,6 @@
                     post.is_bookmarked = String((data && data.message) || '').toLowerCase().indexOf('unbook') === -1;
                 }
                 this.syncFeedActionState(id);
-            },
-            async syncArweave(id) {
-                if (!currentUser) return Modal.open('loginModal');
-                try {
-                    const res = await fetch(`${API_BASE}/posts/${id}/sync-arweave`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } });
-                    const data = await parseJsonSafe(res, {});
-                    if (res.ok) { Toast.success(data.message || '已同步永存档案'); Modal.openDetail(id); }
-                    else Toast.error(data.error || '同步失败');
-                } catch (e) { Toast.error('网络错误'); }
-            },
-            async do(url) {
-                if(!currentUser) return Modal.open('loginModal');
-                await fetch(url, { method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`} });
-            },
-
-            async adminDelete(id) {
-                if(!confirm('确定要删除这个帖子吗？此操作不可逆！')) return;
-                const res = await fetch(`${API_BASE}/posts/${id}`, {
-                    method: 'DELETE',
-                    headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
-                });
-                if(res.ok) { Toast.success('已删除'); Modal.close('postDetailModal'); Post.load(); }
-                else Toast.error('删除失败');
-            },
-            async adminToggleHide(id) {
-                const res = await fetch(`${API_BASE}/admin/posts/${id}/hide`, {
-                    method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
-                });
-                if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); Post.load(); }
-            },
-            async adminToggleComments(id) {
-                const res = await fetch(`${API_BASE}/admin/posts/${id}/toggle-comments`, {
-                    method: 'POST', headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
-                });
-                if(res.ok) { Toast.success('状态已更新'); Modal.openDetail(id); }
-                else {
-                    const d = await parseJsonSafe(res, {});
-                    Toast.error(d.error || '操作失败');
-                }
-            },
-            async adminTogglePin(id, pinned) {
-                const res = await fetch(`${API_BASE}/admin/posts/${id}/pin`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}`},
-                    body: JSON.stringify({ pinned, exclusive: true })
-                });
-                const data = await parseJsonSafe(res, {});
-                if (res.ok) {
-                    Toast.success(pinned ? '已置顶' : '已取消置顶');
-                    await Post.loadPinnedGuide();
-                    Modal.openDetail(id);
-                    Post.load();
-                } else {
-                    Toast.error(data.error || '操作失败');
-                }
             }
         };
 
