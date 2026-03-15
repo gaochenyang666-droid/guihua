@@ -102,6 +102,11 @@
         let Auth;
         let Post;
         let UI;
+        let Modal;
+        let Interact;
+        let Donate;
+        let TipAuthor;
+        let copyTextWithFallback;
         let Notification;
         let SiteNotice;
         let NoticeCenter;
@@ -280,364 +285,6 @@
             }
         };
 
-        let tipAuthorPostId = null;
-        let tipAuthorWallet = '';
-        async function copyTextWithFallback(text, successMsg) {
-            const safeText = (text || '').trim();
-            if (!safeText) return false;
-            try {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    await navigator.clipboard.writeText(safeText);
-                } else {
-                    const ta = document.createElement('textarea');
-                    ta.value = safeText;
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(ta);
-                }
-                if (successMsg && typeof Toast !== 'undefined') Toast.success(successMsg);
-                return true;
-            } catch (_) {
-                return false;
-            }
-        }
-
-        async function ensureWalletProvider(fallbackAddress) {
-            const provider = window.BinanceChain || window.ethereum;
-            if (provider) return provider;
-            if (fallbackAddress) {
-                await copyTextWithFallback(fallbackAddress, '已复制收款地址，可手动转账');
-            }
-            Toast.info('未检测到钱包，请用钱包 App 内置浏览器打开本站后再支付');
-            return null;
-        }
-
-        const TipAuthor = {
-            open(postId, authorWallet) {
-                tipAuthorPostId = postId;
-                tipAuthorWallet = (authorWallet || '').trim();
-                const displayEl = document.getElementById('tipAuthorAddressDisplay');
-                const copyBtn = document.getElementById('tipAuthorCopyBtn');
-                const sendBtn = document.querySelector('#tipAuthorModal .btn-primary');
-                if (displayEl) {
-                    displayEl.textContent = tipAuthorWallet ? tipAuthorWallet : '作者未绑定钱包，暂无法打赏';
-                    displayEl.style.color = tipAuthorWallet ? 'var(--accent-green)' : 'var(--text-muted)';
-                }
-                if (copyBtn) {
-                    copyBtn.style.display = tipAuthorWallet ? 'inline-block' : 'none';
-                }
-                if (sendBtn) {
-                    sendBtn.disabled = !tipAuthorWallet;
-                    sendBtn.style.opacity = tipAuthorWallet ? '1' : '0.5';
-                }
-                const input = document.getElementById('tipAmountInput');
-                if (input) input.value = '1';
-                Modal.open('tipAuthorModal');
-            },
-            copyAddress() {
-                if (!tipAuthorWallet) return;
-                copyTextWithFallback(tipAuthorWallet, '已复制收款地址');
-            },
-            async send() {
-                if (!tipAuthorPostId || !currentUser || !currentUser.address) {
-                    Toast.error('请先登录（钱包）');
-                    return;
-                }
-                if (!tipAuthorWallet) {
-                    Toast.error('作者未绑定钱包，暂无法打赏');
-                    return;
-                }
-                const amountStr = (document.getElementById('tipAmountInput').value || '1').trim();
-                const amountUsdt = parseFloat(amountStr);
-                if (isNaN(amountUsdt) || amountUsdt < 1) {
-                    Toast.error('打赏金额至少 1 USDT');
-                    return;
-                }
-                try {
-                    const provider = await ensureWalletProvider(tipAuthorWallet);
-                    if (!provider) return;
-                    const web3 = new Web3(provider);
-                    const cRes = await fetch(`${API_BASE}/config/fees`);
-                    const config = await parseJsonSafe(cRes, {});
-                    if (!cRes.ok || !config.usdt_contract) {
-                        Toast.error('无法获取 USDT 合约配置');
-                        return;
-                    }
-                    const amountRaw = web3.utils.toBN(web3.utils.toWei(amountUsdt.toString(), 'ether'));
-                    const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
-                    const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [tipAuthorWallet, amountRaw]);
-                    const txData = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
-                    const txHash = await provider.request({
-                        method: 'eth_sendTransaction',
-                        params: [{
-                            to: config.usdt_contract,
-                            from: currentUser.address,
-                            value: '0x0',
-                            data: txData,
-                            gas: web3.utils.toHex(100000)
-                        }]
-                    });
-                    if (!txHash) { Toast.error('打赏取消'); return; }
-                    Toast.info('交易已发送，正在确认...');
-                    const verifyRes = await fetch(`${API_BASE}/tips/verify`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                        body: JSON.stringify({ tx_hash: txHash, post_id: tipAuthorPostId })
-                    });
-                    const resp = await parseJsonSafe(verifyRes, {});
-                    if (verifyRes.ok) {
-                        Toast.success(`打赏成功！${resp.tip.author_receives_usdt} USDT 已直接转入作者钱包`);
-                        Modal.close('tipAuthorModal');
-                        Modal.openDetail(tipAuthorPostId);
-                    } else {
-                        Toast.error(resp.error || '验证失败');
-                    }
-                } catch (e) {
-                    if (e && e.code === 4001) Toast.error('已取消打赏');
-                    else Toast.error(e.message || '打赏失败');
-                }
-            }
-        };
-
-        const Donate = {
-            cachedConfig: null,
-            async getConfig(forceRefresh=false) {
-                if (!forceRefresh && this.cachedConfig) return this.cachedConfig;
-                try {
-                    const r = await fetch(`${API_BASE}/config/fees`, { cache: 'no-store' });
-                    const c = await parseJsonSafe(r, {});
-                    if (!r.ok) return null;
-                    this.cachedConfig = c;
-                    return c;
-                } catch (_) {
-                    return null;
-                }
-            },
-            async openModal() {
-                const c = await this.getConfig(true);
-                const el = document.getElementById('donateAddress');
-                if (el) el.textContent = (c && c.receive_address) ? c.receive_address : '暂不可用';
-                if (!c || !c.receive_address || !c.usdt_contract) {
-                    Toast.error('暂时无法获取收款配置，请稍后再试');
-                }
-                Modal.open('donateModal');
-            },
-            async send(amount) {
-                const amountUsdt = typeof amount === 'number' ? amount : parseFloat(amount);
-                if (isNaN(amountUsdt) || amountUsdt < 0.1) {
-                    Toast.error('请输入有效金额（至少 0.1 USDT）');
-                    return;
-                }
-                try {
-                    const config = await this.getConfig();
-                    if (!config || !config.receive_address || !config.usdt_contract) {
-                        Toast.error('无法获取收款配置');
-                        return;
-                    }
-                    if (document.getElementById('donateAddress')) {
-                        document.getElementById('donateAddress').textContent = config.receive_address;
-                    }
-                    const provider = await ensureWalletProvider(config.receive_address);
-                    if (!provider) return;
-                    const web3 = new Web3(provider);
-                    const accounts = await provider.request({ method: 'eth_requestAccounts' });
-                    const from = accounts[0];
-                    const amountRaw = web3.utils.toBN(web3.utils.toWei(amountUsdt.toString(), 'ether'));
-                    const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
-                    const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, amountRaw]);
-                    const data = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
-                    const txReq = {
-                        to: config.usdt_contract,
-                        from: from,
-                        value: '0x0',
-                        data: data,
-                        gas: web3.utils.toHex(100000)
-                    };
-                    const chainIdNum = Number(config.chain_id || 56);
-                    if (Number.isFinite(chainIdNum) && chainIdNum > 0) {
-                        txReq.chainId = web3.utils.toHex(chainIdNum);
-                    }
-                    await provider.request({
-                        method: 'eth_sendTransaction',
-                        params: [txReq]
-                    });
-                    Toast.success(`感谢您的 ${amountUsdt} USDT 打赏！🙏`);
-                    Modal.close('donateModal');
-                } catch(e) {
-                    if (e && e.code === 4001) Toast.error('已取消打赏');
-                    else Toast.error(e.message || '打赏取消或失败');
-                }
-            }
-        };
-
-        let currentDetailPostId = null;
-        let currentDetailRequestSeq = 0;
-        const Modal = {
-            open(id, opts = {}) {
-                if (id === 'loginModal') {
-                    if (typeof openLoginPage === 'function') openLoginPage();
-                    else window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
-                    return;
-                }
-                const overlay = document.getElementById(id);
-                if (!overlay) return;
-                const modalEl = overlay.querySelector('.modal');
-                if (id === 'postDetailModal') {
-                    const anchorY = (opts && Number.isFinite(opts.anchorY)) ? Number(opts.anchorY) : null;
-                    let offset = 0;
-                    if (anchorY !== null) {
-                        const overlayStyle = window.getComputedStyle(overlay);
-                        const padTop = parseFloat(overlayStyle.paddingTop || '0') || 0;
-                        const viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
-                        const desired = anchorY - padTop - 28;
-                        const maxOffset = Math.max(0, viewportH - padTop - 140);
-                        offset = Math.max(0, Math.min(desired, maxOffset));
-                    }
-                    overlay.style.setProperty('--detail-open-offset', `${Math.round(offset)}px`);
-                    if (modalEl) modalEl.style.marginTop = `${Math.round(offset)}px`;
-                }
-                overlay.classList.add('active');
-                overlay.scrollTop = 0;
-                if (modalEl) modalEl.scrollTop = 0;
-                const savedScrollY = (opts && Number.isFinite(opts.savedScrollY)) ? opts.savedScrollY : null;
-                if (id === 'postDetailModal' && savedScrollY !== null) {
-                    const restore = () => {
-                        if (window.scrollY !== savedScrollY) window.scrollTo(0, savedScrollY);
-                    };
-                    requestAnimationFrame(restore);
-                    setTimeout(restore, 50);
-                    setTimeout(restore, 150);
-                }
-            },
-            close(id) {
-                const overlay = document.getElementById(id);
-                if (!overlay) return;
-                if (id === 'postDetailModal') {
-                    const modalScrollEl = document.querySelector('#postDetailModal .modal');
-                    if (modalScrollEl && currentDetailPostId) {
-                        const maxScroll = Math.max(0, modalScrollEl.scrollHeight - modalScrollEl.clientHeight);
-                        detailScrollStore.save(currentDetailPostId, modalScrollEl.scrollTop, maxScroll);
-                        detailScrollStore.unbind(modalScrollEl);
-                    }
-                    currentDetailPostId = null;
-                    currentDetailRequestSeq += 1;
-                }
-                overlay.classList.remove('active');
-                overlay.scrollTop = 0;
-                if (id === 'postDetailModal') {
-                    overlay.style.removeProperty('--detail-open-offset');
-                    const modalEl = overlay.querySelector('.modal');
-                    if (modalEl) modalEl.style.removeProperty('margin-top');
-                }
-            },
-
-            async openDetail(evtOrId, idMaybe) {
-                const isEventLike = !!(evtOrId && typeof evtOrId === 'object' && typeof evtOrId.preventDefault === 'function');
-                if (isEventLike) {
-                    evtOrId.preventDefault();
-                    evtOrId.stopPropagation();
-                }
-                const targetIdRaw = isEventLike ? idMaybe : evtOrId;
-                const targetId = Number(targetIdRaw);
-                if (!Number.isFinite(targetId) || targetId <= 0) return;
-                const next = `/post/${targetId}`;
-                if (typeof navigateWithTransition === 'function') navigateWithTransition(next);
-                else window.location.href = next;
-            }
-        };
-
-        const Interact = {
-            getShareUrl(postId) {
-                return window.GHShare.getShareUrl(postId);
-            },
-            getShareText(title) {
-                return window.GHShare.getShareText(title);
-            },
-            openXShare(postId, title) {
-                return window.GHShare.openXShare(postId, title);
-            },
-            async share(refOrPostId, titleMaybe) {
-                return window.GHShare.share(refOrPostId, titleMaybe);
-            },
-
-            findRenderedPost(postId) {
-                const id = Number(postId);
-                if (!Number.isFinite(id) || id <= 0) return null;
-                return (UI.renderedPosts || []).find((p) => Number(p.id) === id) || null;
-            },
-
-            syncFeedActionState(postId) {
-                const id = Number(postId);
-                if (!Number.isFinite(id) || id <= 0) return;
-                const post = this.findRenderedPost(id);
-                if (!post) return;
-                const card = document.querySelector(`.timeline-item[data-post-id="${id}"]`);
-                if (!card) return;
-                const likeBtn = card.querySelector('[data-feed-action="like"]');
-                const bookmarkBtn = card.querySelector('[data-feed-action="bookmark"]');
-                if (likeBtn) likeBtn.innerHTML = `😰 <span>${Number(post.likes_count || 0)}</span>`;
-                if (bookmarkBtn) {
-                    bookmarkBtn.innerHTML = post.is_bookmarked ? '★ <span>已收</span>' : '⭐ <span>收藏</span>';
-                    bookmarkBtn.setAttribute('title', post.is_bookmarked ? '取消收藏' : '收藏');
-                    bookmarkBtn.setAttribute('aria-label', post.is_bookmarked ? '取消收藏' : '收藏');
-                }
-            },
-
-            async report(postId) {
-                if (!currentUser) return Modal.open('loginModal');
-                const reason = prompt('请简要说明举报原因（违规内容、广告、抄袭等）：');
-                if (reason == null || !reason.trim()) return;
-                if (reason.length > 500) { Toast.error('原因最多500字'); return; }
-                try {
-                    const res = await fetch(`${API_BASE}/reports`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                        body: JSON.stringify({ post_id: postId, reason: reason.trim() })
-                    });
-                    const data = await parseJsonSafe(res, {});
-                    if (res.ok) { Toast.success(data.message || '举报已提交'); }
-                    else Toast.error(data.error || '提交失败');
-                } catch (e) { Toast.error('网络错误'); }
-            },
-
-            async like(id) {
-                if (!currentUser) return Modal.open('loginModal');
-                const res = await fetch(`${API_BASE}/posts/${id}/like`, {
-                    method: 'POST',
-                    headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
-                });
-                const data = await parseJsonSafe(res, {});
-                if (!res.ok) {
-                    Toast.error(data.error || data.message || '操作失败');
-                    return;
-                }
-                const post = this.findRenderedPost(id);
-                if (post) {
-                    const isLiked = String((data && data.message) || '').toLowerCase().indexOf('unlike') === -1;
-                    post.likes_count = Math.max(0, Number(post.likes_count || 0) + (isLiked ? 1 : -1));
-                }
-                this.syncFeedActionState(id);
-            },
-            async bookmark(id) {
-                if (!currentUser) return Modal.open('loginModal');
-                const res = await fetch(`${API_BASE}/posts/${id}/bookmark`, {
-                    method: 'POST',
-                    headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
-                });
-                const data = await parseJsonSafe(res, {});
-                if (!res.ok) {
-                    Toast.error(data.error || data.message || '操作失败');
-                    return;
-                }
-                const post = this.findRenderedPost(id);
-                if (post) {
-                    post.is_bookmarked = String((data && data.message) || '').toLowerCase().indexOf('unbook') === -1;
-                }
-                this.syncFeedActionState(id);
-            }
-        };
-
         const Toast = window.Toast || {
             show(msg, type) {
                 const t = document.createElement('div');
@@ -651,6 +298,26 @@
             info(m) { this.show(m, 'info'); },
             warning(m) { this.show(m, 'warning'); }
         };
+
+        const modalInteractModule = window.GHModalInteractFactory({
+            API_BASE,
+            getCurrentUser,
+            parseJsonSafe,
+            Toast,
+            detailScrollStore,
+            navigateWithTransition,
+            getUI: () => UI
+        });
+        Modal = modalInteractModule.Modal;
+        Interact = modalInteractModule.Interact;
+        Donate = modalInteractModule.Donate;
+        TipAuthor = modalInteractModule.TipAuthor;
+        copyTextWithFallback = modalInteractModule.copyTextWithFallback;
+        window.Modal = Modal;
+        window.Interact = Interact;
+        window.Donate = Donate;
+        window.TipAuthor = TipAuthor;
+        window.copyTextWithFallback = copyTextWithFallback;
 
         const noticeModule = window.GHHomeNoticesFactory({
             API_BASE,
