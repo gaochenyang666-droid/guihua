@@ -1704,7 +1704,7 @@
 
                 return `
                 <div class="${itemClass}" style="--stagger:${stagger}ms;">
-                    <article class="timeline-item glass" onclick="Modal.openDetail(event, ${p.id})">
+                    <article class="timeline-item glass" data-post-id="${Number(p.id)}" onclick="Modal.openDetail(event, ${p.id})">
                         <div class="timeline-head">
                             <div class="timeline-author">
                                 ${this.renderAvatar(author)}
@@ -1714,10 +1714,9 @@
                                         ${this.renderAuthorBadge(author)}
                                         ${author.id != null ? formatUserId(author.id, author) : ''}
                                     </div>
-                                    <div class="timeline-author-sub">浏览 ${Number(p.view_count || 0)} · 恐惧 ${Number(p.likes_count || 0)}</div>
+                                    <div class="timeline-author-sub">浏览 ${Number(p.view_count || 0)}${p.comments_count ? ` · 评论 ${Number(p.comments_count || 0)}` : ''}</div>
                                 </div>
                             </div>
-                            <button class="btn btn-ghost btn-sm timeline-open-btn" onclick="Modal.openDetail(event, ${p.id})">查看</button>
                         </div>
                         ${badges ? `<div class="timeline-tags">${badges}</div>` : ''}
                         <h3 class="timeline-title">${escapeHtml(titleText || '（无标题）')}</h3>
@@ -1726,10 +1725,10 @@
                         ${shouldCollapse ? `<button class="timeline-expand-btn" onclick="UI.togglePostExpand(event, ${p.id})">${expanded ? '收起正文' : '展开阅读'}</button>` : ''}
                         ${displayImages.length ? `<div class="${coverClass}" onclick="Modal.openDetail(event, ${p.id})">${coverHtml}</div>` : ''}
                         <div class="timeline-actions">
-                            <button class="btn btn-ghost btn-sm" onclick="Interact.like(${p.id}); event.stopPropagation();">😰 ${Number(p.likes_count || 0)}</button>
-                            <button class="btn btn-ghost btn-sm" onclick="Interact.bookmark(${p.id}); event.stopPropagation();">${p.is_bookmarked ? '★ 已收' : '⭐ 收藏'}</button>
-                            <button class="btn btn-ghost btn-sm" data-post-id="${Number(p.id)}" data-title="${escapeAttr(titleText || '')}" onclick="Interact.share(this); event.stopPropagation();">🔗 分享</button>
-                            <button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${p.id}); event.stopPropagation();">💬 详情</button>
+                            <button class="btn btn-ghost btn-sm timeline-action-btn timeline-action-count" data-feed-action="like" title="恐惧" aria-label="恐惧" onclick="Interact.like(${p.id}); event.stopPropagation();">😰 <span>${Number(p.likes_count || 0)}</span></button>
+                            <button class="btn btn-ghost btn-sm timeline-action-btn" data-feed-action="bookmark" title="${p.is_bookmarked ? '取消收藏' : '收藏'}" aria-label="${p.is_bookmarked ? '取消收藏' : '收藏'}" onclick="Interact.bookmark(${p.id}); event.stopPropagation();">${p.is_bookmarked ? '★ <span>已收</span>' : '⭐ <span>收藏</span>'}</button>
+                            <button class="btn btn-ghost btn-sm timeline-action-btn" title="分享" aria-label="分享" data-post-id="${Number(p.id)}" data-title="${escapeAttr(titleText || '')}" onclick="Interact.share(this); event.stopPropagation();">↗ <span>分享</span></button>
+                            <button class="btn btn-ghost btn-sm timeline-action-btn" title="查看详情" aria-label="查看详情" onclick="Modal.openDetail(event, ${p.id}); event.stopPropagation();">💬 <span>详情</span></button>
                         </div>
                     </article>
                 </div>`;
@@ -2344,244 +2343,14 @@
                 }
                 const targetIdRaw = isEventLike ? idMaybe : evtOrId;
                 const targetId = Number(targetIdRaw);
-                if (Number.isFinite(targetId) && targetId > 0) {
-                    const next = `/post/${targetId}`;
-                    if (typeof navigateWithTransition === 'function') navigateWithTransition(next);
-                    else window.location.href = next;
-                }
-                return;
-
-                let anchorY = null;
-                if (evtOrId && typeof evtOrId === 'object' && typeof evtOrId.preventDefault === 'function') {
-                    if (Number.isFinite(evtOrId.clientY) && Number(evtOrId.clientY) > 0) {
-                        anchorY = Number(evtOrId.clientY);
-                    } else {
-                        const targetEl = evtOrId.currentTarget || evtOrId.target;
-                        if (targetEl && typeof targetEl.getBoundingClientRect === 'function') {
-                            const rect = targetEl.getBoundingClientRect();
-                            const approx = rect.top + Math.min(rect.height * 0.42, 140);
-                            if (Number.isFinite(approx)) anchorY = approx;
-                        }
-                    }
-                    evtOrId.preventDefault();
-                    evtOrId.stopPropagation();
-                }
-                if (!Number.isFinite(anchorY) || anchorY <= 0) {
-                    if (Number.isFinite(lastPointerClientY) && lastPointerClientY > 0) {
-                        anchorY = Number(lastPointerClientY);
-                    } else if (document.activeElement && typeof document.activeElement.getBoundingClientRect === 'function') {
-                        const activeRect = document.activeElement.getBoundingClientRect();
-                        const activeApprox = activeRect.top + Math.min(activeRect.height * 0.5, 120);
-                        if (Number.isFinite(activeApprox) && activeApprox > 0) anchorY = activeApprox;
-                    }
-                }
-                const id = (evtOrId && typeof evtOrId === 'object') ? idMaybe : evtOrId;
-                if (id == null || id === undefined) return;
-                currentDetailPostId = id;
-                const reqSeq = ++currentDetailRequestSeq;
-                const savedScrollY = window.scrollY || window.pageYOffset || 0;
-                this.open('postDetailModal', { anchorY: anchorY, savedScrollY: savedScrollY });
-                const body = document.getElementById('postDetailBody');
-                if (!body) return;
-                body.innerHTML = '加载中...';
-                const modalScrollEl = document.querySelector('#postDetailModal .modal');
-                if (modalScrollEl) modalScrollEl.scrollTop = 0;
-                try {
-                    const headers = {};
-                    const token = localStorage.getItem('token');
-                    if (token) headers['Authorization'] = `Bearer ${token}`;
-                    const res = await fetch(`${API_BASE}/posts/${id}`, { headers });
-                    const p = await parseJsonSafe(res, {});
-                    if (reqSeq !== currentDetailRequestSeq || currentDetailPostId !== id) return;
-                    if (!res.ok) {
-                        if (res.status === 401) {
-                            localStorage.removeItem('token');
-                            currentUser = null;
-                            UI.updateAuth();
-                        }
-                        body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${p.error || '加载失败'}</div>`;
-                        return;
-                    }
-
-                    const isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
-                    let contentHtml = p.content;
-                    let repostHtml = '';
-                    if (p.original_post_id && p.original_post) {
-                        contentHtml = p.repost_comment || '';
-                        repostHtml = `
-                            <div style="margin:1rem 0; padding:1rem; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-secondary);">
-                                <div style="font-weight:600; margin-bottom:0.5rem;">${p.original_post.title}</div>
-                                <div style="font-size:0.9rem; color:var(--text-secondary);">${p.original_post.content}</div>
-                            </div>
-                        `;
-                    }
-
-                const renderComments = (comments, depth=0) => {
-                    if (!comments || comments.length === 0) return '';
-                    return comments.map(c => `
-                        <div class="comment-item" style="margin-left: ${depth * 20}px; border-left: ${depth > 0 ? '2px solid var(--border-color)' : 'none'}; padding-left: ${depth > 0 ? '1rem' : '0'};">
-                            <div class="comment-header">
-                                <span>${escapeHtml((c.author && c.author.nickname) || '匿名')}</span>
-                                <span>${new Date(c.created_at).toLocaleDateString()}</span>
-                            </div>
-                            <div style="margin-bottom: 0.5rem;">${mentionifyText(c.content || '')}</div>
-                            <button class="btn btn-ghost" style="padding: 0.2rem 0.5rem; font-size: 0.75rem;" onclick="Interact.replyTo(${p.id}, ${c.id}, this.getAttribute('data-nickname'))" data-nickname="${escapeDataAttr((c.author && c.author.nickname) || '')}">↩ 回复</button>
-                            ${c.replies ? renderComments(c.replies, depth + 1) : ''}
-                        </div>
-                    `).join('');
-                };
-
-                const commentsHtml = renderComments(p.comments);
-
-                let adminControls = '';
-                if (currentUser && currentUser.is_admin) {
-                    adminControls = `
-                        <div style="margin-top:1rem; padding-top:1rem; border-top:1px dashed var(--accent-red); color:var(--accent-red);">
-                            <div style="margin-bottom:0.5rem; font-size:0.8rem; font-weight:bold;">👮 管理员操作</div>
-                            <div style="display:flex; gap:0.5rem;">
-                                <button class="btn btn-ghost" onclick="Interact.adminDelete(${p.id})" style="border-color:var(--accent-red); color:var(--accent-red);">删除帖子</button>
-                                <button class="btn btn-ghost" onclick="Interact.adminToggleHide(${p.id})">${p.is_hidden ? '取消隐藏' : '隐藏帖子'}</button>
-                                <button class="btn btn-ghost" onclick="Interact.adminToggleComments(${p.id})">${p.allow_comments ? '关闭评论' : '开启评论'}</button>
-                                <button class="btn btn-ghost" onclick="Interact.adminTogglePin(${p.id}, ${p.is_pinned ? 'false' : 'true'})" style="border-color:var(--accent-gold); color:var(--accent-gold);">${p.is_pinned ? '取消置顶' : '设为置顶'}</button>
-                            </div>
-                        </div>
-                    `;
-                }
-
-                const series = Array.isArray(p.series) ? p.series : [];
-                const seriesHtml = series.length ? series.map((s) => `
-                    <div class="series-block">
-                        <div style="margin-bottom:0.35rem;">📚 所属系列：<a href="/series/${s.series_id}" data-no-transition="1" style="color:var(--accent-purple-light); text-decoration:underline;">${escapeHtml(s.title || '')}</a> · 第 ${s.order_index} 篇</div>
-                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                            ${s.prev_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${s.prev_post_id})">⬅️ 上一篇</button>` : ''}
-                            ${s.next_post_id ? `<button class="btn btn-ghost btn-sm" onclick="Modal.openDetail(event, ${s.next_post_id})">➡️ 下一篇</button>` : ''}
-                        </div>
-                    </div>
-                `).join('') : '';
-                const readState = detailScrollStore.read(p.id);
-                const showResume = !!(readState && Number(readState.top || 0) > 100);
-                const resumeHtml = showResume ? `
-                    <div class="resume-strip">
-                        <span class="resume-strip-text">上次阅读进度约 ${Number(readState.pct || 0)}%，可一键续读</span>
-                        <div style="display:flex; gap:0.45rem;">
-                            <button class="btn btn-ghost btn-sm" id="resumeReadBtn">恢复位置</button>
-                            <button class="btn btn-ghost btn-sm" id="resumeReadResetBtn">从头开始</button>
-                        </div>
-                    </div>
-                ` : '';
-
-                    const authorWallet = escapeDataAttr((p.author && (p.author.wallet_address || p.author.address)) || '');
-                    body.innerHTML = `
-                    <h2 style="margin-bottom:0.5rem;">${escapeHtml(p.title)}</h2>
-                    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-                        ${p.is_special_announcement ? '<span style="color:var(--accent-orange); font-weight:700;">📜 长公告</span> |' : ''}
-                        ${p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span> |' : ''}
-                        发布者: ${escapeHtml(p.author.nickname)} ${UI.renderAuthorBadge(p.author)} ${p.author.id != null ? formatUserId(p.author.id, p.author) : ''} | 浏览: ${p.view_count}
-                    </div>
-                    ${resumeHtml}
-                    <div class="post-detail-content">
-                        ${contentHtml}
-                        ${repostHtml}
-                    </div>
-                    <div class="on-chain-evidence" style="margin-top:1rem; padding:0.75rem; background:var(--bg-secondary); border-radius:8px; font-size:0.85rem;">
-                        <div style="color:var(--text-muted); margin-bottom:0.5rem;">${isPermanent ? '✅ 已永久保存 · 链上可验' : 'ℹ️ 当前帖子暂未永存'}</div>
-                        <div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">
-                            ${p.tx_hash ? `<a href="https://bscscan.com/tx/${p.tx_hash}" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证 BSCScan</a>` : '<span style="color:var(--text-muted);">无支付凭证</span>'}
-                            ${p.ipfs_cid ? `<a href="https://arweave.net/${p.ipfs_cid}" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>` : ''}
-                        </div>
-                    </div>
-                    ${seriesHtml}
-
-                    <div style="display:flex; gap:1rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem; flex-wrap:wrap;">
-                        <button class="btn btn-ghost" onclick="Interact.like(${p.id})">😰 恐惧 (${p.likes_count})</button>
-                        <button class="btn btn-ghost" onclick="Interact.bookmark(${p.id})">⭐ 收藏 (${p.is_bookmarked ? '已收' : ''})</button>
-                        <button class="btn btn-ghost" onclick="Post.repost(${p.id})">🔄 转发</button>
-                        ${currentUser && currentUser.id !== p.author.id ? `<button class="btn btn-ghost" style="color:var(--text-muted); font-size:0.85rem;" onclick="Interact.report(${p.id})">🚩 举报</button>` : ''}
-                        ${currentUser && p.author.id !== currentUser.id ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" data-wallet="${authorWallet}" onclick="TipAuthor.open(${p.id}, this.getAttribute('data-wallet') || '')">💰 打赏作者</button>` : ''}
-                        ${(currentUser && (p.author.id === currentUser.id || (currentUser.is_admin)) && p.tx_hash && !p.ipfs_cid) ? `<button class="btn btn-ghost" style="color:var(--accent-gold);" onclick="Interact.syncArweave(${p.id})">💾 同步永存档案</button>` : ''}
-                    </div>
-                    <div class="series-block">
-                        <div style="margin-bottom:0.35rem;">🙏 打赏感谢名单</div>
-                        <div id="postTipsThanksList" style="font-size:0.82rem; color:var(--text-secondary);">加载中...</div>
-                    </div>
-
-                    ${adminControls}
-
-                    <div class="comments-section">
-                        <h4>评论</h4>
-                        <div style="margin-bottom:1rem;">${commentsHtml}</div>
-                        <div style="display:flex; gap:0.5rem; flex-direction: column;">
-                            <div id="replyTarget" style="display: none; font-size: 0.8rem; color: var(--accent-purple); padding: 0.2rem 0;">
-                                回复 @<span id="replyTargetName"></span> <button class="btn btn-ghost" style="padding: 0 0.3rem; height: auto;" onclick="Interact.cancelReply()">✕</button>
-                            </div>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <input type="text" id="commentInput" class="form-input" placeholder="${p.allow_comments ? '发表评论...' : '评论区已关闭'}" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>
-                                <button class="btn btn-primary" onclick="Interact.comment(${p.id})" ${!p.allow_comments && (!currentUser || !currentUser.is_admin) ? 'disabled' : ''}>发送</button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                    body.classList.remove('detail-body-enter');
-                    void body.offsetWidth;
-                    body.classList.add('detail-body-enter');
-                    body.querySelectorAll('.post-detail-content img').forEach(function(im) {
-                        im.setAttribute('referrerpolicy', 'no-referrer');
-                        im.loading = 'lazy';
-                    });
-                    if (modalScrollEl) {
-                        modalScrollEl.scrollTop = 0;
-                        detailScrollStore.unbind(modalScrollEl);
-                        requestAnimationFrame(() => {
-                            modalScrollEl.scrollTop = 0;
-                            detailScrollStore.bind(p.id, modalScrollEl);
-                            if (window.scrollY !== savedScrollY) window.scrollTo(0, savedScrollY);
-                        });
-                    } else {
-                        requestAnimationFrame(() => { if (window.scrollY !== savedScrollY) window.scrollTo(0, savedScrollY); });
-                    }
-                    const resumeBtn = document.getElementById('resumeReadBtn');
-                    const resetBtn = document.getElementById('resumeReadResetBtn');
-                    if (resumeBtn && modalScrollEl && readState) {
-                        resumeBtn.onclick = () => {
-                            const maxScroll = Math.max(0, modalScrollEl.scrollHeight - modalScrollEl.clientHeight);
-                            modalScrollEl.scrollTop = Math.min(maxScroll, Math.max(0, Number(readState.top || 0)));
-                            Toast.info('已恢复到上次阅读位置');
-                        };
-                    }
-                    if (resetBtn && modalScrollEl) {
-                        resetBtn.onclick = () => {
-                            modalScrollEl.scrollTop = 0;
-                            detailScrollStore.save(p.id, 0, Math.max(0, modalScrollEl.scrollHeight - modalScrollEl.clientHeight));
-                        };
-                    }
-                    const tipsWrap = document.getElementById('postTipsThanksList');
-                    if (tipsWrap) {
-                        try {
-                            const tipRes = await fetch(`${API_BASE}/posts/${p.id}/tips?page=1&per_page=12`);
-                            const tipData = await parseJsonSafe(tipRes, {});
-                            if (reqSeq !== currentDetailRequestSeq || currentDetailPostId !== id) return;
-                            const tipItems = (tipData && tipData.items) || [];
-                            if (!tipRes.ok || !tipItems.length) {
-                                tipsWrap.textContent = '暂无打赏记录';
-                            } else {
-                                tipsWrap.innerHTML = tipItems.map((t) => {
-                                    const nick = (t.from_user && t.from_user.nickname) || '匿名用户';
-                                    const dateText = t.created_at ? new Date(t.created_at).toLocaleDateString() : '';
-                                    return `<span style="display:inline-block; margin-right:0.45rem; margin-bottom:0.35rem; padding:0.18rem 0.42rem; border:1px solid var(--border-color); border-radius:999px;">${escapeHtml(nick)} ${escapeHtml(dateText)}</span>`;
-                                }).join('');
-                            }
-                        } catch (_) {
-                            tipsWrap.textContent = '加载失败';
-                        }
-                    }
-                } catch (e) {
-                    body.innerHTML = `<div style="color:var(--text-muted); padding:1.5rem;">${escapeHtml((e && e.message) || '加载失败')}</div>`;
-                }
+                if (!Number.isFinite(targetId) || targetId <= 0) return;
+                const next = `/post/${targetId}`;
+                if (typeof navigateWithTransition === 'function') navigateWithTransition(next);
+                else window.location.href = next;
             }
         };
 
         const Interact = {
-            currentReplyParentId: null,
             getShareUrl(postId) {
                 const id = Number(postId);
                 if (!Number.isFinite(id) || id <= 0) return '';
@@ -2627,26 +2396,27 @@
                 if (!copied) Toast.error('分享失败，请稍后重试');
             },
 
-            replyTo(postId, commentId, username) {
-                this.currentReplyParentId = commentId;
-                const name = (username != null && username !== '') ? username : '匿名';
-                const replyTarget = document.getElementById('replyTarget');
-                const replyTargetName = document.getElementById('replyTargetName');
-                const commentInput = document.getElementById('commentInput');
-                if (replyTarget) replyTarget.style.display = 'block';
-                if (replyTargetName) replyTargetName.textContent = name;
-                if (commentInput) {
-                    commentInput.placeholder = `回复 @${name}...`;
-                    commentInput.focus();
-                }
+            findRenderedPost(postId) {
+                const id = Number(postId);
+                if (!Number.isFinite(id) || id <= 0) return null;
+                return (UI.renderedPosts || []).find((p) => Number(p.id) === id) || null;
             },
 
-            cancelReply() {
-                this.currentReplyParentId = null;
-                const replyTarget = document.getElementById('replyTarget');
-                const commentInput = document.getElementById('commentInput');
-                if (replyTarget) replyTarget.style.display = 'none';
-                if (commentInput) commentInput.placeholder = '发表评论...';
+            syncFeedActionState(postId) {
+                const id = Number(postId);
+                if (!Number.isFinite(id) || id <= 0) return;
+                const post = this.findRenderedPost(id);
+                if (!post) return;
+                const card = document.querySelector(`.timeline-item[data-post-id="${id}"]`);
+                if (!card) return;
+                const likeBtn = card.querySelector('[data-feed-action="like"]');
+                const bookmarkBtn = card.querySelector('[data-feed-action="bookmark"]');
+                if (likeBtn) likeBtn.innerHTML = `😰 <span>${Number(post.likes_count || 0)}</span>`;
+                if (bookmarkBtn) {
+                    bookmarkBtn.innerHTML = post.is_bookmarked ? '★ <span>已收</span>' : '⭐ <span>收藏</span>';
+                    bookmarkBtn.setAttribute('title', post.is_bookmarked ? '取消收藏' : '收藏');
+                    bookmarkBtn.setAttribute('aria-label', post.is_bookmarked ? '取消收藏' : '收藏');
+                }
             },
 
             async report(postId) {
@@ -2666,8 +2436,41 @@
                 } catch (e) { Toast.error('网络错误'); }
             },
 
-            async like(id) { await this.do(`${API_BASE}/posts/${id}/like`); Modal.openDetail(id); },
-            async bookmark(id) { await this.do(`${API_BASE}/posts/${id}/bookmark`); Modal.openDetail(id); },
+            async like(id) {
+                if (!currentUser) return Modal.open('loginModal');
+                const res = await fetch(`${API_BASE}/posts/${id}/like`, {
+                    method: 'POST',
+                    headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                });
+                const data = await parseJsonSafe(res, {});
+                if (!res.ok) {
+                    Toast.error(data.error || data.message || '操作失败');
+                    return;
+                }
+                const post = this.findRenderedPost(id);
+                if (post) {
+                    const isLiked = String((data && data.message) || '').toLowerCase().indexOf('unlike') === -1;
+                    post.likes_count = Math.max(0, Number(post.likes_count || 0) + (isLiked ? 1 : -1));
+                }
+                this.syncFeedActionState(id);
+            },
+            async bookmark(id) {
+                if (!currentUser) return Modal.open('loginModal');
+                const res = await fetch(`${API_BASE}/posts/${id}/bookmark`, {
+                    method: 'POST',
+                    headers: {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                });
+                const data = await parseJsonSafe(res, {});
+                if (!res.ok) {
+                    Toast.error(data.error || data.message || '操作失败');
+                    return;
+                }
+                const post = this.findRenderedPost(id);
+                if (post) {
+                    post.is_bookmarked = String((data && data.message) || '').toLowerCase().indexOf('unbook') === -1;
+                }
+                this.syncFeedActionState(id);
+            },
             async syncArweave(id) {
                 if (!currentUser) return Modal.open('loginModal');
                 try {
@@ -2676,21 +2479,6 @@
                     if (res.ok) { Toast.success(data.message || '已同步永存档案'); Modal.openDetail(id); }
                     else Toast.error(data.error || '同步失败');
                 } catch (e) { Toast.error('网络错误'); }
-            },
-            async comment(id) {
-                const commentInput = document.getElementById('commentInput');
-                const c = commentInput ? (commentInput.value || '').trim() : '';
-                if (!c) return;
-                const body = { content: c };
-                if (this.currentReplyParentId) body.parent_id = this.currentReplyParentId;
-                const res = await fetch(`${API_BASE}/posts/${id}/comments`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}`},
-                    body: JSON.stringify(body)
-                });
-                const data = await parseJsonSafe(res, {});
-                if (!res.ok) { Toast.error(data.error || '评论失败'); return; }
-                this.cancelReply();
-                Modal.openDetail(id);
             },
             async do(url) {
                 if(!currentUser) return Modal.open('loginModal');

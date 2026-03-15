@@ -8,6 +8,8 @@
     var currentUser = null;
     var currentPost = null;
     var replyParentId = null;
+    var replyTargetName = '';
+    var replyDraftText = '';
     var commentsRenderToken = 0;
     var visibleCommentCount = 0;
     var INITIAL_COMMENT_BATCH = 6;
@@ -173,6 +175,18 @@
             var margin = depth * 20;
             var border = depth > 0 ? '2px solid var(--border-color)' : 'none';
             var padding = depth > 0 ? '0.9rem' : '0';
+            var inlineReplyComposer = replyParentId === Number(c.id)
+                ? (
+                    '<div class="inline-reply-box">' +
+                        '<div class="inline-reply-title">回复 @' + escapeHtml(replyTargetName || nick) + '</div>' +
+                        '<div class="inline-reply-actions">' +
+                            '<input type="text" id="inlineReplyInput" class="form-input" placeholder="写下你的回复..." value="' + escapeAttr(replyDraftText || '') + '">' +
+                            '<button class="btn btn-primary btn-sm" type="button" data-action="submit-inline-reply">发送</button>' +
+                            '<button class="btn btn-ghost btn-sm" type="button" data-action="cancel-inline-reply">取消</button>' +
+                        '</div>' +
+                    '</div>'
+                )
+                : '';
             return (
                 '<div class="comment-item" style="margin-left:' + margin + 'px; border-left:' + border + '; padding-left:' + padding + ';">' +
                 '<div class="comment-header"><span>' + escapeHtml(nick) + '</span><span>' + escapeHtml(created) + '</span></div>' +
@@ -181,6 +195,7 @@
                     '<button class="btn btn-ghost btn-sm" type="button" data-action="reply" data-parent-id="' + Number(c.id) + '" data-nickname="' + escapeAttr(nick) + '">↩ 回复</button>' +
                     '<button class="btn btn-ghost btn-sm" type="button" data-action="like-comment" data-comment-id="' + Number(c.id) + '">' + ((c && c.is_liked) ? '👍 已赞' : '👍 点赞') + ' (' + Number((c && c.likes_count) || 0) + ')</button>' +
                 '</div>' +
+                inlineReplyComposer +
                 (collapseDeepReplies
                     ? '<div class="comment-thread-toggle-wrap"><button class="btn btn-ghost btn-sm comment-thread-toggle" type="button" data-action="toggle-replies" data-target-id="' + replyThreadId + '" data-collapsed-label="展开 ' + replyCount + ' 条深层回复" data-expanded-label="收起深层回复" aria-expanded="false">展开 ' + replyCount + ' 条深层回复</button></div><div class="comment-thread-group" id="' + replyThreadId + '" hidden>' + replies + '</div>'
                     : replies) +
@@ -252,6 +267,8 @@
             host.innerHTML = commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>';
             bindCommentListEvents();
             updateCommentsMoreButton(post);
+            var inlineInput = document.getElementById('inlineReplyInput');
+            if (inlineInput && replyParentId) inlineInput.focus();
         };
         if (window.requestAnimationFrame) {
             window.requestAnimationFrame(function () {
@@ -328,7 +345,6 @@
                 '<h4>评论</h4>' +
                 '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + renderCommentsLoadingState() + '</div>' +
                 '<div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>' +
-                '<div id="replyTarget" style="display:none; font-size:0.8rem; color:var(--accent-purple); padding:0.2rem 0;">回复 @<span id="replyTargetName"></span> <button class="btn btn-ghost" style="padding:0 0.3rem; height:auto;" type="button" data-action="cancel-reply">✕</button></div>' +
                 '<div style="display:flex; gap:0.5rem;">' +
                     '<input type="text" id="commentInput" class="form-input" placeholder="' + (canComment ? '发表评论...' : '评论区已关闭') + '" ' + (canComment ? '' : 'disabled') + '>' +
                     '<button class="btn btn-primary" id="commentSendBtn" type="button" data-action="comment" ' + (canComment ? '' : 'disabled') + '>发送</button>' +
@@ -347,23 +363,53 @@
 
     function setReply(parentId, nickname) {
         replyParentId = parentId;
-        var target = document.getElementById('replyTarget');
-        var name = document.getElementById('replyTargetName');
-        var input = document.getElementById('commentInput');
-        if (target) target.style.display = 'block';
-        if (name) name.textContent = nickname || '匿名';
-        if (input) {
-            input.placeholder = '回复 @' + (nickname || '匿名') + '...';
-            input.focus();
-        }
+        replyTargetName = nickname || '匿名';
+        replyDraftText = '';
+        scheduleCommentsRender(currentPost);
     }
 
     function cancelReply() {
         replyParentId = null;
-        var target = document.getElementById('replyTarget');
-        var input = document.getElementById('commentInput');
-        if (target) target.style.display = 'none';
-        if (input) input.placeholder = '发表评论...';
+        replyTargetName = '';
+        replyDraftText = '';
+        scheduleCommentsRender(currentPost);
+    }
+
+    function updatePostActionButtons() {
+        if (!body || !currentPost) return;
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="like"]'), function (btn) {
+            btn.textContent = '😰 恐惧 (' + Number(currentPost.likes_count || 0) + ')';
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="bookmark"]'), function (btn) {
+            btn.textContent = '⭐ 收藏' + (currentPost.is_bookmarked ? '（已收）' : '');
+        });
+    }
+
+    function findCommentNode(list, commentId) {
+        if (!Array.isArray(list)) return null;
+        for (var i = 0; i < list.length; i += 1) {
+            var item = list[i];
+            if (!item) continue;
+            if (Number(item.id) === Number(commentId)) return item;
+            var found = findCommentNode(item.replies || [], commentId);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function insertCommentIntoState(comment) {
+        if (!currentPost || !comment) return;
+        currentPost.comments = Array.isArray(currentPost.comments) ? currentPost.comments : [];
+        comment.replies = Array.isArray(comment.replies) ? comment.replies : [];
+        if (comment.parent_id) {
+            var parent = findCommentNode(currentPost.comments, comment.parent_id);
+            if (parent) {
+                parent.replies = Array.isArray(parent.replies) ? parent.replies : [];
+                parent.replies.unshift(comment);
+                return;
+            }
+        }
+        currentPost.comments.unshift(comment);
     }
 
     async function doPost(url, payload) {
@@ -377,14 +423,27 @@
 
     async function likePost() {
         if (!requireLogin()) return;
-        await doPost(API_BASE + '/posts/' + postId + '/like');
-        await loadPost();
+        var res = await doPost(API_BASE + '/posts/' + postId + '/like');
+        var data = await parseJsonSafe(res, {});
+        if (!res.ok) {
+            toastError((data && (data.error || data.message)) || '操作失败');
+            return;
+        }
+        var isLiked = String((data && data.message) || '').toLowerCase().indexOf('unlike') === -1;
+        currentPost.likes_count = Math.max(0, Number(currentPost.likes_count || 0) + (isLiked ? 1 : -1));
+        updatePostActionButtons();
     }
 
     async function bookmarkPost() {
         if (!requireLogin()) return;
-        await doPost(API_BASE + '/posts/' + postId + '/bookmark');
-        await loadPost();
+        var res = await doPost(API_BASE + '/posts/' + postId + '/bookmark');
+        var data = await parseJsonSafe(res, {});
+        if (!res.ok) {
+            toastError((data && (data.error || data.message)) || '操作失败');
+            return;
+        }
+        currentPost.is_bookmarked = String((data && data.message) || '').toLowerCase().indexOf('unbook') === -1;
+        updatePostActionButtons();
     }
 
     async function reportPost() {
@@ -407,24 +466,36 @@
     async function submitComment() {
         if (!requireLogin()) return;
         if (!currentPost) return;
-        var input = document.getElementById('commentInput');
+        var input = replyParentId ? document.getElementById('inlineReplyInput') : document.getElementById('commentInput');
+        var submitBtn = replyParentId
+            ? body && body.querySelector('[data-action="submit-inline-reply"]')
+            : document.getElementById('commentSendBtn');
         if (!input) return;
         var content = (input.value || '').trim();
         if (!content) {
             toastError('评论不能为空');
             return;
         }
+        if (replyParentId) replyDraftText = content;
+        input.disabled = true;
+        if (submitBtn) submitBtn.disabled = true;
         var payload = { content: content };
         if (replyParentId) payload.parent_id = replyParentId;
         var res = await doPost(API_BASE + '/posts/' + postId + '/comments', payload);
         var data = await parseJsonSafe(res, {});
         if (!res.ok) {
+            input.disabled = false;
+            if (submitBtn) submitBtn.disabled = false;
             toastError(data.error || '评论失败');
             return;
         }
         input.value = '';
+        input.disabled = false;
+        if (submitBtn) submitBtn.disabled = false;
+        insertCommentIntoState(data && data.comment);
+        if (!replyParentId) visibleCommentCount = Math.min((currentPost.comments || []).length, Math.max(visibleCommentCount + 1, INITIAL_COMMENT_BATCH));
         cancelReply();
-        await loadPost();
+        scheduleCommentsRender(currentPost);
     }
 
     async function likeComment(commentId) {
@@ -437,7 +508,12 @@
             toastError(data.error || '操作失败');
             return;
         }
-        await loadPost();
+        var target = findCommentNode(currentPost && currentPost.comments, cid);
+        if (target) {
+            target.is_liked = !!data.liked;
+            target.likes_count = Number(data.likes_count || 0);
+            scheduleCommentsRender(currentPost);
+        }
     }
 
     function loadMoreComments() {
@@ -512,6 +588,17 @@
                 setReply(pid, nick);
             });
         });
+        Array.prototype.forEach.call(body.querySelectorAll('#inlineReplyInput'), function (input) {
+            input.addEventListener('input', function () {
+                replyDraftText = input.value || '';
+            });
+            input.addEventListener('keydown', function (evt) {
+                if (evt.key === 'Enter' && !evt.shiftKey) {
+                    evt.preventDefault();
+                    submitComment();
+                }
+            });
+        });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="like-comment"]'), function (btn) {
             btn.addEventListener('click', function () {
                 likeComment(btn.getAttribute('data-comment-id'));
@@ -540,9 +627,6 @@
             im.loading = 'lazy';
             im.decoding = 'async';
         });
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="cancel-reply"]'), function (btn) {
-            btn.addEventListener('click', cancelReply);
-        });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="like"]'), function (btn) {
             btn.addEventListener('click', likePost);
         });
@@ -560,6 +644,21 @@
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="comment"]'), function (btn) {
             btn.addEventListener('click', submitComment);
+        });
+        var rootCommentInput = document.getElementById('commentInput');
+        if (rootCommentInput) {
+            rootCommentInput.addEventListener('keydown', function (evt) {
+                if (evt.key === 'Enter' && !evt.shiftKey) {
+                    evt.preventDefault();
+                    submitComment();
+                }
+            });
+        }
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="submit-inline-reply"]'), function (btn) {
+            btn.addEventListener('click', submitComment);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="cancel-inline-reply"]'), function (btn) {
+            btn.addEventListener('click', cancelReply);
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="more-comments"]'), function (btn) {
             btn.addEventListener('click', loadMoreComments);
