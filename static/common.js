@@ -1,5 +1,6 @@
 /**
- * 公共脚本：escapeHtml、formatUserId、handle401，供 index/studio/profile 共用
+ * 公共脚本：escapeHtml、escapeAttr、parseJsonSafe、formatUserId、handle401、apiJson，
+ * 成就/徽章/mention 轻量收口，供 index/studio/profile/post/login 共用
  */
 (function () {
     'use strict';
@@ -24,6 +25,92 @@
             .replace(/>/g, '&gt;')
             .replace(/'/g, '&#39;');
     }
+    window.escapeAttr = escapeAttr;
+
+    window.parseJsonSafe = function (res, fallback) {
+        if (fallback === undefined) fallback = {};
+        return res.json().catch(function () { return fallback; });
+    };
+
+    /** 成就 key -> 中文标题，与 getAchievementTitle 内表一致 */
+    window.equippedTitleByKey = function (key) {
+        var map = {
+            report_privilege: '举报权限',
+            wearable_unlock: '成就佩戴权限',
+            co_create_group: '共创群资格',
+            core_group: '核心群资格',
+            legacy_new_soul: '新魂',
+            legacy_chain_traveler: '链上旅人',
+            legacy_wallet_bound: '钱包绑定',
+            legacy_dual_identity: '双界行者',
+            legacy_contract_psychic: '结契通灵者',
+            legacy_first_post: '首帖达成',
+            legacy_post_10: '十帖异闻录',
+            legacy_post_100: '百帖引魂者',
+            legacy_post_1000: '千帖通灵者',
+            legacy_year_1: '一年见习者',
+            legacy_year_5: '五年夜巡者',
+            legacy_year_10: '十年守秘人',
+            legacy_admin_guardian: '守夜人'
+        };
+        return map[key] || key;
+    };
+
+    /** 作者徽章 HTML（佩戴成就或 honor_title） */
+    window.renderAuthorBadge = function (user) {
+        if (!user) return '';
+        var equipped = String((user.equipped_achievement_key || '').trim());
+        if (equipped) {
+            return '<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ' + window.escapeHtml(window.equippedTitleByKey(equipped)) + '</span>';
+        }
+        if (!user.honor_title) return '';
+        return '<span class="honor-badge">🏷 ' + window.escapeHtml(user.honor_title) + '</span>';
+    };
+
+    /** @用户名 -> 链接 */
+    window.mentionifyText = function (text) {
+        var safe = window.escapeHtml(text || '');
+        return safe.replace(/(^|[\s(（\[【])@([A-Za-z0-9_\u4e00-\u9fff]{2,32})/g, function (_, prefix, token) {
+            var encoded = encodeURIComponent(token || '');
+            return prefix + '<a class="mention-link" href="/profile?user=' + encoded + '" data-no-transition="1">@' + token + '</a>';
+        });
+    };
+
+    /**
+     * 轻量请求层：自动带 token、parseJsonSafe、可选 401 与错误 Toast
+     * @param {string} url
+     * @param {Object} opts - method, body, toastOnError, check401
+     * @returns {Promise<{ res: Response, data: any }>}
+     */
+    window.apiJson = function (url, opts) {
+        opts = opts || {};
+        var method = (opts.method || 'GET').toUpperCase();
+        var body = opts.body;
+        var headers = opts.headers || {};
+        var token = null;
+        try { token = localStorage.getItem('token'); } catch (e) {}
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+        if (body !== undefined && body !== null) {
+            headers['Content-Type'] = 'application/json';
+            if (typeof body !== 'string') body = JSON.stringify(body);
+        }
+        var toastOnError = !!opts.toastOnError;
+        var check401 = opts.check401 !== false;
+        return fetch(url, { method: method, headers: headers, body: body }).then(function (res) {
+            if (check401 && res.status === 401 && typeof window.handle401 === 'function' && window.handle401(res)) {
+                var err = new Error('登录已失效');
+                err.code = 'AUTH_401';
+                err.response = res;
+                throw err;
+            }
+            return window.parseJsonSafe(res, {}).then(function (data) {
+                if (toastOnError && !res.ok && window.Toast && window.Toast.error) {
+                    window.Toast.error((data && data.error) || '请求失败');
+                }
+                return { res: res, data: data };
+            });
+        });
+    };
 
     window.handle401 = function (res) {
         if (res && res.status === 401) {

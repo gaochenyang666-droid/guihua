@@ -6,10 +6,7 @@
     var noticeType = (root && root.getAttribute('data-notice-type')) || 'announcement';
     if (noticeType !== 'activity') noticeType = 'announcement';
     var body = document.getElementById('noticeListBody');
-
-    function parseJsonSafe(res, fallback) {
-        return res.json().catch(function () { return fallback; });
-    }
+    var parseJsonSafe = window.parseJsonSafe;
 
     function renderItems(items) {
         if (!body) return;

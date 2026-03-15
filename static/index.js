@@ -1,20 +1,9 @@
         const API_BASE = window.location.origin + '/api';
         let currentUser = null;
         const stripHtml = (s) => (s == null ? '' : String(s)).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-        const escapeAttrBase = (s) => (s == null ? '' : String(s))
-            .replace(/&/g, '&amp;')
-            .replace(/"/g, '&quot;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-        const escapeAttr = (s) => escapeAttrBase(s);
-        const escapeDataAttr = (s) => escapeAttrBase(s);
-        const parseJsonSafe = async (res, fallback = {}) => {
-            try {
-                return await res.json();
-            } catch (_) {
-                return fallback;
-            }
-        };
+        const escapeAttr = window.escapeAttr;
+        const escapeDataAttr = window.escapeAttr;
+        const parseJsonSafe = window.parseJsonSafe;
         const debounce = (fn, wait = 180) => {
             let timer = null;
             return (...args) => {
@@ -48,13 +37,7 @@
             }
             return { res, data };
         };
-        const mentionifyText = (text) => {
-            const safe = escapeHtml(text || '');
-            return safe.replace(/(^|[\s(（\[【])@([A-Za-z0-9_\u4e00-\u9fff]{2,32})/g, (all, prefix, token) => {
-                const encoded = encodeURIComponent(token || '');
-                return `${prefix}<a class="mention-link" href="/profile?user=${encoded}" data-no-transition="1">@${token}</a>`;
-            });
-        };
+        const mentionifyText = window.mentionifyText;
         let lastPointerClientY = null;
         const recordPointerY = (ev) => {
             if (!ev) return;
@@ -1756,37 +1739,8 @@
             renderAvatar(user) {
                 return `<div class="user-avatar-emoji post-avatar">${user.avatar || '👻'}</div>`;
             },
-            equippedTitleByKey(key) {
-                const map = {
-                    report_privilege: '举报权限',
-                    wearable_unlock: '成就佩戴权限',
-                    co_create_group: '共创群资格',
-                    core_group: '核心群资格',
-                    legacy_new_soul: '新魂',
-                    legacy_chain_traveler: '链上旅人',
-                    legacy_wallet_bound: '钱包绑定',
-                    legacy_dual_identity: '双界行者',
-                    legacy_contract_psychic: '结契通灵者',
-                    legacy_first_post: '首帖达成',
-                    legacy_post_10: '十帖异闻录',
-                    legacy_post_100: '百帖引魂者',
-                    legacy_post_1000: '千帖通灵者',
-                    legacy_year_1: '一年见习者',
-                    legacy_year_5: '五年夜巡者',
-                    legacy_year_10: '十年守秘人',
-                    legacy_admin_guardian: '守夜人'
-                };
-                return map[key] || key;
-            },
-            renderAuthorBadge(user) {
-                if (!user) return '';
-                const equippedKey = (user.equipped_achievement_key || '').trim();
-                if (equippedKey) {
-                    return `<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ${escapeHtml(this.equippedTitleByKey(equippedKey))}</span>`;
-                }
-                if (!user.honor_title) return '';
-                return `<span class="honor-badge">🏷 ${escapeHtml(user.honor_title)}</span>`;
-            },
+            equippedTitleByKey(key) { return window.equippedTitleByKey(key); },
+            renderAuthorBadge(user) { return window.renderAuthorBadge(user); },
 
             handleNav(el, sort) {
                 document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));

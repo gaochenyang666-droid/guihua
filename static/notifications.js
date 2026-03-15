@@ -9,10 +9,7 @@
         var token = localStorage.getItem('token');
         return token ? { 'Authorization': 'Bearer ' + token } : {};
     }
-
-    function parseJsonSafe(res, fallback) {
-        return res.json().catch(function () { return fallback; });
-    }
+    var parseJsonSafe = window.parseJsonSafe;
 
     function typeText(n) {
         if (!n) return '';

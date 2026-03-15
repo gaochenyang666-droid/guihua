@@ -2,10 +2,7 @@
     'use strict';
 
     const API_BASE = window.location.origin + '/api';
-
-    function parseJsonSafe(res, fallback) {
-        return res.json().catch(function () { return fallback || {}; });
-    }
+    const parseJsonSafe = window.parseJsonSafe;
 
     function getSafeNextPath() {
         const params = new URLSearchParams(window.location.search || '');

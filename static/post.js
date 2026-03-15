@@ -19,26 +19,11 @@
     var INITIAL_COMMENT_BATCH = 6;
     var COMMENT_BATCH_SIZE = 6;
 
-    function parseJsonSafe(res, fallback) {
-        return res.json().catch(function () { return fallback; });
-    }
-
-    function escapeAttr(s) {
-        if (s == null || s === undefined) return '';
-        return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/"/g, '&quot;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-    }
-
-    function mentionifyText(text) {
-        var safe = escapeHtml(text || '');
-        return safe.replace(/(^|[\s(（\[【])@([A-Za-z0-9_\u4e00-\u9fff]{2,32})/g, function (_, prefix, token) {
-            var encoded = encodeURIComponent(token || '');
-            return prefix + '<a class="mention-link" href="/profile?user=' + encoded + '" data-no-transition="1">@' + token + '</a>';
-        });
-    }
+    var parseJsonSafe = window.parseJsonSafe;
+    var escapeAttr = window.escapeAttr;
+    var mentionifyText = window.mentionifyText;
+    var equippedTitleByKey = window.equippedTitleByKey;
+    var renderAuthorBadge = window.renderAuthorBadge;
 
     function authHeaders(withJson) {
         var token = localStorage.getItem('token');
@@ -46,39 +31,6 @@
         if (withJson) h['Content-Type'] = 'application/json';
         if (token) h['Authorization'] = 'Bearer ' + token;
         return h;
-    }
-
-    function equippedTitleByKey(key) {
-        var map = {
-            report_privilege: '举报权限',
-            wearable_unlock: '成就佩戴权限',
-            co_create_group: '共创群资格',
-            core_group: '核心群资格',
-            legacy_new_soul: '新魂',
-            legacy_chain_traveler: '链上旅人',
-            legacy_wallet_bound: '钱包绑定',
-            legacy_dual_identity: '双界行者',
-            legacy_contract_psychic: '结契通灵者',
-            legacy_first_post: '首帖达成',
-            legacy_post_10: '十帖异闻录',
-            legacy_post_100: '百帖引魂者',
-            legacy_post_1000: '千帖通灵者',
-            legacy_year_1: '一年见习者',
-            legacy_year_5: '五年夜巡者',
-            legacy_year_10: '十年守秘人',
-            legacy_admin_guardian: '守夜人'
-        };
-        return map[key] || key;
-    }
-
-    function renderAuthorBadge(user) {
-        if (!user) return '';
-        var equipped = (user.equipped_achievement_key || '').trim();
-        if (equipped) {
-            return '<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ' + escapeHtml(equippedTitleByKey(equipped)) + '</span>';
-        }
-        if (!user.honor_title) return '';
-        return '<span class="honor-badge">🏷 ' + escapeHtml(user.honor_title) + '</span>';
     }
 
     function toastError(msg) {
