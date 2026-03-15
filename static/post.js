@@ -9,6 +9,9 @@
     var currentPost = null;
     var replyParentId = null;
     var commentsRenderToken = 0;
+    var visibleCommentCount = 0;
+    var INITIAL_COMMENT_BATCH = 6;
+    var COMMENT_BATCH_SIZE = 6;
 
     function parseJsonSafe(res, fallback) {
         return res.json().catch(function () { return fallback; });
@@ -208,6 +211,31 @@
             '</div>';
     }
 
+    function resetCommentVisibility(post) {
+        var total = Array.isArray(post && post.comments) ? post.comments.length : 0;
+        visibleCommentCount = Math.min(INITIAL_COMMENT_BATCH, total);
+    }
+
+    function renderVisibleComments(post) {
+        var list = Array.isArray(post && post.comments) ? post.comments : [];
+        var visible = list.slice(0, visibleCommentCount || list.length);
+        return renderComments(visible, 0);
+    }
+
+    function updateCommentsMoreButton(post) {
+        var btn = document.getElementById('commentsMoreBtn');
+        if (!btn) return;
+        var total = Array.isArray(post && post.comments) ? post.comments.length : 0;
+        if (!total || visibleCommentCount >= total) {
+            btn.hidden = true;
+            btn.textContent = '';
+            return;
+        }
+        var remain = Math.max(0, total - visibleCommentCount);
+        btn.hidden = false;
+        btn.textContent = '展开更多评论（剩余 ' + remain + ' 条）';
+    }
+
     function scheduleCommentsRender(post) {
         commentsRenderToken += 1;
         var token = commentsRenderToken;
@@ -215,9 +243,10 @@
             if (token !== commentsRenderToken) return;
             var host = document.getElementById('postCommentsList');
             if (!host) return;
-            var commentsHtml = renderComments((post && post.comments) || [], 0);
+            var commentsHtml = renderVisibleComments(post);
             host.innerHTML = commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>';
             bindCommentListEvents();
+            updateCommentsMoreButton(post);
         };
         if (window.requestAnimationFrame) {
             window.requestAnimationFrame(function () {
@@ -246,6 +275,7 @@
     function renderPost(p) {
         currentPost = p;
         commentsRenderToken += 1;
+        resetCommentVisibility(p);
         var isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
         var seriesHtml = renderSeries(p.series || []);
         var canComment = !!(p.allow_comments || (currentUser && currentUser.is_admin));
@@ -292,6 +322,7 @@
             '<section class="comments-section">' +
                 '<h4>评论</h4>' +
                 '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + renderCommentsLoadingState() + '</div>' +
+                '<div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>' +
                 '<div id="replyTarget" style="display:none; font-size:0.8rem; color:var(--accent-purple); padding:0.2rem 0;">回复 @<span id="replyTargetName"></span> <button class="btn btn-ghost" style="padding:0 0.3rem; height:auto;" type="button" data-action="cancel-reply">✕</button></div>' +
                 '<div style="display:flex; gap:0.5rem;">' +
                     '<input type="text" id="commentInput" class="form-input" placeholder="' + (canComment ? '发表评论...' : '评论区已关闭') + '" ' + (canComment ? '' : 'disabled') + '>' +
@@ -404,6 +435,12 @@
         await loadPost();
     }
 
+    function loadMoreComments() {
+        if (!currentPost || !Array.isArray(currentPost.comments) || !currentPost.comments.length) return;
+        visibleCommentCount = Math.min(currentPost.comments.length, visibleCommentCount + COMMENT_BATCH_SIZE);
+        scheduleCommentsRender(currentPost);
+    }
+
     async function adminDeletePost() {
         if (!currentUser || !currentUser.is_admin) return;
         if (!confirm('确定要删除这个帖子吗？此操作不可逆。')) return;
@@ -504,6 +541,9 @@
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="comment"]'), function (btn) {
             btn.addEventListener('click', submitComment);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="more-comments"]'), function (btn) {
+            btn.addEventListener('click', loadMoreComments);
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="admin-delete"]'), function (btn) {
             btn.addEventListener('click', adminDeletePost);
