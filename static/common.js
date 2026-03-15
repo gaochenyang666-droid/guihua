@@ -291,6 +291,19 @@
                 body.classList.add('page-ready');
             });
         }
+        try {
+            if (window.matchMedia) {
+                var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+                var syncReduceMotion = function (evt) {
+                    var shouldReduce = !!(evt && typeof evt.matches === 'boolean' ? evt.matches : mq.matches);
+                    if (!document.body) return;
+                    document.body.classList.toggle('reduce-motion', shouldReduce);
+                };
+                syncReduceMotion(mq);
+                if (typeof mq.addEventListener === 'function') mq.addEventListener('change', syncReduceMotion);
+                else if (typeof mq.addListener === 'function') mq.addListener(syncReduceMotion);
+            }
+        } catch (e) {}
 
         document.addEventListener('click', function (e) {
             if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

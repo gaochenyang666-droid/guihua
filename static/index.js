@@ -1160,9 +1160,48 @@
             isFetching: false,
             pinnedPostId: null,
             autoLoadObserver: null,
+            revealObserver: null,
             hasAdvancedFilters() {
                 const f = this.currentFilters || {};
                 return !!((f.from_date || '').trim() || (f.to_date || '').trim() || (f.tags || '').trim() || f.permanent_only);
+            },
+            ensureRevealObserver() {
+                if (this.revealObserver || !('IntersectionObserver' in window)) return this.revealObserver;
+                this.revealObserver = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (!entry.isIntersecting) return;
+                        const el = entry.target;
+                        if (!(el instanceof Element)) return;
+                        el.classList.add('is-visible');
+                        this.revealObserver.unobserve(el);
+                    });
+                }, {
+                    root: null,
+                    rootMargin: '120px 0px 160px 0px',
+                    threshold: 0.01
+                });
+                return this.revealObserver;
+            },
+            prepareReveal(grid, append = false) {
+                if (!grid) return;
+                const enteringItems = Array.from(grid.querySelectorAll('.masonry-item.is-entering:not(.is-visible)'));
+                if (!enteringItems.length) return;
+                if (prefersReducedMotionUi()) {
+                    enteringItems.forEach((item) => item.classList.add('is-visible'));
+                    return;
+                }
+                const observer = this.ensureRevealObserver();
+                if (!observer) {
+                    enteringItems.forEach((item) => item.classList.add('is-visible'));
+                    return;
+                }
+                enteringItems.forEach((item, idx) => {
+                    if (!append && idx < 4) {
+                        item.classList.add('is-visible');
+                        return;
+                    }
+                    observer.observe(item);
+                });
             },
 
             async loadPinnedGuide() {
@@ -1709,6 +1748,7 @@
 
                 if(append) grid.insertAdjacentHTML('beforeend', html);
                 else grid.innerHTML = html;
+                this.prepareReveal(grid, append);
 
                 const loadingEl = document.getElementById('loadingArea');
                 if (loadingEl) loadingEl.style.display = 'none';
@@ -2342,6 +2382,7 @@
                 const savedScrollY = window.scrollY || window.pageYOffset || 0;
                 this.open('postDetailModal', { anchorY: anchorY, savedScrollY: savedScrollY });
                 const body = document.getElementById('postDetailBody');
+                if (!body) return;
                 body.innerHTML = '加载中...';
                 const modalScrollEl = document.querySelector('#postDetailModal .modal');
                 if (modalScrollEl) modalScrollEl.scrollTop = 0;
@@ -2589,16 +2630,23 @@
             replyTo(postId, commentId, username) {
                 this.currentReplyParentId = commentId;
                 const name = (username != null && username !== '') ? username : '匿名';
-                document.getElementById('replyTarget').style.display = 'block';
-                document.getElementById('replyTargetName').textContent = name;
-                document.getElementById('commentInput').focus();
-                document.getElementById('commentInput').placeholder = `回复 @${name}...`;
+                const replyTarget = document.getElementById('replyTarget');
+                const replyTargetName = document.getElementById('replyTargetName');
+                const commentInput = document.getElementById('commentInput');
+                if (replyTarget) replyTarget.style.display = 'block';
+                if (replyTargetName) replyTargetName.textContent = name;
+                if (commentInput) {
+                    commentInput.placeholder = `回复 @${name}...`;
+                    commentInput.focus();
+                }
             },
 
             cancelReply() {
                 this.currentReplyParentId = null;
-                document.getElementById('replyTarget').style.display = 'none';
-                document.getElementById('commentInput').placeholder = '发表评论...';
+                const replyTarget = document.getElementById('replyTarget');
+                const commentInput = document.getElementById('commentInput');
+                if (replyTarget) replyTarget.style.display = 'none';
+                if (commentInput) commentInput.placeholder = '发表评论...';
             },
 
             async report(postId) {
@@ -2630,8 +2678,9 @@
                 } catch (e) { Toast.error('网络错误'); }
             },
             async comment(id) {
-                const c = document.getElementById('commentInput').value;
-                if(!c) return;
+                const commentInput = document.getElementById('commentInput');
+                const c = commentInput ? (commentInput.value || '').trim() : '';
+                if (!c) return;
                 const body = { content: c };
                 if (this.currentReplyParentId) body.parent_id = this.currentReplyParentId;
                 const res = await fetch(`${API_BASE}/posts/${id}/comments`, {
