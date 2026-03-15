@@ -362,6 +362,24 @@
         var UtilityPanels = {
             _cards: {},
             _expandedKey: '',
+            isMobileView() {
+                return !!(window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+            },
+            getFirstVisibleKey() {
+                var keys = ['checkin', 'group', 'web3'];
+                for (var i = 0; i < keys.length; i += 1) {
+                    var key = keys[i];
+                    var card = this._cards[key];
+                    if (!card || card.hidden) continue;
+                    return key;
+                }
+                return '';
+            },
+            expandDefaultVisible() {
+                var key = this.getFirstVisibleKey();
+                if (!key) return false;
+                return this.setExpanded(key, true);
+            },
             init() {
                 this._cards = {
                     checkin: document.getElementById('checkinCard'),
@@ -378,7 +396,8 @@
                         self.toggle(key);
                     });
                 });
-                this.collapseAll();
+                if (this.isMobileView()) this.expandDefaultVisible();
+                else this.collapseAll();
             },
             setExpanded(key, expanded) {
                 var card = this._cards[key];
@@ -390,12 +409,10 @@
                         other.classList.toggle('is-expanded', otherKey === key);
                     });
                     this._expandedKey = key;
-                    if (typeof window.__setUtilityQuickActive === 'function') window.__setUtilityQuickActive(key);
                     return true;
                 }
                 card.classList.remove('is-expanded');
                 if (this._expandedKey === key) this._expandedKey = '';
-                if (typeof window.__setUtilityQuickActive === 'function') window.__setUtilityQuickActive('');
                 return true;
             },
             toggle(key) {
@@ -415,15 +432,16 @@
                     card.classList.remove('is-expanded');
                 });
                 this._expandedKey = '';
-                if (typeof window.__setUtilityQuickActive === 'function') window.__setUtilityQuickActive('');
             },
             onCardVisibilityChange(key, visible) {
                 if (!visible) {
                     var card = this._cards[key];
                     if (card) card.classList.remove('is-expanded');
                     if (this._expandedKey === key) this._expandedKey = '';
-                    if (typeof window.__setUtilityQuickActive === 'function' && !this._expandedKey) window.__setUtilityQuickActive('');
+                    if (this.isMobileView() && !this._expandedKey) this.expandDefaultVisible();
+                    return;
                 }
+                if (this.isMobileView() && !this._expandedKey) this.expandDefaultVisible();
             }
         };
 

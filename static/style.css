@@ -510,27 +510,6 @@ body.page-motion.page-leaving {
 .mobile-utility-stack {
     display: block;
 }
-.mobile-quick-actions {
-    display: none;
-}
-.mobile-quick-btn {
-    border: 1px solid var(--border-color);
-    background: rgba(18, 18, 26, 0.72);
-    color: var(--text-secondary);
-    border-radius: 12px;
-    min-height: 40px;
-    padding: 0.42rem 0.5rem;
-    font-size: 0.82rem;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.mobile-quick-btn.is-active {
-    border-color: var(--accent-purple-light);
-    color: var(--text-primary);
-    background: rgba(124, 58, 237, 0.16);
-}
 .mobile-utility-toggle-icon {
     font-size: 0.74rem;
     transition: transform var(--dur-fast) var(--ease-enter);

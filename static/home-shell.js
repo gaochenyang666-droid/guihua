@@ -109,20 +109,10 @@
                 var mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
                 var mobileUtilityStack = document.getElementById('mobileUtilityStack');
                 var mobileUtilityHost = document.getElementById('mobileUtilityHost');
-                var mobileQuickActions = document.getElementById('mobileQuickActions');
                 var leftSidebarEl = document.querySelector('.sidebar-left');
                 var rightSidebarEl = document.getElementById('rightSidebar');
                 var navSortCard = leftSidebarEl ? leftSidebarEl.querySelector('.nav-sort-card') : null;
                 var mobileUtilityOpen = !window.matchMedia('(max-width: 768px)').matches;
-                var quickActionButtons = mobileQuickActions ? Array.from(mobileQuickActions.querySelectorAll('.mobile-quick-btn[data-panel]')) : [];
-
-                var setQuickButtonActive = function (panel) {
-                    if (!quickActionButtons.length) return;
-                    quickActionButtons.forEach(function (btn) {
-                        btn.classList.toggle('is-active', !!panel && btn.getAttribute('data-panel') === panel);
-                    });
-                };
-                window.__setUtilityQuickActive = setQuickButtonActive;
 
                 UtilityPanels.init();
 
@@ -136,9 +126,7 @@
                         return;
                     }
                     if (!leftSidebarEl) return;
-                    var anchorNode = isMobileView
-                        ? ((mobileQuickActions && mobileQuickActions.parentElement === leftSidebarEl) ? mobileQuickActions : navSortCard)
-                        : navSortCard;
+                    var anchorNode = navSortCard;
                     if (mobileUtilityHost.parentElement !== leftSidebarEl) {
                         if (anchorNode && anchorNode.nextSibling) leftSidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
                         else leftSidebarEl.appendChild(mobileUtilityHost);
@@ -156,7 +144,6 @@
                     if (!isMobileView) {
                         mobileUtilityStack.classList.add('is-open');
                         if (mobileUtilityToggleBtn) mobileUtilityToggleBtn.setAttribute('aria-expanded', 'true');
-                        setQuickButtonActive('');
                         return;
                     }
                     if (mobileUtilityToggleBtn) {
@@ -164,7 +151,6 @@
                         mobileUtilityToggleBtn.setAttribute('aria-expanded', String(!!mobileUtilityOpen));
                         if (!mobileUtilityOpen) {
                             UtilityPanels.collapseAll();
-                            setQuickButtonActive('');
                         }
                     } else {
                         mobileUtilityOpen = true;
@@ -186,36 +172,6 @@
                     };
                     syncMobileUtility();
                     window.addEventListener('resize', debounce(syncMobileUtility, 160), { passive: true });
-                }
-                if (quickActionButtons.length) {
-                    quickActionButtons.forEach(function (btn) {
-                        btn.onclick = function () {
-                            var panel = btn.getAttribute('data-panel') || '';
-                            if (!panel) return;
-                            if (mobileUtilityToggleBtn && !mobileUtilityOpen) {
-                                mobileUtilityOpen = true;
-                                applyMobileUtilityState();
-                            } else if (mobileUtilityStack && !mobileUtilityStack.classList.contains('is-open')) {
-                                mobileUtilityStack.classList.add('is-open');
-                            }
-                            var card = document.querySelector('[data-utility-key="' + panel + '"]');
-                            var alreadyOpen = !!(card && card.classList.contains('is-expanded'));
-                            if (alreadyOpen) {
-                                UtilityPanels.collapseAll();
-                                return;
-                            }
-                            var ok = UtilityPanels.expand(panel);
-                            if (!ok) return;
-                            var target = document.querySelector('[data-utility-key="' + panel + '"]');
-                            if (target) {
-                                requestAnimationFrame(function () {
-                                    try {
-                                        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                                    } catch (_) {}
-                                });
-                            }
-                        };
-                    });
                 }
             },
 
