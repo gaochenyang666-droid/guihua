@@ -79,13 +79,6 @@
         }
     }
 
-    function sharePostToX() {
-        var url = getShareUrl();
-        var text = getShareText();
-        var intent = 'https://x.com/intent/tweet?text=' + encodeURIComponent(text) + '&url=' + encodeURIComponent(url);
-        window.open(intent, '_blank', 'noopener,noreferrer');
-    }
-
     function requireLogin() {
         if (currentUser) return true;
         toastError('请先登录');
@@ -358,7 +351,6 @@
                 '<button class="btn btn-ghost" type="button" data-action="like">😰 恐惧 (' + Number(p.likes_count || 0) + ')</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="bookmark">⭐ 收藏' + (p.is_bookmarked ? '（已收）' : '') + '</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="share">🔗 分享</button>' +
-                '<button class="btn btn-ghost" type="button" data-action="share-x">𝕏 分享</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="report">🚩 举报</button>' +
             '</div>' +
             adminControls +
@@ -785,9 +777,6 @@
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="share"]'), function (btn) {
             btn.addEventListener('click', sharePost);
-        });
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="share-x"]'), function (btn) {
-            btn.addEventListener('click', sharePostToX);
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="report"]'), function (btn) {
             btn.addEventListener('click', reportPost);
