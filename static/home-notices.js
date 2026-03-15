@@ -8,6 +8,7 @@
         var parseJsonSafe = deps.parseJsonSafe;
         var Modal = deps.Modal;
         var navigateWithTransition = deps.navigateWithTransition;
+        var apiJson = window.apiJson;
 
         var Notification = {
             async load() {
@@ -48,18 +49,18 @@
             },
 
             async read(id, postId) {
-                await fetch(API_BASE + '/notifications/' + id + '/read', {
+                await apiJson(API_BASE + '/notifications/' + id + '/read', {
                     method: 'PUT',
-                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                    check401: false
                 });
                 this.load();
                 if (postId != null && postId !== undefined) Modal.openDetail(postId);
             },
 
             async readAll() {
-                await fetch(API_BASE + '/notifications/read_all', {
+                await apiJson(API_BASE + '/notifications/read_all', {
                     method: 'PUT',
-                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                    check401: false
                 });
                 this.load();
             }

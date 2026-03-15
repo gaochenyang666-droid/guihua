@@ -9,6 +9,7 @@
         var detailScrollStore = deps.detailScrollStore;
         var navigateWithTransition = deps.navigateWithTransition;
         var getUI = deps.getUI;
+        var apiJson = window.apiJson;
 
         var tipAuthorPostId = null;
         var tipAuthorWallet = '';
@@ -191,18 +192,17 @@
                         return;
                     }
                     Toast.info('交易已发送，正在确认...');
-                    var verifyRes = await fetch(API_BASE + '/tips/verify', {
+                    var verifyResult = await apiJson(API_BASE + '/tips/verify', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-                        body: JSON.stringify({ tx_hash: txHash, post_id: tipAuthorPostId })
+                        body: { tx_hash: txHash, post_id: tipAuthorPostId },
+                        check401: false
                     });
-                    var resp = await parseJsonSafe(verifyRes, {});
-                    if (verifyRes.ok) {
-                        Toast.success('打赏成功！' + resp.tip.author_receives_usdt + ' USDT 已直接转入作者钱包');
+                    if (verifyResult.res.ok) {
+                        Toast.success('打赏成功！' + verifyResult.data.tip.author_receives_usdt + ' USDT 已直接转入作者钱包');
                         Modal.close('tipAuthorModal');
                         Modal.openDetail(tipAuthorPostId);
                     } else {
-                        Toast.error(resp.error || '验证失败');
+                        Toast.error(verifyResult.data.error || '验证失败');
                     }
                 } catch (e) {
                     if (e && e.code === 4001) Toast.error('已取消打赏');
@@ -335,36 +335,34 @@
             },
             async like(id) {
                 if (!getCurrentUser()) return Modal.open('loginModal');
-                var res = await fetch(API_BASE + '/posts/' + id + '/like', {
+                var result = await apiJson(API_BASE + '/posts/' + id + '/like', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                    check401: false
                 });
-                var data = await parseJsonSafe(res, {});
-                if (!res.ok) {
-                    Toast.error(data.error || data.message || '操作失败');
+                if (!result.res.ok) {
+                    Toast.error(result.data.error || result.data.message || '操作失败');
                     return;
                 }
                 var post = this.findRenderedPost(id);
                 if (post) {
-                    var isLiked = String((data && data.message) || '').toLowerCase().indexOf('unlike') === -1;
+                    var isLiked = String((result.data && result.data.message) || '').toLowerCase().indexOf('unlike') === -1;
                     post.likes_count = Math.max(0, Number(post.likes_count || 0) + (isLiked ? 1 : -1));
                 }
                 this.syncFeedActionState(id);
             },
             async bookmark(id) {
                 if (!getCurrentUser()) return Modal.open('loginModal');
-                var res = await fetch(API_BASE + '/posts/' + id + '/bookmark', {
+                var result = await apiJson(API_BASE + '/posts/' + id + '/bookmark', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                    check401: false
                 });
-                var data = await parseJsonSafe(res, {});
-                if (!res.ok) {
-                    Toast.error(data.error || data.message || '操作失败');
+                if (!result.res.ok) {
+                    Toast.error(result.data.error || result.data.message || '操作失败');
                     return;
                 }
                 var post = this.findRenderedPost(id);
                 if (post) {
-                    post.is_bookmarked = String((data && data.message) || '').toLowerCase().indexOf('unbook') === -1;
+                    post.is_bookmarked = String((result.data && result.data.message) || '').toLowerCase().indexOf('unbook') === -1;
                 }
                 this.syncFeedActionState(id);
             }

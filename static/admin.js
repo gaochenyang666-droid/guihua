@@ -9,6 +9,7 @@
         var Modal = deps.Modal;
         var getSiteNotice = deps.getSiteNotice;
         var getGroupLinks = deps.getGroupLinks;
+        var apiJson = window.apiJson;
 
         return {
             async openStats() {
@@ -53,9 +54,9 @@
                 if (!body) return;
                 body.innerHTML = '加载中...';
                 try {
-                    var res = await fetch(API_BASE + '/admin/reports', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } });
-                    var list = await parseJsonSafe(res, []);
-                    if (res.status !== 200 || !Array.isArray(list)) {
+                    var result = await apiJson(API_BASE + '/admin/reports', { check401: false });
+                    var list = result.data;
+                    if (result.res.status !== 200 || !Array.isArray(list)) {
                         body.innerHTML = '<div style="color: var(--accent-red);">' + escapeHtml(list.error || '加载失败') + '</div>';
                         return;
                     }
@@ -79,16 +80,15 @@
 
             async resolveReport(reportId, status) {
                 try {
-                    var res = await fetch(API_BASE + '/admin/reports/' + reportId, {
+                    var result = await apiJson(API_BASE + '/admin/reports/' + reportId, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-                        body: JSON.stringify({ status: status })
+                        body: { status: status },
+                        check401: false
                     });
-                    var data = await parseJsonSafe(res, {});
-                    if (res.ok) {
-                        Toast.success(data.message || '已更新');
+                    if (result.res.ok) {
+                        Toast.success(result.data.message || '已更新');
                         this.openReports();
-                    } else Toast.error(data.error || '操作失败');
+                    } else Toast.error(result.data.error || '操作失败');
                 } catch (_) {
                     Toast.error('网络错误');
                 }
@@ -100,9 +100,9 @@
                 if (!body) return;
                 body.innerHTML = '加载中...';
                 try {
-                    var res = await fetch(API_BASE + '/admin/users', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') } });
-                    var list = await parseJsonSafe(res, []);
-                    if (res.status !== 200 || !Array.isArray(list)) {
+                    var result = await apiJson(API_BASE + '/admin/users', { check401: false });
+                    var list = result.data;
+                    if (result.res.status !== 200 || !Array.isArray(list)) {
                         body.innerHTML = '<div style="color: var(--accent-red);">' + escapeHtml(list.error || '加载失败') + '</div>';
                         return;
                     }
@@ -123,15 +123,14 @@
 
             async toggleBan(userId, currentlyBanned) {
                 try {
-                    var res = await fetch(API_BASE + '/admin/users/' + userId + '/ban', {
+                    var result = await apiJson(API_BASE + '/admin/users/' + userId + '/ban', {
                         method: 'POST',
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                        check401: false
                     });
-                    var data = await parseJsonSafe(res, {});
-                    if (res.ok) {
-                        Toast.success(data.message || (currentlyBanned ? '已解除封禁' : '已封禁'));
+                    if (result.res.ok) {
+                        Toast.success(result.data.message || (currentlyBanned ? '已解除封禁' : '已封禁'));
                         this.openUsers();
-                    } else Toast.error(data.error || '操作失败');
+                    } else Toast.error(result.data.error || '操作失败');
                 } catch (_) {
                     Toast.error('网络错误');
                 }
@@ -143,12 +142,10 @@
                 if (!body) return;
                 body.innerHTML = '加载中...';
                 try {
-                    var res = await fetch(API_BASE + '/admin/announcements', {
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-                    });
-                    var data = await parseJsonSafe(res, {});
+                    var result = await apiJson(API_BASE + '/admin/announcements', { check401: false });
+                    var data = result.data;
                     var list = data.announcements || [];
-                    if (!res.ok) throw new Error(data.error || '加载失败');
+                    if (!result.res.ok) throw new Error(data.error || '加载失败');
                     if (!list.length) {
                         body.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem;">暂无公告</div>';
                         return;
@@ -176,18 +173,17 @@
                 var startsAt = (prompt('开始时间（可空，格式 YYYY-MM-DDTHH:mm:ss）', '') || '').trim();
                 var expiresAt = (prompt('结束时间（可空，格式 YYYY-MM-DDTHH:mm:ss）', '') || '').trim();
                 try {
-                    var res = await fetch(API_BASE + '/admin/announcements', {
+                    var result = await apiJson(API_BASE + '/admin/announcements', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-                        body: JSON.stringify({ title: title.trim(), content: content.trim(), entry_type: entryType, level: level, starts_at: startsAt || null, expires_at: expiresAt || null, activate: true })
+                        body: { title: title.trim(), content: content.trim(), entry_type: entryType, level: level, starts_at: startsAt || null, expires_at: expiresAt || null, activate: true },
+                        check401: false
                     });
-                    var data = await parseJsonSafe(res, {});
-                    if (res.ok) {
-                        Toast.success(data.message || '已创建');
+                    if (result.res.ok) {
+                        Toast.success(result.data.message || '已创建');
                         var siteNotice = getSiteNotice();
                         if (siteNotice && typeof siteNotice.load === 'function') siteNotice.load();
                         this.openAnnouncements();
-                    } else Toast.error(data.error || '创建失败');
+                    } else Toast.error(result.data.error || '创建失败');
                 } catch (_) {
                     Toast.error('网络错误');
                 }
@@ -195,18 +191,17 @@
 
             async toggleAnnouncementActive(id, isActive) {
                 try {
-                    var res = await fetch(API_BASE + '/admin/announcements/' + id, {
+                    var result = await apiJson(API_BASE + '/admin/announcements/' + id, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-                        body: JSON.stringify({ is_active: isActive })
+                        body: { is_active: isActive },
+                        check401: false
                     });
-                    var data = await parseJsonSafe(res, {});
-                    if (res.ok) {
+                    if (result.res.ok) {
                         Toast.success('状态已更新');
                         var siteNotice = getSiteNotice();
                         if (siteNotice && typeof siteNotice.load === 'function') siteNotice.load();
                         this.openAnnouncements();
-                    } else Toast.error(data.error || '操作失败');
+                    } else Toast.error(result.data.error || '操作失败');
                 } catch (_) {
                     Toast.error('网络错误');
                 }
@@ -215,17 +210,16 @@
             async deleteAnnouncement(id) {
                 if (!confirm('确定删除此公告？')) return;
                 try {
-                    var res = await fetch(API_BASE + '/admin/announcements/' + id, {
+                    var result = await apiJson(API_BASE + '/admin/announcements/' + id, {
                         method: 'DELETE',
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                        check401: false
                     });
-                    var data = await parseJsonSafe(res, {});
-                    if (res.ok) {
+                    if (result.res.ok) {
                         Toast.success('已删除');
                         var siteNotice = getSiteNotice();
                         if (siteNotice && typeof siteNotice.load === 'function') siteNotice.load();
                         this.openAnnouncements();
-                    } else Toast.error(data.error || '删除失败');
+                    } else Toast.error(result.data.error || '删除失败');
                 } catch (_) {
                     Toast.error('网络错误');
                 }
@@ -237,12 +231,10 @@
                 if (!body) return;
                 body.innerHTML = '加载中...';
                 try {
-                    var res = await fetch(API_BASE + '/admin/audit-logs?limit=200', {
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-                    });
-                    var data = await parseJsonSafe(res, {});
+                    var result = await apiJson(API_BASE + '/admin/audit-logs?limit=200', { check401: false });
+                    var data = result.data;
                     var logs = data.logs || [];
-                    if (!res.ok) throw new Error(data.error || '加载失败');
+                    if (!result.res.ok) throw new Error(data.error || '加载失败');
                     if (!logs.length) {
                         body.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem;">暂无日志</div>';
                         return;
@@ -261,37 +253,32 @@
 
             async editGroupLinks() {
                 try {
-                    var res = await fetch(API_BASE + '/admin/group-links', {
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-                    });
-                    var data = await parseJsonSafe(res, {});
-                    if (!res.ok) {
+                    var result = await apiJson(API_BASE + '/admin/group-links', { check401: false });
+                    if (!result.res.ok) {
+                        var data = result.data || {};
                         Toast.error(data.error || '读取群链接失败');
                         return;
                     }
+                    var data = result.data || {};
                     var currentCo = data.co_create_url || '';
                     var currentCore = data.core_url || '';
                     var co = prompt('设置「共创群」Telegram 链接（留空=清空）', currentCo);
                     if (co === null) return;
                     var core = prompt('设置「核心群」Telegram 链接（留空=清空）', currentCore);
                     if (core === null) return;
-                    var saveRes = await fetch(API_BASE + '/admin/group-links', {
+                    var saveResult = await apiJson(API_BASE + '/admin/group-links', {
                         method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + localStorage.getItem('token')
-                        },
-                        body: JSON.stringify({
+                        body: {
                             co_create_url: (co || '').trim(),
                             core_url: (core || '').trim()
-                        })
+                        },
+                        check401: false
                     });
-                    var saveData = await parseJsonSafe(saveRes, {});
-                    if (!saveRes.ok) {
-                        Toast.error(saveData.error || '保存失败');
+                    if (!saveResult.res.ok) {
+                        Toast.error(saveResult.data.error || '保存失败');
                         return;
                     }
-                    Toast.success(saveData.message || '群链接已更新');
+                    Toast.success(saveResult.data.message || '群链接已更新');
                     var groupLinks = getGroupLinks();
                     if (groupLinks && typeof groupLinks.load === 'function') groupLinks.load();
                 } catch (_) {
