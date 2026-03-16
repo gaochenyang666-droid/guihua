@@ -11,7 +11,11 @@
 
     /* Navbar (Desktop): 单行 Logo | 搜索 | 操作 */
     .navbar {
-        flex-wrap: nowrap;
+        display: grid;
+        grid-template-columns: auto minmax(380px, 620px) auto;
+        justify-content: space-between;
+        align-items: center;
+        column-gap: 1.1rem;
         height: var(--nav-height);
         min-height: var(--nav-height);
         padding: 0 2rem;
@@ -26,20 +30,22 @@
         display: inline-flex;
         align-items: center;
         gap: 0.45rem;
-        margin-left: auto;
+        margin-left: 0;
         margin-right: 0;
         flex-shrink: 0;
         position: relative;
         z-index: 280;
+        justify-self: end;
     }
     .mobile-nav-panel {
         display: flex;
         align-items: center;
-        gap: 1rem;
+        justify-content: center;
+        gap: 0;
         flex: 0 1 auto;
-        margin-left: 1rem;
+        margin-left: 0;
         min-width: 0;
-        position: relative;
+        position: static;
     }
     .nav-actions {
         display: none;
@@ -47,7 +53,7 @@
         order: unset;
         margin-left: 0;
         position: absolute;
-        right: 0;
+        right: 2rem;
         top: calc(100% + 12px);
         min-width: 360px;
         max-width: min(680px, calc(100vw - 3rem));
@@ -64,15 +70,16 @@
     .nav-actions .btn { padding: 0.7rem 1rem; font-size: 0.95rem; justify-content: flex-start; }
     .user-menu { display: flex; align-items: stretch; gap: 0.8rem; width: 100%; flex-direction: column; }
     .search-container {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        width: min(620px, calc(100vw - 760px));
-        max-width: none;
+        position: relative;
+        left: auto;
+        top: auto;
+        transform: none;
+        width: 100%;
+        max-width: 620px;
         min-width: 380px;
         margin: 0;
         z-index: 260;
+        justify-self: center;
     }
     .search-input {
         padding: 0.6rem 1rem 0.6rem 2.8rem;
