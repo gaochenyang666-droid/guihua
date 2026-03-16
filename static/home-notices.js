@@ -12,9 +12,7 @@
         var Notification = {
             async load() {
                 if (!getCurrentUser()) return;
-                var result = await fetchJsonSafe(API_BASE + '/notifications', {
-                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-                }, { fallback: {}, checkUnauthorized: true, errorMessage: '加载通知失败' });
+                var result = await fetchJsonSafe(API_BASE + '/notifications', {}, { fallback: {}, checkUnauthorized: true, errorMessage: '加载通知失败' });
                 if (!result.res.ok) return;
 
                 var list = document.getElementById('notificationList');

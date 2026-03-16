@@ -32,6 +32,23 @@
         return res.json().catch(function () { return fallback; });
     };
 
+    window.authState = {
+        hasSessionHint: function () {
+            try { return localStorage.getItem('auth_session') === '1'; } catch (_) { return false; }
+        },
+        markLoggedIn: function () {
+            try { localStorage.setItem('auth_session', '1'); } catch (_) {}
+            try { localStorage.setItem('login_at', String(Date.now())); } catch (_) {}
+            try { sessionStorage.removeItem('login_expiry_warned'); } catch (_) {}
+        },
+        clear: function () {
+            try { localStorage.removeItem('token'); } catch (_) {}
+            try { localStorage.removeItem('auth_session'); } catch (_) {}
+            try { localStorage.removeItem('login_at'); } catch (_) {}
+            try { sessionStorage.removeItem('login_expiry_warned'); } catch (_) {}
+        }
+    };
+
     /** 成就 key -> 中文标题，与 getAchievementTitle 内表一致 */
     window.equippedTitleByKey = function (key) {
         var map = {
@@ -77,7 +94,7 @@
     };
 
     /**
-     * 轻量请求层：自动带 token、parseJsonSafe、可选 401 与错误 Toast
+     * 轻量请求层：同源 cookie 鉴权、parseJsonSafe、可选 401 与错误 Toast
      * @param {string} url
      * @param {Object} opts - method, body, toastOnError, check401, fallback, auth
      * @returns {Promise<{ res: Response, data: any }>}
@@ -92,9 +109,6 @@
         var method = (fetchOpts.method || 'GET').toUpperCase();
         var body = fetchOpts.body;
         var headers = fetchOpts.headers || {};
-        var token = null;
-        try { token = localStorage.getItem('token'); } catch (e) {}
-        if (opts.auth !== false && token && !headers['Authorization']) headers['Authorization'] = 'Bearer ' + token;
         if (body !== undefined && body !== null) {
             headers['Content-Type'] = 'application/json';
             if (typeof body !== 'string') body = JSON.stringify(body);
@@ -105,6 +119,7 @@
         fetchOpts.method = method;
         fetchOpts.headers = headers;
         fetchOpts.body = body;
+        if (!fetchOpts.credentials) fetchOpts.credentials = 'same-origin';
         return fetch(url, fetchOpts).then(function (res) {
             if (check401 && res.status === 401 && typeof window.handle401 === 'function' && window.handle401(res)) {
                 var err = new Error('登录已失效');
@@ -123,8 +138,7 @@
 
     window.handle401 = function (res) {
         if (res && res.status === 401) {
-            try { localStorage.removeItem('token'); } catch (e) {}
-            try { localStorage.removeItem('login_at'); } catch (e) {}
+            if (window.authState && typeof window.authState.clear === 'function') window.authState.clear();
             if (typeof window.currentUser !== 'undefined') window.currentUser = null;
             window.location.href = '/';
             return true;

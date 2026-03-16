@@ -40,11 +40,10 @@
                 document.getElementById('seriesList').innerHTML = '';
                 return;
             }
-            const token = localStorage.getItem('token');
-            const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
             try {
-                const res = await fetch(`${API_BASE}/series/${id}`, { headers });
-                const data = await res.json().catch(() => ({}));
+                const result = await apiJson(`${API_BASE}/series/${id}`, { auth: false, fallback: {} });
+                const res = result.res;
+                const data = result.data;
                 if (!res.ok) {
                     document.getElementById('seriesMeta').innerHTML = `<div style="color:var(--accent-red);">${(data && data.error) || '加载失败'}</div>`;
                     document.getElementById('seriesList').innerHTML = '';

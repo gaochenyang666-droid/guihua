@@ -3,6 +3,7 @@
 
     const API_BASE = window.location.origin + '/api';
     const apiJson = window.apiJson;
+    const authState = window.authState;
 
     function getSafeNextPath() {
         const params = new URLSearchParams(window.location.search || '');
@@ -41,10 +42,8 @@
     }
 
     function saveLogin(data) {
-        if (!data || !data.token) return false;
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('login_at', String(Date.now()));
-        sessionStorage.removeItem('login_expiry_warned');
+        if (!data || !data.user) return false;
+        if (authState && authState.markLoggedIn) authState.markLoggedIn();
         return true;
     }
 
@@ -149,7 +148,7 @@
         });
         const verifyRes = verifyResult.res;
         const verifyData = verifyResult.data;
-        if (!verifyRes.ok || !verifyData.token) {
+        if (!verifyRes.ok || !verifyData.user) {
             throw new Error((verifyData && verifyData.error) || '钱包登录失败');
         }
         saveLogin(verifyData);
@@ -423,26 +422,21 @@
             }
         });
 
-        const token = localStorage.getItem('token');
-        if (token) {
-            try {
-                const result = await apiJson(API_BASE + '/user/me', {
-                    headers: { 'Authorization': 'Bearer ' + token },
-                    check401: false,
-                    fallback: {}
-                });
-                const res = result.res;
-                if (res.ok) {
-                    Toast.info('你已登录，正在进入页面...');
-                    setTimeout(goAfterLogin, 120);
-                    return;
-                }
-                if (res.status === 401) {
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('login_at');
-                }
-            } catch (_) {}
-        }
+        try {
+            const result = await apiJson(API_BASE + '/user/me', {
+                auth: false,
+                check401: false,
+                fallback: {}
+            });
+            const res = result.res;
+            if (res.ok) {
+                if (authState && authState.markLoggedIn) authState.markLoggedIn();
+                Toast.info('你已登录，正在进入页面...');
+                setTimeout(goAfterLogin, 120);
+                return;
+            }
+            if (res.status === 401 && authState && authState.clear) authState.clear();
+        } catch (_) {}
 
         setMode('login');
     }

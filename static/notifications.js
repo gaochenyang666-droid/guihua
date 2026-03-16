@@ -87,8 +87,7 @@
 
     async function loadNotifications() {
         if (!body) return;
-        var token = localStorage.getItem('token');
-        if (!token) {
+        if (!(window.authState && window.authState.hasSessionHint && window.authState.hasSessionHint())) {
             body.innerHTML = '<div class="list-page-empty">请先登录后查看通知</div><div style="margin-top:0.8rem;"><button class="btn btn-primary" id="goLoginBtn" type="button">前往首页登录</button></div>';
             var go = document.getElementById('goLoginBtn');
             if (go) go.addEventListener('click', goHomeLogin);

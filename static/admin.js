@@ -19,9 +19,7 @@
                 body.innerHTML = '加载中...';
 
                 try {
-                    var result = await fetchJsonSafe(API_BASE + '/admin/stats', {
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-                    }, { fallback: {}, errorMessage: '加载统计失败' });
+                    var result = await fetchJsonSafe(API_BASE + '/admin/stats', {}, { fallback: {}, errorMessage: '加载统计失败' });
 
                     if (!result.res.ok || result.data.error) throw new Error(result.data.error || '加载失败');
 
@@ -394,7 +392,7 @@
                             alerts.map(function (alert) {
                                 var color = alert.severity === 'error' ? 'var(--accent-red)' : (alert.severity === 'warn' ? 'var(--accent-orange)' : 'var(--accent-green)');
                                 return '<div class="glass" style="padding:0.8rem; border-radius:10px; border:1px solid ' + color + ';">' +
-                                    '<div style="font-weight:700; color:' + color + ';">' + escapeHtml(alert.title || '告警') + '</div>' +
+                                    '<div style="font-weight:700; color:' + color + ';">' + escapeHtml(alert.title || '警告') + '</div>' +
                                     '<div style="font-size:0.86rem; color:var(--text-secondary); margin-top:0.25rem;">' + escapeHtml(alert.message || '') + '</div>' +
                                 '</div>';
                             }).join('') +

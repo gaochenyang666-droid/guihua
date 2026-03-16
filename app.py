@@ -223,8 +223,8 @@ from models import (User, Post, Vote, Comment, Like, CommentLike, Bookmark, Noti
     build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
     calc_level_info, checkin_exp_by_streak)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
-    token_required, admin_required, _get_redis_client,
-    bleach_clean_post_content as _bleach_clean_post_content)
+    token_required, admin_required, _get_redis_client, set_auth_cookie,
+    clear_auth_cookie, bleach_clean_post_content as _bleach_clean_post_content)
 from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
 from services.blockchain import (get_post_fee_usdt_raw, verify_transaction, inspect_transaction_status as _svc_inspect_transaction_status)
 from services.posts_query import (
@@ -587,8 +587,9 @@ def verify_signature():
         'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, app.config['SECRET_KEY'], algorithm='HS256')
     _log_flow_event('wallet_verify_success', address=address, target_user_id=user.id, created_user=created_user)
-    
-    return jsonify({'token': token, 'user': user.to_dict()})
+    response = jsonify({'token': token, 'user': user.to_dict()})
+    set_auth_cookie(response, token, max_age=JWT_EXPIRY_HOURS * 3600)
+    return response
 
 @app.route('/api/auth/web2/register', methods=['POST'])
 def register():
@@ -617,14 +618,16 @@ def register():
         except Exception as e:
             db.session.rollback()
             print(f"Register Error: {e}")
-        return jsonify({'error': '注册失败，请稍后重试'}), 500
+            return jsonify({'error': '注册失败，请稍后重试'}), 500
         
         token = jwt.encode({
             'user_id': user.id,
             'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
         }, app.config['SECRET_KEY'], algorithm='HS256')
-        
-        return jsonify({'token': token, 'user': user.to_dict()}), 201
+        response = jsonify({'token': token, 'user': user.to_dict()})
+        response.status_code = 201
+        set_auth_cookie(response, token, max_age=JWT_EXPIRY_HOURS * 3600)
+        return response
     except Exception as e:
         print(f"Register Error: {e}")
         return jsonify({'error': '注册失败，请稍后重试'}), 500
@@ -658,10 +661,19 @@ def login():
             'user_id': user.id,
             'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
         }, app.config['SECRET_KEY'], algorithm='HS256')
-        return jsonify({'token': token, 'user': user.to_dict()})
+        response = jsonify({'token': token, 'user': user.to_dict()})
+        set_auth_cookie(response, token, max_age=JWT_EXPIRY_HOURS * 3600)
+        return response
     except Exception as e:
         print(f"Login Error: {e}")
         return jsonify({'error': '用户名或密码错误'}), 401
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    response = jsonify({'message': '已退出登录'})
+    clear_auth_cookie(response)
+    return response
 
 @app.route('/api/auth/web2/change-password', methods=['POST'])
 def change_password_no_login():

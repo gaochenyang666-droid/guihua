@@ -343,10 +343,8 @@
                     if (this.currentFilters.tags) qParams.append('tags', this.currentFilters.tags);
                     var endpoint = API_BASE + '/posts';
                     if (this.currentQuery || this.hasAdvancedFilters()) endpoint = API_BASE + '/search';
-                    var token = localStorage.getItem('token');
                     var result = await apiJson(endpoint + '?' + qParams.toString(), {
-                        fallback: {},
-                        auth: !!token
+                        fallback: {}
                     });
                     var res = result.res;
                     var data = result.data;
@@ -361,7 +359,7 @@
                                 var emptyMsg = '这里一片荒芜，什么也没有...';
                                 var emptyBtn = this.currentQuery ? '<button class="btn btn-ghost" onclick="Post.load()" style="margin-top:1rem;">返回全部</button>' : '';
                                 if (this.currentSort === 'bookmarks') {
-                                    if (!token) {
+                                    if (!(window.authState && window.authState.hasSessionHint && window.authState.hasSessionHint())) {
                                         emptyMsg = '请先登录后查看收藏';
                                         emptyBtn = '<button class="btn btn-primary" onclick="Modal.open(\'loginModal\')" style="margin-top:1rem;">去登录</button>';
                                     } else {

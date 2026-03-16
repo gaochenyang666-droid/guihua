@@ -96,13 +96,12 @@
 
         const Auth = {
             async init() {
-                const token = localStorage.getItem('token');
-                if (token) {
-                    await this.fetchMe();
-                } else {
+                await this.fetchMe();
+                if (!currentUser) {
                     Toast.info('请先登录');
                     if (typeof openLoginPage === 'function') openLoginPage('/studio');
                     else navigateWithTransition('/login?next=%2Fstudio');
+                    return;
                 }
                 UI.updateAuth();
                 Draft.load(); 
@@ -124,14 +123,14 @@
                     const res = result.res;
                     if (res.ok) {
                         currentUser = result.data;
+                        if (window.authState && window.authState.markLoggedIn) window.authState.markLoggedIn();
                         if (!currentUser.is_admin && currentUser.type !== 'web3') {
                             alert('仅限 Web3 创作者或管理员进入');
                             navigateWithTransition('/');
                             return;
                         }
                     } else {
-                        if (handle401(res)) return;
-                        localStorage.removeItem('token');
+                        if (res.status === 401 && window.authState && window.authState.clear) window.authState.clear();
                         if (typeof openLoginPage === 'function') openLoginPage('/studio');
                         else navigateWithTransition('/login?next=%2Fstudio');
                     }
@@ -167,8 +166,7 @@
             },
 
             async runPrecheck() {
-                const token = localStorage.getItem('token');
-                if (!token) return { ok: false, issues: ['登录已失效，请重新登录'], warnings: [] };
+                if (!currentUser) return { ok: false, issues: ['登录已失效，请重新登录'], warnings: [] };
                 const title = document.getElementById('studioPostTitle').value || '';
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
                 try {
@@ -237,8 +235,6 @@
             async loadSeriesOptions(preferId) {
                 const select = document.getElementById('studioSeriesSelect');
                 if (!select || !currentUser) return;
-                const token = localStorage.getItem('token');
-                if (!token) return;
                 try {
                     const result = await apiJson(`${API_BASE}/series?mine=1&page=1&per_page=80`, { fallback: {} });
                     const data = result.data;
@@ -695,9 +691,7 @@
 
             async publish() {
                 if (this.isPublishing) return;
-                
-                const token = localStorage.getItem('token');
-                if (!token) {
+                if (!currentUser) {
                     Toast.error('登录已失效，请重新登录');
                     return;
                 }
@@ -974,8 +968,8 @@
                 formData.append('file', prepared.uploadBlob, prepared.uploadName);
                 const res = await fetch(API_BASE + '/upload', {
                     method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
-                    body: formData
+                    body: formData,
+                    credentials: 'same-origin'
                 });
                 if (handle401(res)) return;
                 const resp = await res.json().catch(() => ({}));

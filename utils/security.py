@@ -24,6 +24,7 @@ POST_CONTENT_ATTRS = {
 
 _rate_limit_store = {}
 _redis_client = None
+AUTH_COOKIE_NAME = 'guihua_auth'
 
 
 def _get_redis_client():
@@ -68,19 +69,68 @@ def _rate_limit(key_prefix, max_per_minute=5):
     return False
 
 
-def _bearer_token():
+def _auth_cookie_token():
+    token = request.cookies.get(AUTH_COOKIE_NAME)
+    return token or None
+
+
+def _request_token():
     auth = request.headers.get('Authorization')
-    if not auth or not auth.startswith('Bearer '):
-        return None
-    return auth[7:]
+    if auth and auth.startswith('Bearer '):
+        return auth[7:]
+    return _auth_cookie_token()
+
+
+def _bearer_token():
+    return _request_token()
+
+
+def _decode_jwt_token(token):
+    return jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+
+
+def _should_secure_auth_cookie():
+    if request.is_secure:
+        return True
+    forwarded_proto = (request.headers.get('X-Forwarded-Proto') or '').strip().lower()
+    return forwarded_proto == 'https'
+
+
+def set_auth_cookie(response, token, max_age=None):
+    if max_age is None:
+        max_age = int(current_app.config.get('JWT_EXPIRY_HOURS', 24) * 3600)
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        token,
+        max_age=max_age,
+        httponly=True,
+        secure=_should_secure_auth_cookie(),
+        samesite='Lax',
+        path='/'
+    )
+    return response
+
+
+def clear_auth_cookie(response):
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        '',
+        expires=0,
+        max_age=0,
+        httponly=True,
+        secure=_should_secure_auth_cookie(),
+        samesite='Lax',
+        path='/'
+    )
+    return response
 
 
 def _get_optional_jwt_payload():
-    token = _bearer_token()
+    token = _request_token()
     if not token:
         return None
     try:
-        return jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+        return _decode_jwt_token(token)
     except Exception:
         return None
 
@@ -88,21 +138,21 @@ def _get_optional_jwt_payload():
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = _bearer_token()
+        token = _request_token()
         if not token:
-            return jsonify({'error': 'Token is missing'}), 401
+            return jsonify({'error': '登录已失效，请重新登录'}), 401
         try:
-            data = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+            data = _decode_jwt_token(token)
             user = User.query.get(data['user_id'])
             if not user:
-                return jsonify({'error': 'User not found'}), 401
+                return jsonify({'error': '用户不存在或登录已失效'}), 401
             if user.is_banned:
-                return jsonify({'error': 'Account has been banned'}), 403
+                return jsonify({'error': '账号已被封禁'}), 403
             g.current_user = user
         except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token expired'}), 401
+            return jsonify({'error': '登录已过期，请重新登录'}), 401
         except Exception:
-            return jsonify({'error': 'Token is invalid'}), 401
+            return jsonify({'error': '登录状态无效，请重新登录'}), 401
         return f(*args, **kwargs)
     return decorated
 
@@ -111,7 +161,7 @@ def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not g.current_user.is_admin:
-            return jsonify({'error': 'Admin privilege required'}), 403
+            return jsonify({'error': '需要管理员权限'}), 403
         return f(*args, **kwargs)
     return decorated
 

@@ -121,11 +121,6 @@
                 }
                 this.render(null);
                 try {
-                    var token = localStorage.getItem('token');
-                    if (!token) {
-                        this.hideCard();
-                        return;
-                    }
                     var result = await apiJson(API_BASE + '/onboarding/tasks', {
                         cache: 'no-store',
                         fallback: {}
@@ -235,11 +230,6 @@
                     return;
                 }
                 try {
-                    var token = localStorage.getItem('token');
-                    if (!token) {
-                        this.hideCard();
-                        return;
-                    }
                     var result = await apiJson(API_BASE + '/checkin/status', {
                         cache: 'no-store',
                         fallback: {}
@@ -337,11 +327,6 @@
                     return;
                 }
                 try {
-                    var token = localStorage.getItem('token');
-                    if (!token) {
-                        this.hideCard();
-                        return;
-                    }
                     var result = await apiJson(API_BASE + '/group-links', {
                         cache: 'no-store',
                         fallback: {}

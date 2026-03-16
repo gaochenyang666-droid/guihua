@@ -71,8 +71,16 @@
             '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">' +
                 '<a class="btn btn-ghost" href="/profile?user=' + profileKey + '" data-no-transition="1">我的主页</a>' +
                 bindWalletBtn +
-                '<button class="btn btn-ghost" type="button" onclick="localStorage.removeItem(\'token\'); localStorage.removeItem(\'login_at\'); navigateWithTransition(\'/\')">退出</button>' +
+                '<button class="btn btn-ghost" type="button" id="profileLogoutBtn">退出</button>' +
             '</div>';
+        var logoutBtn = document.getElementById('profileLogoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async function () {
+                try { await apiJson(API_BASE + '/auth/logout', { method: 'POST', auth: false, check401: false, fallback: {} }); } catch (_) {}
+                if (window.authState && window.authState.clear) window.authState.clear();
+                navigateWithTransition('/');
+            });
+        }
     }
 
     function achievementTitleByKey(key) {
@@ -254,9 +262,7 @@
         try {
             var qs = new URLSearchParams({ page: '1', per_page: '24' });
             if (showAmount) qs.append('show_amount', '1');
-            var result = await requestJson(API_BASE + '/users/' + userId + '/tips-received?' + qs.toString(), {
-                auth: !!localStorage.getItem('token')
-            });
+            var result = await requestJson(API_BASE + '/users/' + userId + '/tips-received?' + qs.toString());
             var res = result.res;
             var data = result.data;
             if (!res.ok) {
@@ -427,7 +433,7 @@
                         return loadUserPosts(fallbackKey, false);
                     }
                 }
-                if (res.status === 401) localStorage.removeItem('token');
+                if (res.status === 401 && window.authState && window.authState.clear) window.authState.clear();
                 var postsAreaOnFail = document.getElementById('postsArea');
                 if (softFail) {
                     if (postsAreaOnFail) postsAreaOnFail.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">' + escapeHtml(data.error || '加载失败') + '</div>';
@@ -455,19 +461,16 @@
     async function loadProfile() {
         var params = new URLSearchParams(window.location.search);
         var userParam = params.get('user');
-        var token = localStorage.getItem('token');
-
-        if (token) {
-            try {
-                var meResult = await requestJson(API_BASE + '/user/me', { check401: false });
-                if (meResult.res.ok) {
-                    currentUser = meResult.data;
-                } else if (meResult.res.status === 401) {
-                    localStorage.removeItem('token');
-                }
-            } catch (e) {
-                console.error('Auth check failed', e);
+        try {
+            var meResult = await requestJson(API_BASE + '/user/me', { check401: false });
+            if (meResult.res.ok) {
+                currentUser = meResult.data;
+                if (window.authState && window.authState.markLoggedIn) window.authState.markLoggedIn();
+            } else if (meResult.res.status === 401 && window.authState && window.authState.clear) {
+                window.authState.clear();
             }
+        } catch (e) {
+            console.error('Auth check failed', e);
         }
         renderMyActions();
 

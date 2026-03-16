@@ -104,11 +104,6 @@
     }
 
     async function loadCurrentUser() {
-        var token = localStorage.getItem('token');
-        if (!token) {
-            currentUser = null;
-            return;
-        }
         try {
             var result = await requestJson(API_BASE + '/user/me', {
                 check401: false

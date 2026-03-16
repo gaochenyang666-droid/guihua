@@ -19,24 +19,20 @@
         var copyTextWithFallback = deps.copyTextWithFallback;
         var navigateWithTransition = deps.navigateWithTransition;
         var apiJson = window.apiJson;
+        var authState = window.authState;
 
         return {
             async init() {
-                var token = localStorage.getItem('token');
-                if (token) {
-                    await this.fetchMe();
-                    this.checkLoginExpiry();
-                    setInterval(() => this.checkLoginExpiry(), 5 * 60 * 1000);
-                } else if (localStorage.getItem('token') === 'undefined') {
-                    localStorage.removeItem('token');
-                }
+                await this.fetchMe();
+                this.checkLoginExpiry();
+                setInterval(() => this.checkLoginExpiry(), 5 * 60 * 1000);
                 UI.updateAuth();
                 SiteNotice.load();
                 Onboarding.load();
                 Checkin.load();
                 GroupLinks.load();
                 this.autoOpenBindWallet();
-                if (localStorage.getItem('token') && Notification && typeof Notification.load === 'function') {
+                if (getCurrentUser() && Notification && typeof Notification.load === 'function') {
                     setInterval(function () {
                         if (document.visibilityState === 'visible') Notification.load();
                     }, 60000);
@@ -61,10 +57,16 @@
                 try {
                     var result = await apiJson(API_BASE + '/user/me', { fallback: {}, check401: false });
                     var res = result.res;
-                    if (handle401(res)) return;
-                    if (res.ok) setCurrentUser(result.data);
-                    else this.logout();
-                } catch (_) {}
+                    if (res.ok) {
+                        if (authState && authState.markLoggedIn) authState.markLoggedIn();
+                        setCurrentUser(result.data);
+                    } else {
+                        if (authState && authState.clear) authState.clear();
+                        setCurrentUser(null);
+                    }
+                } catch (_) {
+                    setCurrentUser(null);
+                }
             },
 
             toggleForm(mode) {
@@ -172,7 +174,7 @@
                     var verifyRes = verifyResult.res;
                     var verifyData = verifyResult.data;
                     if (!verifyRes.ok) throw new Error((verifyData && verifyData.error) || '验证失败，请稍后重试');
-                    if (!verifyData || !verifyData.token) throw new Error('服务返回异常，请稍后重试');
+                    if (!verifyData || !verifyData.user) throw new Error('服务返回异常，请稍后重试');
                     this.success(verifyData);
                     if (isWalletConnect) this.wcProvider = provider;
                 } catch (e) {
@@ -395,9 +397,7 @@
             },
 
             success(data) {
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('login_at', String(Date.now()));
-                sessionStorage.removeItem('login_expiry_warned');
+                if (authState && authState.markLoggedIn) authState.markLoggedIn();
                 setCurrentUser(data.user);
                 UI.updateAuth();
                 Modal.close('walletSelectModal');
@@ -411,9 +411,15 @@
                     try { await this.wcProvider.disconnect(); } catch (_) {}
                     this.wcProvider = null;
                 }
-                localStorage.removeItem('token');
-                localStorage.removeItem('login_at');
-                sessionStorage.removeItem('login_expiry_warned');
+                try {
+                    await apiJson(API_BASE + '/auth/logout', {
+                        method: 'POST',
+                        auth: false,
+                        check401: false,
+                        fallback: {}
+                    });
+                } catch (_) {}
+                if (authState && authState.clear) authState.clear();
                 setCurrentUser(null);
                 UI.updateAuth();
                 Toast.info('已退出');
@@ -421,9 +427,8 @@
             },
 
             checkLoginExpiry() {
-                var token = localStorage.getItem('token');
                 var loginAt = localStorage.getItem('login_at');
-                if (!token || !loginAt) return;
+                if (!(authState && authState.hasSessionHint && authState.hasSessionHint()) || !loginAt) return;
                 var elapsed = Date.now() - parseInt(loginAt, 10);
                 var twentyThreeHours = 23 * 60 * 60 * 1000;
                 if (elapsed >= twentyThreeHours && !sessionStorage.getItem('login_expiry_warned')) {
@@ -439,9 +444,7 @@
                     var bindProvider = window.BinanceChain || window.ethereum;
                     var accounts = await bindProvider.request({ method: 'eth_requestAccounts' });
                     var address = accounts[0];
-                    var nonceResp = await fetchJsonSafe(API_BASE + '/user/bind_wallet/nonce', {
-                        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
-                    }, { fallback: {}, errorMessage: '获取绑定 nonce 失败' });
+                    var nonceResp = await fetchJsonSafe(API_BASE + '/user/bind_wallet/nonce', {}, { fallback: {}, errorMessage: '获取绑定 nonce 失败' });
                     var nonce = nonceResp.data && nonceResp.data.nonce;
                     if (!nonceResp.res.ok || !nonce) {
                         Toast.error((nonceResp.data && nonceResp.data.error) || '获取绑定签名失败');
@@ -458,8 +461,7 @@
                     var result = await fetchJsonSafe(API_BASE + '/user/bind_wallet', {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + localStorage.getItem('token')
+                            'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({ address: address, signature: signature, message: message })
                     }, { fallback: {}, errorMessage: '绑定失败' });
