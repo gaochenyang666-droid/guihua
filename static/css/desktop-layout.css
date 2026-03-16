@@ -27,14 +27,17 @@
         align-items: center;
         gap: 0.45rem;
         margin-left: auto;
-        margin-right: 0.85rem;
+        margin-right: 0;
         flex-shrink: 0;
+        position: relative;
+        z-index: 280;
     }
     .mobile-nav-panel {
         display: flex;
         align-items: center;
         gap: 1rem;
-        flex: 1;
+        flex: 0 1 auto;
+        margin-left: 1rem;
         min-width: 0;
         position: relative;
     }
@@ -61,12 +64,14 @@
     .nav-actions .btn { padding: 0.7rem 1rem; font-size: 0.95rem; justify-content: flex-start; }
     .user-menu { display: flex; align-items: stretch; gap: 0.8rem; width: 100%; flex-direction: column; }
     .search-container {
-        flex: 1 1 560px;
-        order: unset;
-        max-width: min(620px, calc(100vw - 720px));
-        margin: 0 0 0 auto;
-        min-width: 360px;
-        position: relative;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(620px, calc(100vw - 760px));
+        max-width: none;
+        min-width: 380px;
+        margin: 0;
         z-index: 260;
     }
     .search-input {
