@@ -123,8 +123,6 @@ def _build_csp_header():
         "script-src": [
             "'self'",
             "'unsafe-inline'",
-            "https://cdn.jsdelivr.net",
-            "https://unpkg.com",
             "https://cdnjs.cloudflare.com",
         ],
         "style-src": [
@@ -223,7 +221,7 @@ from models import (User, Post, Vote, Comment, Like, CommentLike, Bookmark, Noti
     calc_level_info, checkin_exp_by_streak)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
     token_required, admin_required, _get_redis_client, set_auth_cookie,
-    clear_auth_cookie, bleach_clean_post_content as _bleach_clean_post_content)
+    clear_auth_cookie, issue_auth_token, bleach_clean_post_content as _bleach_clean_post_content)
 from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
 from services.blockchain import (get_post_fee_usdt_raw, verify_transaction, inspect_transaction_status as _svc_inspect_transaction_status)
 from services.posts_query import (
@@ -581,10 +579,7 @@ def verify_signature():
         user.refresh_nonce()
         db.session.commit()
     
-    token = jwt.encode({
-        'user_id': user.id,
-        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
-    }, app.config['SECRET_KEY'], algorithm='HS256')
+    token = issue_auth_token(user.id, JWT_EXPIRY_HOURS)
     _log_flow_event('wallet_verify_success', address=address, target_user_id=user.id, created_user=created_user)
     response = jsonify({'token': token, 'user': user.to_dict()})
     set_auth_cookie(response, token, max_age=JWT_EXPIRY_HOURS * 3600)
@@ -619,10 +614,7 @@ def register():
             print(f"Register Error: {e}")
             return jsonify({'error': '注册失败，请稍后重试'}), 500
         
-        token = jwt.encode({
-            'user_id': user.id,
-            'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
-        }, app.config['SECRET_KEY'], algorithm='HS256')
+        token = issue_auth_token(user.id, JWT_EXPIRY_HOURS)
         response = jsonify({'token': token, 'user': user.to_dict()})
         response.status_code = 201
         set_auth_cookie(response, token, max_age=JWT_EXPIRY_HOURS * 3600)
@@ -656,10 +648,7 @@ def login():
             return jsonify({'error': '该账号为钱包登录，请使用钱包登录'}), 401
         if not user.check_password(password):
             return jsonify({'error': '用户名或密码错误'}), 401
-        token = jwt.encode({
-            'user_id': user.id,
-            'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
-        }, app.config['SECRET_KEY'], algorithm='HS256')
+        token = issue_auth_token(user.id, JWT_EXPIRY_HOURS)
         response = jsonify({'token': token, 'user': user.to_dict()})
         set_auth_cookie(response, token, max_age=JWT_EXPIRY_HOURS * 3600)
         return response

@@ -289,25 +289,27 @@
                 const hasPending = !!this.pendingTxHash;
                 if (specialArea) specialArea.style.display = isAdmin ? 'block' : 'none';
                 area.innerHTML = isAdmin ? `
-                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 0.8rem;" onclick="Studio.initPayment()">
+                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 0.8rem;">
                         ⚡ 支付并上链发布 (Web3)
                     </button>
-                    <button class="btn btn-ghost" id="adminDirectPublishBtn" style="width: 100%; padding: 1rem; font-size: 1rem; border-color: var(--accent-purple); color: var(--accent-purple);" onclick="Studio.publishAsAdmin()">
+                    <button class="btn btn-ghost" id="adminDirectPublishBtn" style="width: 100%; padding: 1rem; font-size: 1rem; border-color: var(--accent-purple); color: var(--accent-purple);">
                         📝 直接发帖（仅管理员，不上链）
                     </button>
                 ` : `
-                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.initPayment()">
+                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
                         ${hasPending ? '🔄 继续发布（已支付）' : '⚡ 确认支付并发布'}
                     </button>
                 `;
+                this.bindWalletActionArea();
             },
 
-            updateResumePanel(message, tone) {
+            updateResumePanel(message, tone, stage) {
                 const panel = document.getElementById('resumeStatePanel');
                 const msgEl = document.getElementById('resumeStateMessage');
                 if (!panel || !msgEl) return;
                 if (!this.pendingTxHash) {
                     panel.style.display = 'none';
+                    this.updateResumeStages('');
                     return;
                 }
                 panel.style.display = 'block';
@@ -316,6 +318,21 @@
                 else if (tone === 'success') msgEl.style.color = 'var(--accent-green)';
                 else if (tone === 'warn') msgEl.style.color = 'var(--accent-orange)';
                 else msgEl.style.color = 'var(--text-primary)';
+                this.updateResumeStages(stage || '');
+            },
+
+            updateResumeStages(stage) {
+                const list = document.getElementById('resumeStageList');
+                if (!list) return;
+                const order = ['initiated', 'payment_verified', 'storage_ready', 'awaiting_retry', 'published'];
+                const stageIndex = order.indexOf(stage);
+                list.querySelectorAll('.resume-stage-item').forEach((node) => {
+                    const key = node.getAttribute('data-stage') || '';
+                    const index = order.indexOf(key);
+                    node.classList.remove('is-current', 'is-complete');
+                    if (stageIndex >= 0 && index >= 0 && index < stageIndex) node.classList.add('is-complete');
+                    if (key === stage) node.classList.add('is-current');
+                });
             },
 
             addLog(msg) {
@@ -398,7 +415,7 @@
                 this.pendingTxHash = null;
                 this.clearPendingPost();
                 this.checkWalletEnv();
-                this.updateResumePanel('', '');
+                this.updateResumePanel('', '', '');
                 if (notify) Toast.info('已清除待恢复记录');
             },
             async loadServerPendingPost() {
@@ -421,7 +438,8 @@
                     this.checkWalletEnv();
                     this.updateResumePanel(
                         pending.last_error || '检测到服务端待恢复发布记录，可直接继续，无需再次支付。',
-                        pending.status === 'awaiting_retry' ? 'warn' : ''
+                        pending.status === 'awaiting_retry' ? 'warn' : '',
+                        pending.status || ''
                     );
                     return true;
                 } catch (e) {
@@ -432,7 +450,7 @@
                 try {
                     const raw = localStorage.getItem(PENDING_POST_KEY);
                     if (!raw) {
-                        this.updateResumePanel('', '');
+                        this.updateResumePanel('', '', '');
                         this.loadServerPendingPost();
                         return;
                     }
@@ -454,7 +472,7 @@
                     const specialBox = document.getElementById('adminSpecialPostCheckbox');
                     if (specialBox) specialBox.checked = !!p.is_special_announcement;
                     this.checkWalletEnv();
-                    this.updateResumePanel('检测到未完成的发布记录，可直接继续，无需再次支付。', 'warn');
+                    this.updateResumePanel('检测到未完成的发布记录，可直接继续，无需再次支付。', 'warn', 'initiated');
                     this.checkPendingStatus(p.tx_hash, true);
                     Toast.info('检测到未完成的发布（已支付），可直接点击发布继续，无需再次支付');
                 } catch(e) {}
@@ -471,7 +489,7 @@
                 this.savePendingPost(txHash);
                 input.value = '';
                 this.checkWalletEnv();
-                this.updateResumePanel('已记录交易哈希，正在检查当前处理状态…', 'warn');
+                this.updateResumePanel('已记录交易哈希，正在检查当前处理状态…', 'warn', 'initiated');
                 this.checkPendingStatus(txHash, true);
                 Toast.success('已记录该交易哈希，请直接点击「确认支付并发布」继续（不会再次扣款）');
             },
@@ -483,7 +501,7 @@
                     return;
                 }
                 this.pendingTxHash = hash;
-                this.updateResumePanel('正在检查链上与发布状态…', 'warn');
+                this.updateResumePanel('正在检查链上与发布状态…', 'warn', 'initiated');
                 try {
                     const result = await apiJson(`${API_BASE}/posts/check_tx?tx_hash=${encodeURIComponent(hash)}`, {
                         auth: false,
@@ -491,27 +509,27 @@
                     });
                     const data = result.data || {};
                     if (!result.res.ok || data.error) {
-                        this.updateResumePanel(data.error || '暂时无法检查状态，请稍后重试。', 'error');
+                        this.updateResumePanel(data.error || '暂时无法检查状态，请稍后重试。', 'error', '');
                         if (!silent) Toast.error(data.error || '检查状态失败');
                         return;
                     }
                     if (data.status === 'success') {
                         Draft.clear();
                         this.pendingTxHash = null;
-                        this.updateResumePanel('该交易对应的帖子已发布完成。', 'success');
+                        this.updateResumePanel('该交易对应的帖子已发布完成。', 'success', 'published');
                         this.checkWalletEnv();
                         if (!silent) Toast.success(data.message || '帖子已成功发布');
                         return;
                     }
                     if (data.status === 'pending') {
-                        this.updateResumePanel(data.message || '支付处理中，可稍后继续发布。', data.stage === 'confirmed_processing' ? 'warn' : '');
+                        this.updateResumePanel(data.message || '支付处理中，可稍后继续发布。', data.stage === 'confirmed_processing' ? 'warn' : '', data.pending_status || 'payment_verified');
                         if (!silent) Toast.info(data.message || '支付处理中');
                         return;
                     }
-                    this.updateResumePanel(data.message || '当前交易状态异常，可稍后重试或联系管理员。', 'error');
+                    this.updateResumePanel(data.message || '当前交易状态异常，可稍后重试或联系管理员。', 'error', data.pending_status || '');
                     if (!silent) Toast.error(data.message || '交易状态异常');
                 } catch (e) {
-                    this.updateResumePanel('状态检查失败，请稍后重试。', 'error');
+                    this.updateResumePanel('状态检查失败，请稍后重试。', 'error', '');
                     if (!silent) Toast.error('状态检查失败');
                 }
             },
@@ -582,17 +600,18 @@
                             <a href="${metamaskLink}" class="btn btn-primary" style="width: 100%; text-align: center; display: block; text-decoration: none; padding: 1rem; font-size: 1rem; background: #f6851b; color: white; margin-bottom: 0.6rem;">
                                 🦊 用 MetaMask App 打开
                             </a>
-                            <button type="button" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1rem; background: #F0B90B; color: #000;" onclick="Studio.copyDappUrlForBinance()">
+                            <button type="button" class="btn btn-primary" id="drawerBinanceGuideBtn" style="width: 100%; padding: 1rem; font-size: 1rem; background: #F0B90B; color: #000;">
                                 🟡 用币安 App 打开（复制链接后到币安内置浏览器粘贴）
                             </button>
                         `;
                     } else {
                         area.innerHTML = `
-                            <button class="btn btn-primary" style="width:100%; padding:1rem; font-size:1rem;" onclick="Studio.confirmPayment()">
+                            <button class="btn btn-primary" id="drawerConfirmPaymentActionBtn" style="width:100%; padding:1rem; font-size:1rem;">
                                 🚀 确认并支付
                             </button>
                         `;
                     }
+                    this.bindDrawerActions();
                 } catch(e) {
                     Toast.error('无法获取费率: ' + e.message);
                     this.closeDrawer();
@@ -833,7 +852,7 @@
                         if (res.status === 503 && (errData.code === 'ARWEAVE_FAIL' || msg.includes('永存档案'))) {
                             this.addLog("⚠️ 永存档案写入暂时失败，请点击「重试发布」再试（无需再次支付）");
                             this.addLog("ℹ️ 当前状态：支付已确认，帖子仍在待发布队列");
-                            this.updateResumePanel('支付已确认，正在等待永存写入恢复。可直接点“继续发布”重试，无需再次支付。', 'warn');
+                            this.updateResumePanel('支付已确认，正在等待永存写入恢复。可直接点“继续发布”重试，无需再次支付。', 'warn', 'awaiting_retry');
                         }
                         throw new Error(msg);
                     }
@@ -862,7 +881,7 @@
                     // Allow retry without paying again
                     if (this.pendingTxHash && btn) {
                         btn.innerHTML = '🔄 重试发布 (已支付)';
-                        this.updateResumePanel('你可以直接点击“继续发布”重试，或先检查当前状态。', 'warn');
+                        this.updateResumePanel('你可以直接点击“继续发布”重试，或先检查当前状态。', 'warn', 'awaiting_retry');
                     }
                 } finally {
                     // Manual close required on failure
@@ -919,6 +938,55 @@
                 } finally {
                     if (btn) btn.disabled = false;
                 }
+            },
+
+            bindWalletActionArea() {
+                const publishBtn = document.getElementById('publishBtn');
+                if (publishBtn) publishBtn.onclick = () => this.initPayment();
+                const adminDirectBtn = document.getElementById('adminDirectPublishBtn');
+                if (adminDirectBtn) adminDirectBtn.onclick = () => this.publishAsAdmin();
+            },
+
+            bindDrawerActions() {
+                const confirmBtn = document.getElementById('drawerConfirmPaymentBtn');
+                if (confirmBtn) confirmBtn.onclick = () => this.confirmPayment();
+                const confirmActionBtn = document.getElementById('drawerConfirmPaymentActionBtn');
+                if (confirmActionBtn) confirmActionBtn.onclick = () => this.confirmPayment();
+                const cancelBtn = document.getElementById('drawerCancelBtn');
+                if (cancelBtn) cancelBtn.onclick = () => this.closeDrawer();
+                const copyBtn = document.getElementById('drawerCopyHashBtn');
+                if (copyBtn) copyBtn.onclick = () => this.copyHash();
+                const forceCloseBtn = document.getElementById('forceCloseLoading');
+                if (forceCloseBtn) forceCloseBtn.onclick = () => this.closeDrawer();
+                const binanceGuideBtn = document.getElementById('drawerBinanceGuideBtn');
+                if (binanceGuideBtn) binanceGuideBtn.onclick = () => this.copyDappUrlForBinance();
+            },
+
+            bindStaticActions() {
+                const createSeriesBtn = document.getElementById('createSeriesBtn');
+                if (createSeriesBtn) createSeriesBtn.onclick = () => this.quickCreateSeries();
+                const nextStepBtn = document.getElementById('studioNextStepBtn');
+                if (nextStepBtn) nextStepBtn.onclick = () => this.nextStep(3);
+                const prevStepBtn = document.getElementById('studioPrevStepBtn');
+                if (prevStepBtn) prevStepBtn.onclick = () => this.prevStep(1);
+                const resumeWithTxHashBtn = document.getElementById('resumeWithTxHashBtn');
+                if (resumeWithTxHashBtn) resumeWithTxHashBtn.onclick = () => this.resumeWithTxHash();
+                const resumeCheckBtn = document.getElementById('resumeCheckBtn');
+                if (resumeCheckBtn) resumeCheckBtn.onclick = () => this.checkPendingStatus();
+                const resumeClearBtn = document.getElementById('resumeClearBtn');
+                if (resumeClearBtn) resumeClearBtn.onclick = () => this.clearPendingState(true);
+                const loginModal = document.getElementById('loginModal');
+                if (loginModal) {
+                    loginModal.addEventListener('click', function (event) {
+                        if (event.target === loginModal) Modal.close('loginModal');
+                    });
+                }
+                const loginModalCloseBtn = document.getElementById('studioLoginModalCloseBtn');
+                if (loginModalCloseBtn) loginModalCloseBtn.onclick = () => Modal.close('loginModal');
+                const loginBackHomeBtn = document.getElementById('studioLoginBackHomeBtn');
+                if (loginBackHomeBtn) loginBackHomeBtn.onclick = () => navigateWithTransition('/');
+                this.bindWalletActionArea();
+                this.bindDrawerActions();
             }
         };
 
@@ -1064,6 +1132,7 @@
                 d.style.left=Math.random()*100+'%'; d.style.animationDelay=Math.random()*5+'s';
                 c.appendChild(d);
             }
+            Studio.bindStaticActions();
             Auth.init();
         });
 

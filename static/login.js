@@ -297,11 +297,19 @@
         const loginForm = document.getElementById('loginForm');
         const registerForm = document.getElementById('registerForm');
         const passwordForm = document.getElementById('passwordForm');
+        const walletModal = document.getElementById('loginWalletSelectModal');
+        const walletModalCloseBtn = document.getElementById('loginWalletSelectCloseBtn');
 
         modeLoginBtn.addEventListener('click', function () { setMode('login'); });
         modeRegisterBtn.addEventListener('click', function () { setMode('register'); });
         modePasswordBtn.addEventListener('click', function () { setMode('password'); });
         walletLoginBtn.addEventListener('click', openWalletSelector);
+        if (walletModal) {
+            walletModal.addEventListener('click', function (event) {
+                if (event.target === walletModal) closeWalletSelector();
+            });
+        }
+        if (walletModalCloseBtn) walletModalCloseBtn.addEventListener('click', closeWalletSelector);
 
         loginForm.addEventListener('submit', async function (ev) {
             ev.preventDefault();

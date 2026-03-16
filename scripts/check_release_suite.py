@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = [
     "check_frontend_smoke.py",
+    "check_browser_auth_flow.py",
     "check_admin_flow.py",
     "check_wallet_flow.py",
     "check_post_flow.py",

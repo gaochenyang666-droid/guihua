@@ -12,6 +12,21 @@
         var apiJson = window.apiJson;
 
         return {
+            async confirmHighRisk(actionLabel, options) {
+                options = options || {};
+                var needsPhrase = options.needsPhrase !== false;
+                var phrase = options.phrase || '确认';
+                if (needsPhrase) {
+                    var answer = prompt(actionLabel + '\n\n请输入「' + phrase + '」继续');
+                    if (answer == null) return false;
+                    if (String(answer).trim() !== phrase) {
+                        Toast.error('确认内容不匹配，已取消操作');
+                        return false;
+                    }
+                    return true;
+                }
+                return window.confirm(actionLabel);
+            },
             async openStats() {
                 Modal.open('adminStatsModal');
                 var body = document.getElementById('adminStatsBody');
@@ -77,6 +92,8 @@
             },
 
             async resolveReport(reportId, status) {
+                var actionText = status === 'resolved' ? '将这条举报标记为已处理' : '将这条举报标记为忽略';
+                if (!await this.confirmHighRisk(actionText, { phrase: '处理举报' })) return;
                 try {
                     var result = await apiJson(API_BASE + '/admin/reports/' + reportId, {
                         method: 'PUT',
@@ -120,6 +137,8 @@
             },
 
             async toggleBan(userId, currentlyBanned) {
+                var actionText = currentlyBanned ? '解除该用户的封禁状态' : '封禁该用户';
+                if (!await this.confirmHighRisk(actionText, { phrase: currentlyBanned ? '解除封禁' : '封禁用户' })) return;
                 try {
                     var result = await apiJson(API_BASE + '/admin/users/' + userId + '/ban', {
                         method: 'POST',
@@ -206,7 +225,7 @@
             },
 
             async deleteAnnouncement(id) {
-                if (!confirm('确定删除此公告？')) return;
+                if (!await this.confirmHighRisk('删除这条公告', { phrase: '删除公告' })) return;
                 try {
                     var result = await apiJson(API_BASE + '/admin/announcements/' + id, {
                         method: 'DELETE',
@@ -310,6 +329,7 @@
             },
 
             async runPendingBatchRetry() {
+                if (!await this.confirmHighRisk('运行一轮待发布自动补偿', { phrase: '批量补偿' })) return;
                 try {
                     var result = await apiJson(API_BASE + '/admin/pending-publications/retry-batch', {
                         method: 'POST',
@@ -329,6 +349,7 @@
             },
 
             async retryPendingPublication(pendingId) {
+                if (!await this.confirmHighRisk('对这条待发布记录执行补偿重试', { phrase: '补偿重试' })) return;
                 try {
                     var result = await apiJson(API_BASE + '/admin/pending-publications/' + pendingId + '/retry', {
                         method: 'POST',
@@ -347,7 +368,7 @@
             },
 
             async deletePendingPublication(pendingId) {
-                if (!confirm('确定删除这条待恢复记录？')) return;
+                if (!await this.confirmHighRisk('删除这条待恢复发布记录', { phrase: '删除记录' })) return;
                 try {
                     var result = await apiJson(API_BASE + '/admin/pending-publications/' + pendingId, {
                         method: 'DELETE',

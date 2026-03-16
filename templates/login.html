@@ -12,9 +12,9 @@
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
     <script src="/static/common.js?v={{ asset_version }}"></script>
     <script src="/static/toast.js?v={{ asset_version }}"></script>
-    <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
-    <script src="https://unpkg.com/@walletconnect/universal-provider@2.10.1/dist/index.umd.js"></script>
-    <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="/static/vendor/web3.min.js"></script>
+    <script src="/static/vendor/walletconnect-universal-provider.umd.js"></script>
+    <script src="/static/vendor/qrcode.min.js"></script>
 </head>
 <body>
     <nav class="navbar glass">
@@ -89,11 +89,11 @@
         </section>
     </main>
 
-    <div class="modal-overlay" id="loginWalletSelectModal" onclick="if(event.target===this){this.classList.remove('active');}">
-        <div class="modal glass wallet-select-modal" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="loginWalletSelectModal">
+        <div class="modal glass wallet-select-modal">
             <div class="modal-header">
                 <h3>连接钱包</h3>
-                <button class="modal-close" type="button" onclick="document.getElementById('loginWalletSelectModal').classList.remove('active')">&times;</button>
+                <button class="modal-close" type="button" id="loginWalletSelectCloseBtn">&times;</button>
             </div>
             <div id="loginWalletSelectList"></div>
             <div id="loginWalletSelectQr" class="wallet-select-qr" style="display:none;"></div>

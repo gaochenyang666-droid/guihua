@@ -170,8 +170,57 @@
         }
         return '<div class="post-cover-wrap">' +
             '<div class="post-cover-placeholder">📝</div>' +
-            '<img src="' + escapeAttr(coverUrl) + '" class="post-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add(\'has-image\')" onerror="this.remove();this.parentElement.classList.remove(\'has-image\')">' +
+            '<img src="' + escapeAttr(coverUrl) + '" class="post-cover js-profile-post-cover" loading="lazy" decoding="async" referrerpolicy="no-referrer">' +
         '</div>';
+    }
+
+    function wireProfileDynamicUi() {
+        document.querySelectorAll('.js-profile-post-cover').forEach(function (img) {
+            if (img.dataset.bound === '1') return;
+            img.dataset.bound = '1';
+            img.addEventListener('load', function () {
+                if (img.parentElement) img.parentElement.classList.add('has-image');
+            });
+            img.addEventListener('error', function () {
+                if (img.parentElement) img.parentElement.classList.remove('has-image');
+                img.remove();
+            });
+        });
+        document.querySelectorAll('[data-wallet-copy]').forEach(function (btn) {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                copyWalletAddress(btn.getAttribute('data-wallet-copy') || '');
+            });
+        });
+        document.querySelectorAll('[data-profile-action]').forEach(function (btn) {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var action = btn.getAttribute('data-profile-action') || '';
+                if (action === 'open-wall') Achievements.openWall();
+                if (action === 'edit-profile') EditProfile.open();
+                if (action === 'change-password') EditProfile.openChangePassword();
+            });
+        });
+        document.querySelectorAll('[data-achievement-action]').forEach(function (btn) {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var action = btn.getAttribute('data-achievement-action') || '';
+                if (action === 'quick-report') Achievements.quickReport();
+                if (action === 'equip') Achievements.equip(btn.getAttribute('data-achievement-key') || '');
+                if (action === 'unequip') Achievements.equip('');
+            });
+        });
+        document.querySelectorAll('[data-profile-post-id]').forEach(function (card) {
+            if (card.dataset.bound === '1') return;
+            card.dataset.bound = '1';
+            card.addEventListener('click', function () {
+                var postId = card.getAttribute('data-profile-post-id') || '';
+                if (postId) navigateWithTransition('/post/' + postId);
+            });
+        });
     }
 
     function showProfileError(msg, showBack) {
@@ -199,7 +248,7 @@
             var actionHtml = '';
             if (achievement.key === 'report_privilege') {
                 actionHtml = unlocked
-                    ? '<button class="btn btn-ghost btn-sm" style="border-color:var(--accent-red); color:var(--accent-red);" onclick="Achievements.quickReport()">快速举报</button>'
+                    ? '<button class="btn btn-ghost btn-sm" style="border-color:var(--accent-red); color:var(--accent-red);" data-achievement-action="quick-report" type="button">快速举报</button>'
                     : '<span style="font-size:0.78rem; color:var(--text-muted);">等级不足，无法举报</span>';
             } else if (wearable) {
                 if (!unlocked) {
@@ -207,9 +256,9 @@
                 } else if (!canEquip) {
                     actionHtml = '<span style="font-size:0.78rem; color:var(--text-muted);">Lv.3 解锁佩戴按钮</span>';
                 } else if (achievement.equipped) {
-                    actionHtml = '<button class="btn btn-primary btn-sm" onclick="Achievements.equip(\'\')">取消佩戴</button>';
+                    actionHtml = '<button class="btn btn-primary btn-sm" data-achievement-action="unequip" type="button">取消佩戴</button>';
                 } else {
-                    actionHtml = '<button class="btn btn-ghost btn-sm" onclick="Achievements.equip(\'' + escapeAttr(achievement.key) + '\')">佩戴</button>';
+                    actionHtml = '<button class="btn btn-ghost btn-sm" data-achievement-action="equip" data-achievement-key="' + escapeAttr(achievement.key) + '" type="button">佩戴</button>';
                 }
             } else if (achievement.key === 'wearable_unlock') {
                 actionHtml = unlocked
@@ -234,6 +283,7 @@
             '</div>' +
             '<div style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:0.7rem;">当前等级：' + (isAdminInfinite ? '<span style="color:var(--accent-gold);">∞（管理员）</span>' : escapeHtml(state.level_label || ('Lv.' + state.level))) + '</div>' +
             '<div style="display:grid; gap:0.7rem;">' + cards + '</div>';
+        wireProfileDynamicUi();
     }
 
     async function loadAchievements() {
@@ -319,7 +369,7 @@
         var avatarHtml = '<div class="avatar-lg">' + (user.avatar || '👻') + '</div>';
         var walletAddress = ((user.wallet_address || user.address || '') + '').trim();
         var walletAddressBtn = walletAddress
-            ? '<button type="button" class="btn btn-ghost btn-sm" style="background:rgba(16,185,129,0.1); color:#10b981; border-color:rgba(16,185,129,0.4); min-height:24px; padding:2px 8px; font-size:0.72rem;" title="点击复制打赏地址" onclick="copyWalletAddress(\'' + escapeAttr(walletAddress) + '\')">打赏地址: ' + escapeHtml(walletAddress.substring(0, 6) + '...' + walletAddress.slice(-4)) + '</button>'
+            ? '<button type="button" class="btn btn-ghost btn-sm" style="background:rgba(16,185,129,0.1); color:#10b981; border-color:rgba(16,185,129,0.4); min-height:24px; padding:2px 8px; font-size:0.72rem;" title="点击复制打赏地址" data-wallet-copy="' + escapeAttr(walletAddress) + '">打赏地址: ' + escapeHtml(walletAddress.substring(0, 6) + '...' + walletAddress.slice(-4)) + '</button>'
             : '';
         var isMe = !!(viewingOwnProfile || sameIdentity(currentUser, user));
         var showTipThanks = !!user.show_tip_thanks;
@@ -335,7 +385,7 @@
                                 ? '<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ' + escapeHtml(achievementTitleByKey(user.equipped_achievement_key)) + '</span>'
                                 : (user.honor_title ? '<span class="honor-badge">🏷 ' + escapeHtml(user.honor_title) + '</span>' : '')) +
                         '</h1>' +
-                        (isMe ? '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" onclick="Achievements.openWall()">🏆 成就墙</button><button class="btn btn-ghost btn-sm" onclick="EditProfile.open()">✏️ 编辑资料</button>' + (currentUser.username ? '<button class="btn btn-ghost btn-sm" onclick="EditProfile.openChangePassword()">🔒 修改密码</button>' : '') + '</div>' : '') +
+                        (isMe ? '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" data-profile-action="open-wall" type="button">🏆 成就墙</button><button class="btn btn-ghost btn-sm" data-profile-action="edit-profile" type="button">✏️ 编辑资料</button>' + (currentUser.username ? '<button class="btn btn-ghost btn-sm" data-profile-action="change-password" type="button">🔒 修改密码</button>' : '') + '</div>' : '') +
                     '</div>' +
                     '<div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
                         (user.username ? user.username + ' · ' : '') +
@@ -394,7 +444,7 @@
             }
             postsArea.innerHTML = displayedPosts.map(function (post) {
                 return '' +
-                    '<div class="post-item glass" onclick="navigateWithTransition(\'/post/' + post.id + '\')">' +
+                    '<div class="post-item glass" data-profile-post-id="' + post.id + '">' +
                         renderPostCover(post) +
                         '<div style="flex:1;">' +
                             '<div style="font-weight:bold; font-size:1.1rem; margin-bottom:0.3rem;">' + escapeHtml(post.title) + '</div>' +
@@ -404,9 +454,41 @@
                         '</div>' +
                     '</div>';
             }).join('');
+            wireProfileDynamicUi();
         } else {
             postsArea.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">暂无发布记录</div>';
         }
+    }
+
+    function bindProfileModals() {
+        var editModal = document.getElementById('editProfileModal');
+        if (editModal) {
+            editModal.addEventListener('click', function (event) {
+                if (event.target === editModal) EditProfile.close();
+            });
+        }
+        var changePasswordModal = document.getElementById('changePasswordModal');
+        if (changePasswordModal) {
+            changePasswordModal.addEventListener('click', function (event) {
+                if (event.target === changePasswordModal) EditProfile.closeChangePassword();
+            });
+        }
+        var achievementsModal = document.getElementById('achievementsModal');
+        if (achievementsModal) {
+            achievementsModal.addEventListener('click', function (event) {
+                if (event.target === achievementsModal) Achievements.closeWall();
+            });
+        }
+        var bindClick = function (id, handler) {
+            var node = document.getElementById(id);
+            if (node) node.addEventListener('click', handler);
+        };
+        bindClick('editProfileCloseBtn', function () { EditProfile.close(); });
+        bindClick('editProfileRandomAvatarBtn', function () { EditProfile.randomizeAvatar(); });
+        bindClick('editProfileSaveBtn', function () { EditProfile.save(); });
+        bindClick('changePasswordCloseBtn', function () { EditProfile.closeChangePassword(); });
+        bindClick('changePasswordSubmitBtn', function () { EditProfile.submitChangePassword(); });
+        bindClick('achievementsCloseBtn', function () { Achievements.closeWall(); });
     }
 
     async function loadUserPosts(username, softFail) {
@@ -661,5 +743,8 @@
     };
     window.EditProfile = EditProfile;
 
-    window.addEventListener('load', loadProfile);
+    window.addEventListener('load', function () {
+        bindProfileModals();
+        loadProfile();
+    });
 })();

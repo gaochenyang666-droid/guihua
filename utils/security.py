@@ -1,6 +1,7 @@
 # 安全与工具：JWT 装饰器、限流、HTML 清洗
 import os
 import time
+from datetime import datetime, timedelta
 from functools import wraps
 import jwt
 import bleach
@@ -87,6 +88,14 @@ def _bearer_token():
 
 def _decode_jwt_token(token):
     return jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
+
+
+def issue_auth_token(user_id, expiry_hours=None):
+    hours = expiry_hours if expiry_hours is not None else current_app.config.get('JWT_EXPIRY_HOURS', 24)
+    return jwt.encode({
+        'user_id': user_id,
+        'exp': datetime.utcnow() + timedelta(hours=hours)
+    }, current_app.config['SECRET_KEY'], algorithm='HS256')
 
 
 def _should_secure_auth_cookie():

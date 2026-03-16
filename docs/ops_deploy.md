@@ -1,6 +1,30 @@
 # 运维接入说明
 
-## 1. 待发布自动补偿
+## 1. Render 推荐部署
+
+仓库根目录已经提供 [render.yaml](render.yaml)，默认包含：
+
+1. `guihua-web`
+- Web Service
+- 单 worker gunicorn
+- 连接 Postgres 和 Redis
+
+2. `guihua-publish-compensation`
+- Render Cron Job
+- 每 3 分钟执行一轮待发布补偿
+
+3. `guihua-db`
+- Postgres
+
+4. `guihua-redis`
+- Redis
+
+推荐：
+- 直接使用 `render.yaml` 创建资源
+- Web Service 上保持 `ENABLE_PUBLISH_COMPENSATION_WORKER=false`
+- 由 Cron Job 负责补偿，避免多实例重复扫队列
+
+## 2. 待发布自动补偿
 
 项目内已经提供两种补偿方式：
 
@@ -44,7 +68,7 @@ Linux crontab 示例（每 3 分钟执行一次）：
 */3 * * * * cd /path/to/guihua.online.py && /usr/bin/python3 scripts/run_publish_compensation.py 12 >> /var/log/guihua_compensation.log 2>&1
 ```
 
-## 2. 推荐部署策略
+## 3. 推荐部署策略
 
 ### 单机 / 单进程
 
@@ -60,7 +84,7 @@ Linux crontab 示例（每 3 分钟执行一次）：
 
 这样可以避免多个 web worker 重复扫队列。
 
-## 3. 后台入口
+## 4. 后台入口
 
 管理员后台现在有两处可用：
 
@@ -76,7 +100,7 @@ Linux crontab 示例（每 3 分钟执行一次）：
   - 手动单条补偿
   - 批量运行一轮自动补偿
 
-## 4. 发布前建议执行
+## 5. 发布前建议执行
 
 本地或预发环境建议跑：
 

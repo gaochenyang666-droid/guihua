@@ -32,11 +32,11 @@
         </div>
 
         <div id="drawerActionArea">
-            <button class="btn btn-primary" style="width:100%; padding:1rem; font-size:1rem;" onclick="Studio.confirmPayment()">
+            <button class="btn btn-primary" id="drawerConfirmPaymentBtn" style="width:100%; padding:1rem; font-size:1rem;">
                 🚀 确认并支付
             </button>
         </div>
-        <button class="btn btn-ghost" style="width:100%; margin-top:0.8rem; border:none;" onclick="Studio.closeDrawer()">取消</button>
+        <button class="btn btn-ghost" id="drawerCancelBtn" style="width:100%; margin-top:0.8rem; border:none;">取消</button>
     </div>
 
     <!-- State 2: Progress -->
@@ -54,7 +54,7 @@
             <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.3rem;">BSC USDT 支付交易哈希（您的付款凭证）:</div>
             <div style="display:flex; align-items:center; gap:0.5rem;">
                 <code id="realTxHash" style="color:var(--accent-gold); font-size:0.8rem; word-break:break-all;">Loading...</code>
-                <button class="btn btn-ghost btn-sm" onclick="Studio.copyHash()">📋</button>
+                <button class="btn btn-ghost btn-sm" id="drawerCopyHashBtn">📋</button>
             </div>
         </div>
 
@@ -63,6 +63,6 @@
             <span style="font-size:0.8rem; color:var(--accent-red);">后台处理中，请勿关闭页面</span>
         </p>
 
-        <button class="btn btn-ghost btn-sm" style="width:100%; display:none;" id="forceCloseLoading" onclick="Studio.closeDrawer()">强制关闭</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%; display:none;" id="forceCloseLoading">强制关闭</button>
     </div>
 </div>

@@ -1,5 +1,78 @@
-# Render 部署配置（可选）
-# Web Service → Settings → Build & Deploy：
-#   Build Command: 留空或 pip install -r requirements.txt
-#   Start Command: gunicorn -b 0.0.0.0:$PORT app:app
-# 若首页没有帖子，到 Dashboard 里该 Service 的 Shell 中执行：python3 scripts/seed_posts.py
+services:
+  - type: web
+    name: guihua-web
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -b 0.0.0.0:$PORT app:app --workers 1 --timeout 120
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: guihua-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: guihua-redis
+          property: connectionString
+      - key: RECEIVE_ADDRESS
+        sync: false
+      - key: BSC_RPC_URL
+        sync: false
+      - key: AR_KEY_DATA
+        sync: false
+      - key: IMGBB_API_KEY
+        sync: false
+      - key: WALLETCONNECT_PROJECT_ID
+        sync: false
+      - key: POST_FEE_CNY
+        value: "6.6"
+      - key: POST_FEE_USDT
+        value: "0.92"
+      - key: ENABLE_PUBLISH_COMPENSATION_WORKER
+        value: "false"
+
+  - type: cron
+    name: guihua-publish-compensation
+    runtime: python
+    schedule: "*/3 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 scripts/run_publish_compensation.py 12
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: guihua-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: guihua-redis
+          property: connectionString
+      - key: RECEIVE_ADDRESS
+        sync: false
+      - key: BSC_RPC_URL
+        sync: false
+      - key: AR_KEY_DATA
+        sync: false
+      - key: IMGBB_API_KEY
+        sync: false
+      - key: ENABLE_PUBLISH_COMPENSATION_WORKER
+        value: "false"
+
+databases:
+  - name: guihua-db
+    plan: starter
+
+  - name: guihua-redis
+    type: redis
+    plan: starter
