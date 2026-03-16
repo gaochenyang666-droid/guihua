@@ -87,5 +87,20 @@ def check_receive_address(receive_address):
     print('=' * 60)
 
 
+def warn_if_redis_missing(redis_url, flask_debug=False):
+    if flask_debug:
+        return
+    if redis_url and str(redis_url).strip():
+        return
+    print('=' * 60)
+    print('WARNING: REDIS_URL is not set.')
+    print('  Production without Redis will degrade:')
+    print('  - rate limiting becomes process-local')
+    print('  - pending wallet nonce storage becomes process-local fallback')
+    print('  - view count anti-refresh protection becomes process-local fallback')
+    print('  Recommendation: configure REDIS_URL in production.')
+    print('=' * 60)
+
+
 def should_run_init_db():
     return os.environ.get('ALLOW_INIT_DB', '').strip().lower() in ('true', '1', 'yes')

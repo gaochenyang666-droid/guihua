@@ -110,6 +110,63 @@ app.config['IMGBB_API_KEY'] = IMGBB_API_KEY
 app.config['ARWEAVE_GATEWAY'] = ARWEAVE_GATEWAY
 app.config['SEED_ARTICLE_PATH'] = os.path.join(basedir, 'seeds', 'default_article_huaxiansheng.html')
 
+
+def _build_csp_header():
+    # 当前项目仍使用内联事件与第三方 CDN 脚本，因此先启用兼容型 CSP，
+    # 先收紧可被明显滥用的能力，再逐步把 inline/eval 从前端结构里移除。
+    directives = {
+        "default-src": ["'self'"],
+        "base-uri": ["'self'"],
+        "object-src": ["'none'"],
+        "frame-ancestors": ["'self'"],
+        "form-action": ["'self'"],
+        "script-src": [
+            "'self'",
+            "'unsafe-inline'",
+            "'unsafe-eval'",
+            "https://cdn.jsdelivr.net",
+            "https://unpkg.com",
+            "https://cdnjs.cloudflare.com",
+        ],
+        "style-src": [
+            "'self'",
+            "'unsafe-inline'",
+            "https://cdnjs.cloudflare.com",
+        ],
+        "img-src": [
+            "'self'",
+            "data:",
+            "blob:",
+            "https:",
+        ],
+        "font-src": [
+            "'self'",
+            "data:",
+            "https://cdnjs.cloudflare.com",
+        ],
+        "connect-src": [
+            "'self'",
+            "https:",
+            "wss:",
+        ],
+        "media-src": [
+            "'self'",
+            "blob:",
+            "https:",
+        ],
+    }
+    return '; '.join(key + ' ' + ' '.join(values) for key, values in directives.items())
+
+
+@app.after_request
+def _apply_security_headers(response):
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    response.headers.setdefault('Content-Security-Policy', _build_csp_header())
+    return response
+
 # 未注册地址的临时签名挑战（地址 -> {nonce, created_at}）
 _pending_wallet_nonces = {}
 _pending_wallet_nonce_redis_prefix = 'auth:pending_wallet_nonce:'
@@ -223,6 +280,7 @@ from services.startup_tasks import (
     seed_default_article as _svc_seed_default_article,
     ensure_table as _svc_ensure_table,
     check_receive_address as _svc_check_receive_address,
+    warn_if_redis_missing as _svc_warn_if_redis_missing,
     should_run_init_db as _svc_should_run_init_db,
 )
 from services.schema_compat import (
@@ -3216,6 +3274,10 @@ def _run_startup_tasks():
     if _should_run_init_db():
         init_db_data()
     _check_receive_address()
+    _svc_warn_if_redis_missing(
+        os.environ.get('REDIS_URL'),
+        flask_debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    )
     started, interval = _svc_start_compensation_worker(
         app,
         PendingPublication,
