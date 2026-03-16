@@ -42,6 +42,97 @@ def _addr_to_topic(addr):
     return '0x' + a.zfill(64)
 
 
+def _new_provider(rpc):
+    provider = Web3(Web3.HTTPProvider(rpc))
+    provider.middleware_onion.inject(geth_poa_middleware, layer=0)
+    return provider
+
+
+def _fetch_tx_and_receipt(tx_hash, rpc_list, attempts=5):
+    tx = None
+    receipt = None
+    for _ in range(max(1, int(attempts or 1))):
+        for rpc in rpc_list:
+            try:
+                provider = _new_provider(rpc)
+                tx = provider.eth.get_transaction(tx_hash)
+                receipt = provider.eth.get_transaction_receipt(tx_hash)
+                if tx and receipt:
+                    return tx, receipt
+            except Exception:
+                continue
+        time.sleep(2)
+    return tx, receipt
+
+
+def _fetch_latest_block(rpc_list):
+    for rpc in rpc_list:
+        try:
+            provider = _new_provider(rpc)
+            return provider.eth.block_number
+        except Exception:
+            continue
+    return None
+
+
+def inspect_transaction_status(tx_hash, tx_confirmations=None):
+    rpc_list = current_app.config.get('BSC_RPC_LIST') or [current_app.config['BSC']['RPC_URL']]
+    confirmations_needed = tx_confirmations or current_app.config.get('TX_CONFIRMATIONS_NEEDED', 2)
+    if not re.match(r"^0x[a-fA-F0-9]{64}$", tx_hash or ''):
+        return {
+            'ok': False,
+            'stage': 'invalid_hash',
+            'message': '交易哈希格式无效',
+            'confirmations': 0,
+            'confirmations_needed': confirmations_needed,
+        }
+    tx, receipt = _fetch_tx_and_receipt(tx_hash, rpc_list, attempts=2)
+    if not tx:
+        return {
+            'ok': False,
+            'stage': 'not_found',
+            'message': '链上暂未找到该交易',
+            'confirmations': 0,
+            'confirmations_needed': confirmations_needed,
+        }
+    if not receipt:
+        return {
+            'ok': True,
+            'stage': 'broadcasted',
+            'message': '交易已广播，等待出块确认',
+            'confirmations': 0,
+            'confirmations_needed': confirmations_needed,
+        }
+    if receipt.get('status') != 1:
+        return {
+            'ok': False,
+            'stage': 'failed',
+            'message': '链上交易执行失败',
+            'confirmations': 0,
+            'confirmations_needed': confirmations_needed,
+        }
+    block_number = receipt.get('blockNumber')
+    latest = _fetch_latest_block(rpc_list)
+    confirmations = 0
+    if block_number is not None and latest is not None:
+        confirmations = max(0, int(latest) - int(block_number))
+    if confirmations < confirmations_needed:
+        return {
+            'ok': True,
+            'stage': 'awaiting_confirmation',
+            'message': f'链上确认中（{confirmations}/{confirmations_needed}）',
+            'confirmations': confirmations,
+            'confirmations_needed': confirmations_needed,
+        }
+    return {
+        'ok': True,
+        'stage': 'confirmed',
+        'message': '链上支付已确认，等待写入永存档案',
+        'confirmations': confirmations,
+        'confirmations_needed': confirmations_needed,
+    }
+
+
 def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amount=None, payment_type='bnb'):
     if not user_address:
         return False, 'User address not bound'
@@ -64,36 +155,14 @@ def verify_transaction(tx_hash, user_address, expected_recipient=None, min_amoun
     if UsedTransaction.query.filter_by(tx_hash=tx_hash).first():
         return False, 'Transaction hash already used (history)'
 
-    tx, receipt = None, None
-    for attempt in range(5):
-        for rpc in rpc_list:
-            try:
-                provider = Web3(Web3.HTTPProvider(rpc))
-                provider.middleware_onion.inject(geth_poa_middleware, layer=0)
-                tx = provider.eth.get_transaction(tx_hash)
-                receipt = provider.eth.get_transaction_receipt(tx_hash)
-                if tx and receipt:
-                    break
-            except Exception:
-                continue
-        if tx and receipt:
-            break
-        time.sleep(2)
+    tx, receipt = _fetch_tx_and_receipt(tx_hash, rpc_list, attempts=5)
 
     if not tx or not receipt:
         return False, 'Transaction not found on chain (timeout)'
 
     current_block = receipt.get('blockNumber')
     if current_block is not None:
-        latest = None
-        for rpc in rpc_list:
-            try:
-                provider = Web3(Web3.HTTPProvider(rpc))
-                provider.middleware_onion.inject(geth_poa_middleware, layer=0)
-                latest = provider.eth.block_number
-                break
-            except Exception:
-                continue
+        latest = _fetch_latest_block(rpc_list)
         if latest is None:
             return False, 'Could not get latest block'
         if latest - current_block < tx_confirmations:

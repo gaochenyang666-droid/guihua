@@ -109,15 +109,15 @@
                 var mobileUtilityToggleBtn = document.getElementById('mobileUtilityToggleBtn');
                 var mobileUtilityStack = document.getElementById('mobileUtilityStack');
                 var mobileUtilityHost = document.getElementById('mobileUtilityHost');
+                var mobileUtilityMount = document.getElementById('mobileUtilityMount');
                 var leftSidebarEl = document.querySelector('.sidebar-left');
                 var rightSidebarEl = document.getElementById('rightSidebar');
-                var navSortCard = leftSidebarEl ? leftSidebarEl.querySelector('.nav-sort-card') : null;
                 var mobileUtilityOpen = !window.matchMedia('(max-width: 768px)').matches;
 
                 UtilityPanels.init();
 
                 var relocateMobileUtility = function () {
-                    if (!mobileUtilityHost || !navSortCard) return;
+                    if (!mobileUtilityHost) return;
                     var isMobileView = window.matchMedia('(max-width: 768px)').matches;
                     if (!isMobileView) {
                         if (rightSidebarEl && mobileUtilityHost.parentElement !== rightSidebarEl) {
@@ -125,16 +125,10 @@
                         }
                         return;
                     }
-                    if (!leftSidebarEl) return;
-                    var anchorNode = navSortCard;
-                    if (mobileUtilityHost.parentElement !== leftSidebarEl) {
-                        if (anchorNode && anchorNode.nextSibling) leftSidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
-                        else leftSidebarEl.appendChild(mobileUtilityHost);
-                        return;
-                    }
-                    if (anchorNode && mobileUtilityHost.previousSibling !== anchorNode) {
-                        if (anchorNode.nextSibling) leftSidebarEl.insertBefore(mobileUtilityHost, anchorNode.nextSibling);
-                        else leftSidebarEl.appendChild(mobileUtilityHost);
+                    var targetParent = mobileUtilityMount || leftSidebarEl;
+                    if (!targetParent) return;
+                    if (mobileUtilityHost.parentElement !== targetParent) {
+                        targetParent.appendChild(mobileUtilityHost);
                     }
                 };
 

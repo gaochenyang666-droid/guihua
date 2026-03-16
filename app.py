@@ -168,7 +168,7 @@ from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payloa
     token_required, admin_required, _get_redis_client,
     bleach_clean_post_content as _bleach_clean_post_content)
 from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
-from services.blockchain import (get_post_fee_usdt_raw, verify_transaction)
+from services.blockchain import (get_post_fee_usdt_raw, verify_transaction, inspect_transaction_status as _svc_inspect_transaction_status)
 from services.posts_query import (
     apply_default_post_order as _posts_apply_default_post_order,
     build_posts_payload as _build_posts_payload,
@@ -231,6 +231,7 @@ from services.schema_compat import (
     ensure_reports_columns as _svc_ensure_reports_columns,
     ensure_announcements_columns as _svc_ensure_announcements_columns,
 )
+from services.observability import log_event as _svc_log_event
 
 
 def _new_user(**kwargs):
@@ -411,15 +412,18 @@ def get_nonce():
         return jsonify({'error': '钱包地址格式无效'}), 400
 
     user = User.query.filter_by(address=address).first()
+    created_user = user is None
     if user:
         # 已有用户：使用数据库 nonce
         user.refresh_nonce()
         db.session.commit()
+        _log_flow_event('wallet_nonce_issued', address=address, mode='existing_user')
         return jsonify({'nonce': user.nonce})
 
     # 未注册用户：仅下发临时挑战，不预先建号（防刷库）
     nonce = secrets.token_hex(16)
     _set_pending_wallet_nonce(address, nonce, datetime.utcnow())
+    _log_flow_event('wallet_nonce_issued', address=address, mode='pending_user')
     return jsonify({'nonce': nonce})
 
 @app.route('/api/auth/verify', methods=['POST'])
@@ -455,11 +459,13 @@ def verify_signature():
             nonce_value = pending.get('nonce')
             nonce_created_at = pending.get('created_at')
         if not nonce_value:
+            _log_flow_event('wallet_verify_failed', address=address, reason='nonce_missing')
             return jsonify({'error': '签名挑战已失效，请重新获取'}), 401
 
     # Check nonce expiration
     if not nonce_created_at or datetime.utcnow() - nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
         _delete_pending_wallet_nonce(address)
+        _log_flow_event('wallet_verify_failed', address=address, reason='nonce_expired')
         return jsonify({'error': '签名挑战已过期，请重新签名'}), 401
 
     # 严格全文本匹配，防止假站用同一 nonce 骗用户签名后到本站登录
@@ -473,6 +479,7 @@ def verify_signature():
         or (msg_stripped.startswith(expected_new_prefix) and msg_stripped.endswith(expected_new_suffix))
     )
     if not valid:
+        _log_flow_event('wallet_verify_failed', address=address, reason='message_mismatch')
         return jsonify({'error': '签名消息格式不匹配'}), 400
 
     try:
@@ -480,9 +487,11 @@ def verify_signature():
         recovered_address = Account.recover_message(msg, signature=signature)
         
         if recovered_address.lower() != address.lower():
+             _log_flow_event('wallet_verify_failed', address=address, reason='signature_mismatch')
              return jsonify({'error': '签名无效'}), 401
     except Exception as e:
         print(f"Verify Error: {e}")
+        _log_flow_event('wallet_verify_failed', address=address, reason='signature_exception')
         return jsonify({'error': '签名校验失败'}), 400
     
     # 首次验签成功才建号，并轮换 nonce 防重放
@@ -494,6 +503,7 @@ def verify_signature():
             db.session.commit()
         except Exception:
             db.session.rollback()
+            _log_flow_event('wallet_verify_failed', address=address, reason='user_create_failed')
             return jsonify({'error': '创建用户失败，请稍后重试'}), 500
         finally:
             _delete_pending_wallet_nonce(address)
@@ -505,6 +515,7 @@ def verify_signature():
         'user_id': user.id,
         'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS)
     }, app.config['SECRET_KEY'], algorithm='HS256')
+    _log_flow_event('wallet_verify_success', address=address, target_user_id=user.id, created_user=created_user)
     
     return jsonify({'token': token, 'user': user.to_dict()})
 
@@ -838,15 +849,18 @@ def bind_wallet():
     # Check if address already used by other account
     existing_user = User.query.filter_by(address=address).first()
     if existing_user and existing_user.id != g.current_user.id:
+        _log_flow_event('wallet_bind_failed', address=address, reason='already_bound')
         return jsonify({'error': '该钱包已绑定到其他账号'}), 400
 
     # 绑定签名必须带当前登录用户 nonce，且 5 分钟内有效，防重放
     if not g.current_user.nonce_created_at or datetime.utcnow() - g.current_user.nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
+        _log_flow_event('wallet_bind_failed', address=address, reason='nonce_expired')
         return jsonify({'error': '绑定挑战已过期，请重新获取'}), 401
     msg_stripped = (message or '').strip()
     expected_legacy = f"Bind wallet {address} to user {g.current_user.username}. Nonce: {g.current_user.nonce}"
     expected_new = f"Bind wallet {address} to account {g.current_user.id} on {request.host}: {g.current_user.nonce}"
     if msg_stripped not in (expected_legacy, expected_new):
+        _log_flow_event('wallet_bind_failed', address=address, reason='message_mismatch')
         return jsonify({'error': '绑定签名消息格式不匹配'}), 400
         
     # Verify signature
@@ -858,14 +872,17 @@ def bind_wallet():
         recovered_address = Account.recover_message(msg, signature=signature)
         
         if Web3.to_checksum_address(recovered_address) != address:
+             _log_flow_event('wallet_bind_failed', address=address, reason='signature_mismatch')
              return jsonify({'error': '签名无效'}), 401
     except Exception as e:
         print(f"Verify Error: {e}")
+        _log_flow_event('wallet_bind_failed', address=address, reason='signature_exception')
         return jsonify({'error': '签名校验失败'}), 400
         
     g.current_user.address = address
     g.current_user.refresh_nonce()
     db.session.commit()
+    _log_flow_event('wallet_bind_success', address=address, target_user_id=g.current_user.id)
     
     return jsonify({'message': '钱包绑定成功', 'user': g.current_user.to_dict()})
 
@@ -927,6 +944,15 @@ def _parse_iso_datetime(value):
 
 def _humanize_verify_error(message):
     return _svc_humanize_verify_error(message)
+
+
+def _log_flow_event(event, **fields):
+    extra = dict(fields or {})
+    extra.setdefault('path', request.path if request else None)
+    extra.setdefault('method', request.method if request else None)
+    extra.setdefault('user_id', getattr(getattr(g, 'current_user', None), 'id', None))
+    extra.setdefault('ip', request.headers.get('X-Forwarded-For', request.remote_addr) if request else None)
+    _svc_log_event(event, **extra)
 
 
 def _china_today():
@@ -1101,9 +1127,38 @@ def check_tx_status():
     # Check if it exists in Post (Published successfully)
     post = Post.query.filter_by(tx_hash=tx_hash).first()
     if post:
-        return jsonify({'status': 'success', 'post_id': post.id, 'post_title': post.title})
-        
-    return jsonify({'status': 'pending'})
+        return jsonify({
+            'status': 'success',
+            'stage': 'published',
+            'message': '帖子已成功发布',
+            'post_id': post.id,
+            'post_title': post.title
+        })
+
+    inspect = _svc_inspect_transaction_status(tx_hash, tx_confirmations=TX_CONFIRMATIONS_NEEDED)
+    if inspect.get('stage') == 'confirmed':
+        return jsonify({
+            'status': 'pending',
+            'stage': 'confirmed_processing',
+            'message': '链上支付已确认，正在写入永存档案并创建帖子',
+            'confirmations': inspect.get('confirmations', 0),
+            'confirmations_needed': inspect.get('confirmations_needed', TX_CONFIRMATIONS_NEEDED),
+        })
+    if inspect.get('ok'):
+        return jsonify({
+            'status': 'pending',
+            'stage': inspect.get('stage') or 'pending',
+            'message': inspect.get('message') or '处理中',
+            'confirmations': inspect.get('confirmations', 0),
+            'confirmations_needed': inspect.get('confirmations_needed', TX_CONFIRMATIONS_NEEDED),
+        })
+    return jsonify({
+        'status': 'error',
+        'stage': inspect.get('stage') or 'error',
+        'message': inspect.get('message') or '交易状态异常',
+        'confirmations': inspect.get('confirmations', 0),
+        'confirmations_needed': inspect.get('confirmations_needed', TX_CONFIRMATIONS_NEEDED),
+    })
 
 @app.route('/api/admin/stats', methods=['GET'])
 @token_required
@@ -1276,6 +1331,7 @@ def create_series():
     )
     db.session.add(row)
     db.session.commit()
+    _log_flow_event('series_created', series_id=row.id, title=row.title, is_public=bool(row.is_public))
     return jsonify({'message': '系列已创建', 'series': row.to_dict()}), 201
 
 
@@ -1320,6 +1376,7 @@ def update_series(series_id):
     if 'is_public' in data:
         row.is_public = bool(data.get('is_public'))
     db.session.commit()
+    _log_flow_event('series_updated', series_id=row.id, title=row.title, is_public=bool(row.is_public))
     return jsonify({'message': '系列已更新', 'series': row.to_dict()})
 
 
@@ -1332,6 +1389,7 @@ def delete_series(series_id):
     SeriesPost.query.filter_by(series_id=series_id).delete(synchronize_session=False)
     db.session.delete(row)
     db.session.commit()
+    _log_flow_event('series_deleted', series_id=series_id, title=row.title)
     return jsonify({'message': '系列已删除'})
 
 
@@ -1367,6 +1425,7 @@ def add_post_to_series(series_id):
     row = SeriesPost(series_id=series_id, post_id=post.id, order_index=order_index)
     db.session.add(row)
     db.session.commit()
+    _log_flow_event('series_post_added', series_id=series_id, post_id=post.id, order_index=order_index)
     return jsonify({'message': '已加入系列', 'item': row.to_dict()})
 
 
@@ -1383,6 +1442,7 @@ def remove_post_from_series(series_id, post_id):
     db.session.flush()
     _reindex_series_posts(series_id)
     db.session.commit()
+    _log_flow_event('series_post_removed', series_id=series_id, post_id=post_id)
     return jsonify({'message': '已移出系列'})
 
 
@@ -1415,6 +1475,7 @@ def reorder_series_posts(series_id):
     db.session.flush()
     _reindex_series_posts(series_id)
     db.session.commit()
+    _log_flow_event('series_reordered', series_id=series_id, total_items=len(items))
     rows = SeriesPost.query.filter_by(series_id=series_id).order_by(SeriesPost.order_index.asc()).all()
     return jsonify({'message': '排序已更新', 'items': [r.to_dict() for r in rows]})
 
@@ -1497,6 +1558,7 @@ def create_post():
         return jsonify({'error': '请求过于频繁'}), 429
     # 1. Permission Check
     if not g.current_user.is_admin and not g.current_user.address:
+        _log_flow_event('post_publish_blocked', reason='wallet_required')
         return jsonify({'error': '请先绑定钱包'}), 400
     
     # Check if multipart/form-data (for image upload)
@@ -1541,11 +1603,14 @@ def create_post():
         try:
             series_id_int = int(series_id_raw)
         except (TypeError, ValueError):
+            _log_flow_event('post_series_invalid', series_id=series_id_raw)
             return jsonify({'error': 'series_id 非法'}), 400
         target_series = Series.query.get(series_id_int)
         if not target_series:
+            _log_flow_event('post_series_missing', series_id=series_id_int)
             return jsonify({'error': '系列不存在'}), 404
         if not _series_can_edit(target_series, g.current_user):
+            _log_flow_event('post_series_forbidden', series_id=series_id_int)
             return jsonify({'error': '无权限将帖子加入该系列'}), 403
     if vote_options is None:
         vote_options = []
@@ -1554,12 +1619,15 @@ def create_post():
 
     precheck = _build_post_precheck(g.current_user, data)
     if not precheck['ok']:
+        _log_flow_event('post_precheck_failed', issues=precheck.get('issues'))
         return jsonify({'error': '发布前检查未通过', 'issues': precheck['issues']}), 400
     
     # 2. Region Validation
     valid_regions = ['中国', '台湾', '香港', '澳门', '新加坡', '马来西亚', '日本', '韩国', '其他']
     if region not in valid_regions:
+        _log_flow_event('post_region_invalid', region=region)
         return jsonify({'error': f'地区不合法，可选范围：{", ".join(valid_regions)}'}), 400
+    _log_flow_event('post_publish_started', tx_hash=tx_hash, region=region, is_admin=bool(g.current_user.is_admin), series_id=getattr(target_series, 'id', None))
 
     # 3. Logic Branching（is_paid 仅由后端校验结果决定，绝不信任客户端传入）
     is_paid = False
@@ -1572,13 +1640,16 @@ def create_post():
     else:
         # Regular User: 必须带 tx_hash，且经 verify_transaction 校验 to/from/value 与唯一性（min_amount = 1 USD 等值 BNB）
         if not tx_hash:
+            _log_flow_event('post_payment_missing', reason='tx_hash_required')
             return jsonify({'error': '缺少交易哈希'}), 400
         is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address, min_amount=get_post_fee_usdt_raw(), payment_type='usdt')
         if not is_valid:
+            _log_flow_event('post_payment_verify_failed', tx_hash=tx_hash, reason=error_msg)
             return jsonify({'error': _humanize_verify_error(error_msg)}), 400
             
         is_paid = True
         is_on_chain = True
+        _log_flow_event('post_payment_verified', tx_hash=tx_hash, user_address=g.current_user.address)
         
         # 永存档案：支付后必须立即写入 Arweave，否则不发帖；放行 img 的 src/alt/style/class 以保留正文内图片
         clean_content = _bleach_clean_post_content(data.get('content', ''))
@@ -1595,24 +1666,29 @@ def create_post():
         storage_id, storage_type, last_error = upload_to_arweave_with_retry(payload, retries=3)
         if not storage_id:
             print(f"[create_post] 永存档案写入失败: {last_error}")
+            _log_flow_event('post_storage_failed', tx_hash=tx_hash, reason=last_error)
             err_msg = '永存档案写入失败。您的支付已确认，无需再次支付，请稍后点击「重试发布」再试。'
             if last_error:
                 err_msg += f' 原因: {last_error}'
             return jsonify({'error': err_msg, 'code': 'ARWEAVE_FAIL'}), 503
         ipfs_cid = storage_id
+        _log_flow_event('post_storage_ready', tx_hash=tx_hash, ipfs_cid=ipfs_cid)
 
     # 防重复：保存前再次确认该交易哈希未被任何帖子使用（与 verify_transaction + unique 约束三重保险，防并发）
     if tx_hash:
         existing_post = Post.query.filter_by(tx_hash=tx_hash).first()
         if existing_post:
+            _log_flow_event('post_duplicate_tx', tx_hash=tx_hash, existing_post_id=existing_post.id)
             return jsonify({'error': '该交易已用于其他帖子'}), 400
 
     # 4. Create Post（正文 HTML 允许 img 等，需放行 img 属性防 XSS）
     clean_content = _bleach_clean_post_content(data.get('content', ''))
     clean_title = bleach.clean(data.get('title', ''), strip=True)
     if not clean_title or not clean_title.strip():
+        _log_flow_event('post_publish_blocked', reason='empty_title')
         return jsonify({'error': '标题不能为空'}), 400
     if not clean_content or not clean_content.strip():
+        _log_flow_event('post_publish_blocked', reason='empty_content')
         return jsonify({'error': '正文不能为空'}), 400
 
     # 封面功能已下线：新帖统一不写入封面
@@ -1671,9 +1747,20 @@ def create_post():
             ))
             
         db.session.commit()
+        _log_flow_event(
+            'post_publish_success',
+            post_id=post.id,
+            tx_hash=tx_hash,
+            ipfs_cid=ipfs_cid,
+            is_on_chain=is_on_chain,
+            series_id=getattr(target_series, 'id', None),
+            mentions=len(mention_users),
+            votes=len(vote_options or []),
+        )
     except Exception as e:
         db.session.rollback()
         err_str = str(e).lower()
+        _log_flow_event('post_publish_failed', tx_hash=tx_hash, reason=str(e)[:180])
         if 'unique' in err_str and 'tx_hash' in err_str:
             return jsonify({'error': '该交易已被使用'}), 400
         # 管理员发帖常见：数据库 tx_hash/ipfs_cid 为 NOT NULL 时插 None 会报错
@@ -1685,6 +1772,7 @@ def create_post():
             }), 500
         print(f"Create Post DB Error: {e}")
         traceback.print_exc()
+        app.logger.exception('Create post failed: user_id=%s tx_hash=%s', getattr(g.current_user, 'id', None), tx_hash)
         return jsonify({'error': '服务器暂时不可用，请稍后重试'}), 500
     
     return jsonify({'message': '帖子已发布', 'post': post.to_dict()}), 201
@@ -1905,16 +1993,20 @@ def add_comment(post_id):
         return jsonify({'error': '评论过于频繁，请稍后再试'}), 429
     post = Post.query.get_or_404(post_id)
     if not post.allow_comments and not g.current_user.is_admin:
+        _log_flow_event('comment_blocked', post_id=post_id, reason='comments_closed')
         return jsonify({'error': '这篇帖子已关闭评论'}), 403
 
     data = request.get_json(silent=True) or {}
     if not data:
+        _log_flow_event('comment_blocked', post_id=post_id, reason='empty_payload')
         return jsonify({'error': '请求体不能为空'}), 400
     content = data.get('content')
     raw_parent_id = data.get('parent_id')
     parent_id = None
     
-    if not content: return jsonify({'error': '评论内容不能为空'}), 400
+    if not content:
+        _log_flow_event('comment_blocked', post_id=post_id, reason='empty_content')
+        return jsonify({'error': '评论内容不能为空'}), 400
     
     clean_content = bleach.clean(content, tags=[], strip=True)
     
@@ -1924,16 +2016,20 @@ def add_comment(post_id):
         try:
             parent_id = int(raw_parent_id)
         except Exception:
+            _log_flow_event('comment_parent_invalid', post_id=post_id, parent_id=raw_parent_id)
             return jsonify({'error': '父评论参数无效'}), 400
         if parent_id <= 0:
+            _log_flow_event('comment_parent_invalid', post_id=post_id, parent_id=raw_parent_id)
             return jsonify({'error': '父评论参数无效'}), 400
         parent_comment = Comment.query.get(parent_id)
         if not parent_comment or parent_comment.post_id != post_id:
+            _log_flow_event('comment_parent_missing', post_id=post_id, parent_id=parent_id)
             return jsonify({'error': '父评论不存在或不属于当前帖子'}), 400
     
     comment = Comment(content=clean_content, author_id=g.current_user.id, post_id=post.id, parent_id=parent_id)
     db.session.add(comment)
     db.session.commit()
+    _log_flow_event('comment_created', post_id=post.id, comment_id=comment.id, parent_id=parent_id)
     
     # Notification Logic
     try:
@@ -2479,14 +2575,17 @@ def create_report():
     reported_user_id = data.get('reported_user_id')
     reason = (data.get('reason') or '').strip()
     if not reason or len(reason) > 500:
+        _log_flow_event('report_blocked', reason='invalid_reason')
         return jsonify({'error': '请填写举报原因（最多500字）'}), 400
     if not post_id and not reported_user_id:
+        _log_flow_event('report_blocked', reason='missing_target')
         return jsonify({'error': '请指定举报的帖子或用户'}), 400
     target_type = 'user'
     target_id = 0
     if post_id:
         post = Post.query.get(post_id)
         if not post:
+            _log_flow_event('report_blocked', reason='post_missing', post_id=post_id)
             return jsonify({'error': '帖子不存在'}), 404
         reported_user_id = post.author_id
         target_type = 'post'
@@ -2496,6 +2595,7 @@ def create_report():
         try:
             target_id = int(reported_user_id)
         except (TypeError, ValueError):
+            _log_flow_event('report_blocked', reason='invalid_user_id', reported_user_id=reported_user_id)
             return jsonify({'error': '被举报用户 ID 非法'}), 400
     r = Report(
         reporter_id=g.current_user.id,
@@ -2508,6 +2608,7 @@ def create_report():
     )
     db.session.add(r)
     db.session.commit()
+    _log_flow_event('report_created', report_id=r.id, target_type=target_type, target_id=target_id, post_id=post_id)
     return jsonify({'message': '举报已提交，管理员会尽快处理', 'id': r.id}), 201
 
 
@@ -2521,10 +2622,12 @@ def report_priority():
     if is_admin:
         level = 9999
     if level < 2:
+        _log_flow_event('priority_report_blocked', reason='level_too_low', level=level)
         return jsonify({'error': '等级达到 2 才能解锁该举报权限'}), 403
     data = request.get_json(silent=True) or {}
     extra_reason = (data.get('reason') or '').strip()
     if len(extra_reason) > 460:
+        _log_flow_event('priority_report_blocked', reason='reason_too_long')
         return jsonify({'error': '补充说明最多 460 字'}), 400
     reason = '等级权益举报'
     if extra_reason:
@@ -2540,6 +2643,7 @@ def report_priority():
     )
     db.session.add(row)
     db.session.commit()
+    _log_flow_event('priority_report_created', report_id=row.id, level=level)
     return jsonify({'message': '已提交快速举报', 'id': row.id}), 201
 
 @app.route('/api/admin/reports', methods=['GET'])
@@ -2589,6 +2693,7 @@ def update_report(report_id):
         r.result_notified_at = datetime.utcnow()
     db.session.commit()
     _log_admin_action('report_update', 'report', report_id, f"status={r.status}")
+    _log_flow_event('report_updated', report_id=report_id, old_status=old_status, new_status=r.status, notified=bool(should_notify_result))
     return jsonify({'message': '已更新', 'report': r.to_dict()})
 
 # /api/debug/seed 已移除，生产环境不可暴露造数接口；造数请用 Flask shell 或独立脚本
