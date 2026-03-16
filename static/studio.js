@@ -1,0 +1,909 @@
+(function () {
+    'use strict';
+
+        const API_BASE = window.location.origin + '/api';
+        let currentUser = null;
+
+        let studioQuill = null;
+        let lastEditorRange = null;
+
+        function compressImage(file, maxWidth, quality) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    let w = img.width, h = img.height;
+                    if (w > maxWidth) { h = (h * maxWidth) / w; w = maxWidth; }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    canvas.toBlob(function(blob) {
+                        if (blob && blob.size > 0) resolve(blob);
+                        else resolve(file);
+                    }, 'image/jpeg', quality);
+                };
+                img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
+                img.src = url;
+            });
+        }
+
+        function normalizeUploadName(file, forcedExt) {
+            const raw = String((file && file.name) || 'image').replace(/[^\w.\-]/g, '_');
+            const base = raw.replace(/\.[^.]+$/, '') || 'image';
+            let ext = forcedExt || ((raw.match(/\.([^.]+)$/) || [])[1] || 'jpg');
+            ext = String(ext).toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+            return `${base}.${ext}`;
+        }
+
+        async function prepareUploadImage(file, maxWidth, quality) {
+            const mime = String((file && file.type) || '').toLowerCase();
+            if (mime === 'image/gif') {
+                return { uploadBlob: file, uploadName: normalizeUploadName(file, 'gif') };
+            }
+            if ((file && file.size ? file.size : 0) <= 260 * 1024) {
+                const ext = (mime.indexOf('png') >= 0) ? 'png' : ((mime.indexOf('webp') >= 0) ? 'webp' : 'jpg');
+                return { uploadBlob: file, uploadName: normalizeUploadName(file, ext) };
+            }
+            const compressed = await compressImage(file, maxWidth, quality).catch(() => file);
+            if (!compressed || compressed === file) {
+                const ext = (mime.indexOf('png') >= 0) ? 'png' : ((mime.indexOf('webp') >= 0) ? 'webp' : 'jpg');
+                return { uploadBlob: file, uploadName: normalizeUploadName(file, ext) };
+            }
+            return { uploadBlob: compressed, uploadName: normalizeUploadName(file, 'jpg') };
+        }
+
+        const PENDING_POST_KEY = 'studio_pending_post';
+        const Draft = {
+            save() {
+                if (!studioQuill) return;
+                const title = document.getElementById('studioPostTitle').value;
+                const content = studioQuill.root.innerHTML;
+                const tagsRaw = ((document.getElementById('studioPostTags') || {}).value || '').trim();
+                const seriesId = ((document.getElementById('studioSeriesSelect') || {}).value || '').trim();
+                if(title || content || tagsRaw || seriesId) {
+                    localStorage.setItem('studio_draft', JSON.stringify({title, content, tags: tagsRaw, series_id: seriesId || null, time: Date.now()}));
+                    const status = document.getElementById('draftStatus');
+                    if(status) {
+                        status.textContent = '已自动保存 ' + new Date().toLocaleTimeString();
+                        status.style.opacity = 1;
+                        setTimeout(() => status.style.opacity = 0.7, 2000);
+                    }
+                }
+            },
+            load() {
+                if (!studioQuill) return;
+                try {
+                    const d = JSON.parse(localStorage.getItem('studio_draft'));
+                    if(d && (Date.now() - d.time < 24*60*60*1000)) {
+                        if(d.title) document.getElementById('studioPostTitle').value = d.title;
+                        if(d.content) studioQuill.clipboard.dangerouslyPasteHTML(d.content || '');
+                        if (typeof d.tags === 'string') {
+                            const tagsInput = document.getElementById('studioPostTags');
+                            if (tagsInput) tagsInput.value = d.tags;
+                        }
+                        if (window.Studio && typeof window.Studio.loadSeriesOptions === 'function') {
+                            window.Studio.loadSeriesOptions(d.series_id || '');
+                        }
+                        if(d.title || d.content || d.tags || d.series_id) Toast.info('已自动恢复上次的草稿 📝');
+                    }
+                } catch(e) {}
+            },
+            clear() { localStorage.removeItem('studio_draft'); localStorage.removeItem(PENDING_POST_KEY); }
+        };
+
+        const Auth = {
+            async init() {
+                const token = localStorage.getItem('token');
+                if (token) {
+                    await this.fetchMe();
+                } else {
+                    Toast.info('请先登录');
+                    if (typeof openLoginPage === 'function') openLoginPage('/studio');
+                    else navigateWithTransition('/login?next=%2Fstudio');
+                }
+                UI.updateAuth();
+                Draft.load(); 
+                if (window.Studio) Studio.loadPendingPost();
+                Studio.updateFeeDisplay();
+                Studio.loadSeriesOptions();
+                
+                document.getElementById('studioPostTitle').addEventListener('input', () => Draft.save());
+                const tagsInput = document.getElementById('studioPostTags');
+                if (tagsInput) tagsInput.addEventListener('input', () => Draft.save());
+                const seriesSelect = document.getElementById('studioSeriesSelect');
+                if (seriesSelect) seriesSelect.addEventListener('change', () => Draft.save());
+                if (studioQuill) studioQuill.on('text-change', () => Draft.save());
+            },
+
+            async fetchMe() {
+                try {
+                    const res = await fetch(`${API_BASE}/user/me`, {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    if (res.ok) {
+                        currentUser = await res.json();
+                        if (!currentUser.is_admin && currentUser.type !== 'web3') {
+                            alert('仅限 Web3 创作者或管理员进入');
+                            navigateWithTransition('/');
+                            return;
+                        }
+                    } else {
+                        if (handle401(res)) return;
+                        localStorage.removeItem('token');
+                        if (typeof openLoginPage === 'function') openLoginPage('/studio');
+                        else navigateWithTransition('/login?next=%2Fstudio');
+                    }
+                } catch(e) { console.error(e); }
+            }
+        };
+
+        const Studio = {
+            currentStep: 1,
+            isPublishing: false,
+            logInterval: null,
+            timeoutId: null,
+            pendingTxHash: null,
+            seriesItems: [],
+
+            nextStep(step) {
+                if (this.currentStep === 1) {
+                    const title = document.getElementById('studioPostTitle').value;
+                    const content = studioQuill ? studioQuill.getText().trim() : '';
+                    if(!title.trim() || !content) return Toast.error('请填写标题和正文');
+                }
+                if (step === 3) {
+                    this.checkWalletEnv();
+                }
+
+                document.getElementById(`step${this.currentStep}`).classList.remove('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.remove('active');
+                
+                this.currentStep = step;
+                
+                document.getElementById(`step${this.currentStep}`).classList.add('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.add('active');
+            },
+
+            async runPrecheck() {
+                const token = localStorage.getItem('token');
+                if (!token) return { ok: false, issues: ['登录已失效，请重新登录'], warnings: [] };
+                const title = document.getElementById('studioPostTitle').value || '';
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
+                try {
+                    const res = await fetch(`${API_BASE}/posts/precheck`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ title, content })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) return { ok: false, issues: [data.error || '发布前检查失败'], warnings: [] };
+                    return data;
+                } catch (e) {
+                    return { ok: false, issues: ['发布前检查网络异常'], warnings: [] };
+                }
+            },
+
+            prevStep(step) {
+                document.getElementById(`step${this.currentStep}`).classList.remove('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.remove('active');
+                
+                this.currentStep = step;
+                
+                document.getElementById(`step${this.currentStep}`).classList.add('active');
+                document.getElementById(`stepIndicator${this.currentStep}`).classList.add('active');
+            },
+
+            async updateFeeDisplay() {
+                const el = document.getElementById('studioFeeDisplay');
+                if (!el) return;
+                try {
+                    const r = await fetch(`${API_BASE}/config/fees`);
+                    if (r.ok) {
+                        const cfg = await r.json();
+                        const usdt = (cfg.fee_usdt != null ? cfg.fee_usdt : (Number(cfg.fee) / 1e18)).toFixed(2);
+                        el.textContent = cfg.fee_currency === 'USDT' ? `${usdt} USDT` : `${usdt} USDT`;
+                    } else {
+                        el.textContent = '以支付时为准';
+                    }
+                } catch (e) {
+                    el.textContent = '以支付时为准';
+                }
+            },
+
+            seriesSelectValue() {
+                const select = document.getElementById('studioSeriesSelect');
+                if (!select) return '';
+                return (select.value || '').trim();
+            },
+
+            parseTagsInput() {
+                const raw = ((document.getElementById('studioPostTags') || {}).value || '').trim();
+                if (!raw) return [];
+                const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+                const seen = new Set();
+                const tags = [];
+                for (const p of parts) {
+                    if (seen.has(p)) continue;
+                    seen.add(p);
+                    tags.push(p);
+                    if (tags.length >= 8) break;
+                }
+                return tags;
+            },
+
+            async loadSeriesOptions(preferId) {
+                const select = document.getElementById('studioSeriesSelect');
+                if (!select || !currentUser) return;
+                const token = localStorage.getItem('token');
+                if (!token) return;
+                try {
+                    const res = await fetch(`${API_BASE}/series?mine=1&page=1&per_page=80`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    const items = (data && (data.items || data.series)) || [];
+                    this.seriesItems = Array.isArray(items) ? items : [];
+                    const currentVal = (preferId != null && preferId !== '') ? String(preferId) : this.seriesSelectValue();
+                    select.innerHTML = `<option value="">不加入系列</option>${
+                        this.seriesItems.map((s) => `<option value="${String(s.id)}">${escapeHtml(s.title || ('系列 #' + s.id))}</option>`).join('')
+                    }`;
+                    if (currentVal && this.seriesItems.some((s) => String(s.id) === currentVal)) {
+                        select.value = currentVal;
+                    } else {
+                        select.value = '';
+                    }
+                } catch (_) {
+                    if (select.options.length <= 1) {
+                        select.innerHTML = '<option value="">不加入系列</option>';
+                    }
+                }
+            },
+
+            async quickCreateSeries() {
+                if (!currentUser) return;
+                const title = (prompt('请输入系列标题（120字内）') || '').trim();
+                if (!title) return;
+                const description = (prompt('可选：系列简介（可留空）') || '').trim();
+                try {
+                    const res = await fetch(`${API_BASE}/series`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+                        },
+                        body: JSON.stringify({ title, description, is_public: true })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        Toast.error(data.error || '创建系列失败');
+                        return;
+                    }
+                    Toast.success(data.message || '系列已创建');
+                    const sid = data && data.series ? data.series.id : '';
+                    await this.loadSeriesOptions(sid ? String(sid) : '');
+                    Draft.save();
+                } catch (e) {
+                    Toast.error('创建系列失败: ' + ((e && e.message) || '网络错误'));
+                }
+            },
+
+            checkWalletEnv() {
+                const area = document.getElementById('walletActionArea');
+                const specialArea = document.getElementById('adminSpecialArea');
+                const isAdmin = currentUser && currentUser.is_admin;
+                if (specialArea) specialArea.style.display = isAdmin ? 'block' : 'none';
+                area.innerHTML = isAdmin ? `
+                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 0.8rem;" onclick="Studio.initPayment()">
+                        ⚡ 支付并上链发布 (Web3)
+                    </button>
+                    <button class="btn btn-ghost" id="adminDirectPublishBtn" style="width: 100%; padding: 1rem; font-size: 1rem; border-color: var(--accent-purple); color: var(--accent-purple);" onclick="Studio.publishAsAdmin()">
+                        📝 直接发帖（仅管理员，不上链）
+                    </button>
+                ` : `
+                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.initPayment()">
+                        ⚡ 确认支付并发布
+                    </button>
+                `;
+            },
+
+            addLog(msg) {
+                const c = document.getElementById('loadingLogs');
+                const line = document.createElement('div');
+                line.textContent = `> ${msg}`;
+                c.appendChild(line);
+                c.scrollTop = c.scrollHeight;
+            },
+            
+            startLogs() {
+                const c = document.getElementById('loadingLogs');
+                c.innerHTML = '';
+                const logs = [
+                    "初始化 Web3 钱包...",
+                    "正在请求用户签名...",
+                    "广播交易至 BSC 节点...",
+                    "等待区块确认 (1/12)...",
+                    "正在封装数据包 (Size: 12KB)...",
+                    "正在写入永存档案...",
+                    "正在写入智能合约...",
+                    "🛡️ 进行最终安全验证..."
+                ];
+                let i = 0;
+                this.addLog(logs[0]);
+                this.logInterval = setInterval(() => {
+                    i++;
+                    if(i < logs.length) this.addLog(logs[i]);
+                }, 2500);
+            },
+            
+            stopLogs() {
+                if(this.logInterval) clearInterval(this.logInterval);
+            },
+
+            copyHash() {
+                const hash = document.getElementById('realTxHash').textContent;
+                navigator.clipboard.writeText(hash);
+                Toast.success('已复制');
+            },
+            copyDappUrlForBinance() {
+                const url = window.location.href;
+                navigator.clipboard.writeText(url).then(() => {
+                    if (typeof Toast !== 'undefined') Toast.success('已复制链接');
+                    alert('已复制本站链接。请打开 币安 App → 底部「钱包」→ 右上角「…」→「浏览器」→ 粘贴地址访问');
+                });
+            },
+
+            savePendingPost(txHash) {
+                const title = document.getElementById('studioPostTitle').value;
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
+                const tags = this.parseTagsInput();
+                const seriesId = this.seriesSelectValue();
+                const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
+                const data = {
+                    title,
+                    content,
+                    tags,
+                    series_id: seriesId || null,
+                    tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null),
+                    is_special_announcement: specialChecked,
+                    time: Date.now()
+                };
+                try { localStorage.setItem(PENDING_POST_KEY, JSON.stringify(data)); } catch(e) {}
+            },
+            clearPendingPost() {
+                try { localStorage.removeItem(PENDING_POST_KEY); } catch(e) {}
+            },
+            loadPendingPost() {
+                try {
+                    const raw = localStorage.getItem(PENDING_POST_KEY);
+                    if (!raw) return;
+                    const p = JSON.parse(raw);
+                    if (!p.tx_hash || !p.time || (Date.now() - p.time > 24*60*60*1000)) return;
+                    this.pendingTxHash = p.tx_hash;
+                    if (p.title) document.getElementById('studioPostTitle').value = p.title;
+                    if (p.content && studioQuill) studioQuill.clipboard.dangerouslyPasteHTML(p.content);
+                    if (Array.isArray(p.tags)) {
+                        const tagsInput = document.getElementById('studioPostTags');
+                        if (tagsInput) tagsInput.value = p.tags.join(', ');
+                    }
+                    const seriesVal = (p.series_id == null ? '' : String(p.series_id));
+                    this.loadSeriesOptions(seriesVal);
+                    const specialBox = document.getElementById('adminSpecialPostCheckbox');
+                    if (specialBox) specialBox.checked = !!p.is_special_announcement;
+                    Toast.info('检测到未完成的发布（已支付），可直接点击发布继续，无需再次支付');
+                } catch(e) {}
+            },
+            resumeWithTxHash() {
+                const input = document.getElementById('resumeTxHashInput');
+                if (!input) return;
+                const txHash = (input.value || '').trim();
+                if (!/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+                    Toast.error('请输入有效的 BSC 交易哈希（0x 开头，64 位十六进制）');
+                    return;
+                }
+                this.pendingTxHash = txHash;
+                this.savePendingPost(txHash);
+                input.value = '';
+                Toast.success('已记录该交易哈希，请直接点击「确认支付并发布」继续（不会再次扣款）');
+            },
+
+            openDrawer() {
+                const drawer = document.getElementById('paymentDrawer');
+                if (drawer) {
+                    drawer.classList.add('active');
+                    const container = document.querySelector('.studio-container') || document.querySelector('.main-container');
+                    if(container) container.style.filter = 'blur(5px)';
+                }
+            },
+
+            closeDrawer() {
+                document.getElementById('paymentDrawer').classList.remove('active');
+                const container = document.querySelector('.studio-container') || document.querySelector('.main-container');
+                if(container) container.style.filter = 'none';
+                this.stopLogs();
+                if(this.timeoutId) clearTimeout(this.timeoutId);
+                this.isPublishing = false;
+                const btn = document.getElementById('publishBtn');
+                if(btn) btn.disabled = false;
+            },
+
+            async initPayment() {
+                if (this.isPublishing) return;
+                const pre = await this.runPrecheck();
+                if (!pre.ok) {
+                    Toast.error((pre.issues && pre.issues[0]) || '发布前检查未通过');
+                    return;
+                }
+                if (pre.warnings && pre.warnings.length) {
+                    Toast.info(pre.warnings[0]);
+                }
+                
+                document.getElementById('drawerPreviewMode').style.display = 'block';
+                document.getElementById('drawerProgressMode').style.display = 'none';
+                document.getElementById('previewAmount').textContent = 'Loading...';
+                
+                this.openDrawer();
+
+                try {
+                    const cRes = await fetch(`${API_BASE}/config/fees`);
+                    const config = await cRes.json();
+                    if (!cRes.ok) {
+                        Toast.error(config.error || '无法获取支付配置');
+                        this.closeDrawer();
+                        return;
+                    }
+                    
+                    const feeUsdt = (config.fee_usdt != null ? config.fee_usdt : (Number(config.fee) / 1e18)).toFixed(2);
+                    const feeLabel = config.fee_currency === 'USDT' ? `${feeUsdt} USDT` : `${feeUsdt} USDT`;
+                    document.getElementById('previewAmount').textContent = feeLabel;
+                    const addrEl = document.getElementById('previewReceiveAddress');
+                    if (addrEl && config.receive_address) addrEl.textContent = config.receive_address;
+                    
+                    const area = document.getElementById('drawerActionArea');
+                    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    
+                    if (isMobile && typeof window.ethereum === 'undefined' && typeof window.BinanceChain === 'undefined') {
+                         const dappUrl = window.location.host + window.location.pathname;
+                         const metamaskLink = `https://metamask.app.link/dapp/${dappUrl}`;
+                         area.innerHTML = `
+                            <div style="text-align: center; margin-bottom: 1rem; font-size: 0.9rem; color: var(--accent-orange);">
+                                ⚠️ 移动端请用钱包 App 内置浏览器打开本站
+                            </div>
+                            <a href="${metamaskLink}" class="btn btn-primary" style="width: 100%; text-align: center; display: block; text-decoration: none; padding: 1rem; font-size: 1rem; background: #f6851b; color: white; margin-bottom: 0.6rem;">
+                                🦊 用 MetaMask App 打开
+                            </a>
+                            <button type="button" class="btn btn-primary" style="width: 100%; padding: 1rem; font-size: 1rem; background: #F0B90B; color: #000;" onclick="Studio.copyDappUrlForBinance()">
+                                🟡 用币安 App 打开（复制链接后到币安内置浏览器粘贴）
+                            </button>
+                        `;
+                    } else {
+                        area.innerHTML = `
+                            <button class="btn btn-primary" style="width:100%; padding:1rem; font-size:1rem;" onclick="Studio.confirmPayment()">
+                                🚀 确认并支付
+                            </button>
+                        `;
+                    }
+                } catch(e) {
+                    Toast.error('无法获取费率: ' + e.message);
+                    this.closeDrawer();
+                }
+            },
+
+            async confirmPayment() {
+                document.getElementById('drawerPreviewMode').style.display = 'none';
+                document.getElementById('drawerProgressMode').style.display = 'block';
+                
+                this.startLogs();
+                await this.publish();
+            },
+
+            async pollTxStatus(txHash) {
+                this.addLog("🔄 网络波动，正在后台轮询上链状态...");
+                let attempts = 0;
+                const maxAttempts = 30; 
+                
+                const poll = async () => {
+                    if (attempts >= maxAttempts) {
+                        this.addLog("❌ 服务器响应超时，请稍后在个人中心查看");
+                        document.getElementById('forceCloseLoading').style.display = 'block';
+                        return;
+                    }
+                    attempts++;
+                    
+                    try {
+                        const res = await fetch(`${API_BASE}/posts/check_tx?tx_hash=${txHash}`);
+                        const resp = await res.json();
+                        
+                        if (resp.status === 'success') {
+                            this.addLog("✅ 服务器确认成功!");
+                            Draft.clear();
+                            Toast.success('发布成功');
+                            setTimeout(() => navigateWithTransition('/'), 2000);
+                        } else {
+                            setTimeout(poll, 3000);
+                        }
+                    } catch (e) {
+                        setTimeout(poll, 3000);
+                    }
+                };
+                poll();
+            },
+
+            async publish() {
+                if (this.isPublishing) return;
+                
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    Toast.error('登录已失效，请重新登录');
+                    return;
+                }
+                
+                const title = document.getElementById('studioPostTitle').value;
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
+                const tags = this.parseTagsInput();
+                const seriesId = this.seriesSelectValue();
+                const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
+                const btn = document.getElementById('publishBtn');
+
+                this.isPublishing = true;
+                if(btn) btn.disabled = true;
+                
+                this.timeoutId = setTimeout(() => {
+                    document.getElementById('forceCloseLoading').style.display = 'block';
+                }, 60000);
+
+                let txHash = this.pendingTxHash;
+
+                try {
+                    const pre = await this.runPrecheck();
+                    if (!pre.ok) throw new Error((pre.issues && pre.issues[0]) || '发布前检查未通过');
+                    // Initialize Web3 if needed
+                    if (typeof window.web3 === 'undefined') {
+                        if (window.BinanceChain || window.ethereum) {
+                            window.web3 = new Web3(window.BinanceChain || window.ethereum);
+                        } else {
+                            throw new Error("No wallet found");
+                        }
+                    }
+                    const web3 = window.web3;
+                    const provider = window.BinanceChain || window.ethereum;
+                    if (!provider) throw new Error('No wallet found');
+
+                    // 1. Fee Config（fee 为 Wei 字符串，勿再 toWei）
+                    const cRes = await fetch(`${API_BASE}/config/fees`);
+                    const config = await cRes.json();
+                    if (!cRes.ok || !config.receive_address) {
+                        throw new Error(config.error || '无法获取支付配置');
+                    }
+                    
+                    // 2. Chain Check
+                    if (web3) {
+                        const chainId = await web3.eth.getChainId();
+                        if (Number(chainId) !== Number(config.chain_id)) {
+                            try {
+                                await provider.request({
+                                    method: 'wallet_switchEthereumChain',
+                                    params: [{ chainId: web3.utils.toHex(String(config.chain_id)) }],
+                                });
+                            } catch (switchError) {
+                                throw new Error(`请切换到 BSC Mainnet 主网 (Chain ID: ${config.chain_id})`);
+                            }
+                        }
+                    }
+
+                    // 3. Payment: USDT (BEP-20) transfer（若已付过则跳过）
+                    this.savePendingPost(null);
+                    if (!txHash) {
+                        if (!config.usdt_contract) throw new Error('未配置 USDT 合约地址');
+                        this.addLog("等待钱包确认 USDT 转账...");
+                        const feeRaw = web3.utils.toBN(config.fee.toString());
+                        const sig = web3.eth.abi.encodeFunctionSignature('transfer(address,uint256)');
+                        const paramsEnc = web3.eth.abi.encodeParameters(['address', 'uint256'], [config.receive_address, feeRaw]);
+                        const data = sig + (paramsEnc.startsWith('0x') ? paramsEnc.slice(2) : paramsEnc);
+                        txHash = await provider.request({
+                            method: 'eth_sendTransaction',
+                            params: [{
+                                to: config.usdt_contract,
+                                from: currentUser.address,
+                                value: '0x0',
+                                data: data,
+                                gas: web3.utils.toHex(100000)
+                            }]
+                        });
+                        this.pendingTxHash = txHash;
+                        this.savePendingPost(txHash);
+                    }
+                    
+                    this.addLog("交易已广播: " + txHash.substring(0, 10) + "...");
+                    document.getElementById('txHashDisplay').style.display = 'block';
+                    document.getElementById('realTxHash').textContent = txHash;
+
+                    // 4. Confirm Receipt
+                    this.addLog("等待链上确认...");
+                    let receipt = null;
+                    for(let i=0; i<60; i++) { 
+                        try {
+                            receipt = await web3.eth.getTransactionReceipt(txHash);
+                            if(receipt && receipt.status) break;
+                        } catch(e) {}
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+
+                    if(!receipt || !receipt.status) throw new Error('交易未确认');
+                    
+                    this.addLog("交易确认成功! 正在写入永存档案...");
+                    
+                    // 5. Backend Upload：支付已确认，后端写入永存档案后创建帖子
+                    const res = await fetch(`${API_BASE}/posts`, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            title,
+                            content,
+                            tx_hash: txHash,
+                            tags: tags,
+                            series_id: seriesId || null,
+                            is_special_announcement: specialChecked,
+                            images: [],
+                            region: '其他'
+                        })
+                    });
+                    
+                    if (handle401(res)) return;
+                    if (res.ok) {
+                        this.addLog("✅ 永存档案已写入，发布成功!");
+                        Draft.clear();
+                        this.clearPendingPost();
+                        this.pendingTxHash = null;
+                        Toast.success('发布成功');
+                        setTimeout(() => {
+                            navigateWithTransition('/');
+                        }, 2000);
+                    } else {
+                        const errData = await res.json().catch(() => ({}));
+                        const msg = errData.error || ('请求失败 ' + res.status);
+                        if (res.status === 503 && (errData.code === 'ARWEAVE_FAIL' || msg.includes('永存档案'))) {
+                            this.addLog("⚠️ 永存档案写入暂时失败，请点击「重试发布」再试（无需再次支付）");
+                        }
+                        throw new Error(msg);
+                    }
+                } catch(e) { 
+                    console.error(e);
+                    
+                    // Auth Error
+                    if (e.message && (e.message.includes('Token') || e.message.includes('expired'))) {
+                        this.addLog("❌ 身份验证过期，草稿已自动保存");
+                        Draft.save();
+                        Toast.error('登录过期，请重新登录');
+                        setTimeout(() => navigateWithTransition('/'), 2000);
+                        return;
+                    }
+
+                    // Network Error -> Poll
+                    if (txHash && (e.message.includes('fetch') || e.message.includes('Network'))) {
+                        this.pollTxStatus(txHash);
+                        return;
+                    }
+
+                    this.addLog("❌ 错误: " + e.message);
+                    Toast.error('发布失败: ' + e.message);
+                    document.getElementById('forceCloseLoading').style.display = 'block';
+                    
+                    // Allow retry without paying again
+                    if (this.pendingTxHash && btn) {
+                        btn.innerHTML = '🔄 重试发布 (已支付)';
+                    }
+                } finally {
+                    // Manual close required on failure
+                }
+            },
+
+            async publishAsAdmin() {
+                if (!currentUser || !currentUser.is_admin) {
+                    Toast.error('仅管理员可操作');
+                    return;
+                }
+                const title = document.getElementById('studioPostTitle').value.trim();
+                const content = studioQuill ? studioQuill.root.innerHTML : '';
+                const textContent = studioQuill ? studioQuill.getText().trim() : '';
+                const tags = this.parseTagsInput();
+                const seriesId = this.seriesSelectValue();
+                if (!title) {
+                    Toast.error('请填写标题');
+                    return;
+                }
+                if (!textContent) {
+                    Toast.error('请填写正文');
+                    return;
+                }
+                const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
+                const btn = document.getElementById('adminDirectPublishBtn');
+                if (btn) btn.disabled = true;
+                try {
+                    const res = await fetch(`${API_BASE}/posts`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({
+                            title,
+                            content,
+                            tags: tags,
+                            series_id: seriesId || null,
+                            is_special_announcement: specialChecked,
+                            images: [],
+                            region: '其他'
+                        })
+                    });
+                    if (handle401(res)) return;
+                    const resp = await res.json().catch(() => ({}));
+                    if (res.ok) {
+                        Draft.clear();
+                        Toast.success('已发布（普通帖，未上链）');
+                        setTimeout(() => { navigateWithTransition('/'); }, 1500);
+                    } else {
+                        Toast.error(resp.error || '发布失败');
+                    }
+                } catch (e) {
+                    Toast.error('发布失败: ' + (e.message || '网络错误'));
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            }
+        };
+
+        const Toast = {
+            show(msg, type) {
+                const t = document.createElement('div');
+                t.className = `toast ${type}`;
+                t.textContent = msg;
+                document.getElementById('toastContainer').appendChild(t);
+                setTimeout(()=>t.remove(), 3000);
+            },
+            success(m) { this.show(m, 'success'); },
+            error(m) { this.show(m, 'error'); },
+            info(m) { this.show(m, 'info'); }
+        };
+        
+        const UI = {
+            updateAuth() {
+                const userMenu = document.getElementById('userMenu');
+                if (currentUser) {
+                    userMenu.style.display = 'flex';
+                    let displayName = currentUser.nickname || (currentUser.address ? currentUser.address.substring(0, 6) : '');
+                    const nameEl = document.getElementById('userDisplayName');
+                    if (nameEl) nameEl.textContent = displayName;
+                    const badgeEl = document.getElementById('userIdBadge');
+                    if (badgeEl && currentUser.id != null) badgeEl.innerHTML = formatUserId(currentUser.id, currentUser);
+                    const avatarEl = document.getElementById('userAvatarEmoji');
+                    if (avatarEl) avatarEl.textContent = currentUser.avatar || '👻';
+                }
+            }
+        };
+
+        const Modal = {
+            close(id) { document.getElementById(id).classList.remove('active'); }
+        };
+
+        async function uploadInlineImageToEditor(file) {
+            if (!studioQuill || !file) return;
+            if (file.size > 8 * 1024 * 1024) {
+                if (typeof Toast !== 'undefined') Toast.error('图片需小于 8MB，请压缩或换图');
+                return;
+            }
+            try {
+                const insertRange = studioQuill.getSelection(true) || lastEditorRange || { index: studioQuill.getLength(), length: 0 };
+                const prepared = await prepareUploadImage(file, 720, 0.62);
+                const formData = new FormData();
+                formData.append('file', prepared.uploadBlob, prepared.uploadName);
+                const res = await fetch(API_BASE + '/upload', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('token') || '') },
+                    body: formData
+                });
+                if (handle401(res)) return;
+                const resp = await res.json().catch(() => ({}));
+                if (!res.ok || !resp.url) {
+                    if (typeof Toast !== 'undefined') Toast.error(resp.error || '上传失败');
+                    return;
+                }
+                const targetRange = lastEditorRange || insertRange;
+                studioQuill.insertEmbed(targetRange.index, 'image', resp.url, 'user');
+                studioQuill.setSelection(targetRange.index + 1, 0, 'silent');
+                lastEditorRange = { index: targetRange.index + 1, length: 0 };
+                if (typeof Toast !== 'undefined') Toast.success('图片已插入');
+            } catch (e) {
+                if (typeof Toast !== 'undefined') Toast.error('上传失败: ' + (e.message || '网络错误'));
+            }
+        }
+
+        function initQuill() {
+            const el = document.getElementById('studioPostContent');
+            if (!el) return;
+            if (typeof Quill === 'undefined') {
+                const wrap = document.getElementById('quillEditorWrap');
+                if (wrap) wrap.innerHTML = '<p style="padding:1rem;color:var(--accent-red);">富文本编辑器加载失败，请刷新页面或检查网络后重试。</p>';
+                return;
+            }
+            if (studioQuill) return;
+            studioQuill = new Quill(el, {
+                theme: 'snow',
+                placeholder: '撰写你的怪谈… 可插入图片',
+                modules: {
+                    toolbar: [
+                        ['bold', 'italic', 'underline'],
+                        [{ list: 'ordered' }, { list: 'bullet' }],
+                        ['link', 'image']
+                    ]
+                }
+            });
+            studioQuill.on('selection-change', function(range) {
+                if (range) lastEditorRange = range;
+            });
+            studioQuill.root.addEventListener('paste', async function(evt) {
+                const clipboard = evt.clipboardData;
+                if (!clipboard || !clipboard.items) return;
+                const imageItem = Array.from(clipboard.items).find(function(it) {
+                    return it && it.type && it.type.indexOf('image/') === 0;
+                });
+                if (!imageItem) return;
+                evt.preventDefault();
+                const file = imageItem.getAsFile();
+                await uploadInlineImageToEditor(file);
+            });
+            studioQuill.root.addEventListener('drop', async function(evt) {
+                const dt = evt.dataTransfer;
+                if (!dt || !dt.files || !dt.files.length) return;
+                const imageFile = Array.from(dt.files).find(function(f) {
+                    return f && f.type && f.type.indexOf('image/') === 0;
+                });
+                if (!imageFile) return;
+                evt.preventDefault();
+                const selection = document.caretRangeFromPoint ? document.caretRangeFromPoint(evt.clientX, evt.clientY) : null;
+                if (selection && selection.startContainer && studioQuill) {
+                    const blot = Quill.find(selection.startContainer, true);
+                    if (blot) {
+                        const idx = studioQuill.getIndex(blot);
+                        lastEditorRange = { index: idx, length: 0 };
+                    }
+                }
+                await uploadInlineImageToEditor(imageFile);
+            });
+            const toolbar = studioQuill.getModule('toolbar');
+            toolbar.addHandler('image', function() {
+                const selected = studioQuill.getSelection(true);
+                if (selected) lastEditorRange = selected;
+                const input = document.createElement('input');
+                input.setAttribute('type', 'file');
+                input.setAttribute('accept', 'image/png,image/jpeg,image/gif,image/webp');
+                input.onchange = async function() {
+                    const file = input.files && input.files[0];
+                    if (!file) return;
+                    await uploadInlineImageToEditor(file);
+                    input.value = '';
+                };
+                input.click();
+            });
+        }
+
+        window.addEventListener('load', () => {
+            initQuill();
+            const c = document.getElementById('ghostFireContainer');
+            for(let i=0; i<6; i++) {
+                const d = document.createElement('div'); d.className='ghost-fire';
+                d.style.left=Math.random()*100+'%'; d.style.animationDelay=Math.random()*5+'s';
+                c.appendChild(d);
+            }
+            Auth.init();
+        });
+
+    window.Studio = Studio;
+    window.Auth = Auth;
+    window.UI = UI;
+    window.Modal = Modal;
+})();
