@@ -1397,12 +1397,31 @@ def retry_pending_post():
 @token_required
 @admin_required
 def list_pending_publications():
-    rows = PendingPublication.query.order_by(PendingPublication.updated_at.desc(), PendingPublication.id.desc()).limit(200).all()
-    return jsonify({'items': [{
-        **row.to_dict(),
-        'nickname': row.user.nickname if row.user else None,
-        'username': row.user.username if row.user else None,
-    } for row in rows]})
+    status = (request.args.get('status') or '').strip().lower()
+    q = (request.args.get('q') or '').strip()
+    limit = max(1, min(int(request.args.get('limit', 200) or 200), 300))
+    query = PendingPublication.query
+    if status:
+        query = query.filter(PendingPublication.status == status)
+    if q:
+        escaped = q.replace('%', '').replace('_', '')
+        query = query.filter(or_(
+            PendingPublication.tx_hash.ilike(f'%{escaped}%'),
+            PendingPublication.title.ilike(f'%{escaped}%'),
+            PendingPublication.last_error.ilike(f'%{escaped}%')
+        ))
+    rows = query.order_by(PendingPublication.updated_at.desc(), PendingPublication.id.desc()).limit(limit).all()
+    items = []
+    for row in rows:
+        existing_post_id = Post.query.filter_by(tx_hash=row.tx_hash).with_entities(Post.id).scalar()
+        items.append({
+            **row.to_dict(),
+            'nickname': row.user.nickname if row.user else None,
+            'username': row.user.username if row.user else None,
+            'profile_url': f"/profile?user={row.user.username}" if row.user and row.user.username else None,
+            'post_url': f"/post/{existing_post_id}" if existing_post_id else None,
+        })
+    return jsonify({'items': items})
 
 
 @app.route('/api/admin/pending-publications/<int:pending_id>/retry', methods=['POST'])

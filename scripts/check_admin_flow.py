@@ -191,6 +191,13 @@ def main():
             raise AssertionError(f"pending publication not found in admin list: {data}")
         print("admin_pending_list_ok=1")
 
+        status, data = http_json(f"{base}/api/admin/pending-publications?status=awaiting_retry&q=QA%20Admin%20Pending", token=admin_token)
+        assert_ok(status, data, "admin pending filtered list")
+        filtered = data.get("items") or []
+        if not any((row.get("tx_hash") == pending_tx_hash) for row in filtered):
+            raise AssertionError(f"pending publication not found in filtered list: {data}")
+        print("admin_pending_filter_ok=1")
+
         pending_id = next((row.get("id") for row in items if row.get("tx_hash") == pending_tx_hash), None)
         if not pending_id:
             raise AssertionError(f"pending publication id missing: {data}")

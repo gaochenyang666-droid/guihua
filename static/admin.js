@@ -257,17 +257,41 @@
                 if (!body) return;
                 body.innerHTML = '加载中...';
                 try {
-                    var result = await apiJson(API_BASE + '/admin/pending-publications', { check401: false, fallback: {} });
+                    var statusFilterEl = document.getElementById('adminPendingStatusFilter');
+                    var searchFilterEl = document.getElementById('adminPendingSearch');
+                    var qs = [];
+                    if (statusFilterEl && statusFilterEl.value) qs.push('status=' + encodeURIComponent(statusFilterEl.value));
+                    if (searchFilterEl && searchFilterEl.value.trim()) qs.push('q=' + encodeURIComponent(searchFilterEl.value.trim()));
+                    var queryString = qs.length ? ('?' + qs.join('&')) : '';
+                    var result = await apiJson(API_BASE + '/admin/pending-publications' + queryString, { check401: false, fallback: {} });
                     var data = result.data || {};
                     var items = data.items || [];
                     if (!result.res.ok) throw new Error(data.error || '加载失败');
+                    var toolbar = '' +
+                        '<div style="display:flex; justify-content:space-between; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap; align-items:center;">' +
+                            '<div style="display:flex; gap:0.55rem; flex-wrap:wrap; align-items:center;">' +
+                                '<select class="form-input" id="adminPendingStatusFilter" style="min-width:150px; max-width:190px;">' +
+                                    '<option value="">全部状态</option>' +
+                                    '<option value="awaiting_retry"' + ((statusFilterEl && statusFilterEl.value === 'awaiting_retry') ? ' selected' : '') + '>awaiting_retry</option>' +
+                                    '<option value="storage_ready"' + ((statusFilterEl && statusFilterEl.value === 'storage_ready') ? ' selected' : '') + '>storage_ready</option>' +
+                                    '<option value="payment_verified"' + ((statusFilterEl && statusFilterEl.value === 'payment_verified') ? ' selected' : '') + '>payment_verified</option>' +
+                                    '<option value="initiated"' + ((statusFilterEl && statusFilterEl.value === 'initiated') ? ' selected' : '') + '>initiated</option>' +
+                                '</select>' +
+                                '<input class="form-input" id="adminPendingSearch" type="text" placeholder="搜标题 / TX / 错误" value="' + escapeAttr((searchFilterEl && searchFilterEl.value) || '') + '" style="min-width:220px; max-width:320px;">' +
+                                '<button class="btn btn-ghost btn-sm" onclick="Admin.openPendingPublications()">筛选</button>' +
+                            '</div>' +
+                            '<button class="btn btn-ghost btn-sm" onclick="Admin.runPendingBatchRetry()">运行一轮自动补偿</button>' +
+                        '</div>';
                     if (!items.length) {
-                        body.innerHTML = '<div style="display:flex; justify-content:flex-end; margin-bottom:0.75rem;"><button class="btn btn-ghost btn-sm" onclick="Admin.runPendingBatchRetry()">运行一轮自动补偿</button></div><div style="color:var(--text-muted); text-align:center; padding:1rem;">当前没有待恢复发布记录</div>';
+                        body.innerHTML = toolbar + '<div style="color:var(--text-muted); text-align:center; padding:1rem;">当前没有待恢复发布记录</div>';
                         return;
                     }
-                    body.innerHTML = '<div style="display:flex; justify-content:flex-end; margin-bottom:0.75rem;"><button class="btn btn-ghost btn-sm" onclick="Admin.runPendingBatchRetry()">运行一轮自动补偿</button></div>' + items.map(function (row) {
+                    body.innerHTML = toolbar + items.map(function (row) {
                         var who = escapeHtml(row.nickname || row.username || ('用户#' + row.user_id));
                         var statusColor = row.status === 'awaiting_retry' ? 'var(--accent-orange)' : (row.status === 'storage_ready' ? 'var(--accent-green)' : 'var(--accent-purple)');
+                        var jumpLinks = '' +
+                            (row.profile_url ? '<a class="btn btn-ghost btn-sm" href="' + escapeAttr(row.profile_url) + '">查看用户</a>' : '') +
+                            (row.post_url ? '<a class="btn btn-ghost btn-sm" href="' + escapeAttr(row.post_url) + '">打开帖子</a>' : '');
                         return '<div class="glass" style="padding:0.8rem; margin-bottom:0.75rem; border-radius:10px;">' +
                             '<div style="display:flex; justify-content:space-between; gap:0.6rem; flex-wrap:wrap; align-items:center;">' +
                                 '<div><b>' + escapeHtml(row.title || '未命名帖子') + '</b><div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.2rem;">' + who + ' · ' + escapeHtml(row.tx_hash || '') + '</div></div>' +
@@ -276,6 +300,7 @@
                             (row.last_error ? ('<div style="font-size:0.82rem; color:var(--text-secondary); margin-top:0.5rem;">' + escapeHtml(row.last_error) + '</div>') : '') +
                             '<div style="font-size:0.76rem; color:var(--text-muted); margin-top:0.45rem;">更新时间: ' + (row.updated_at ? new Date(row.updated_at).toLocaleString() : '-') + '</div>' +
                             '<div style="display:flex; gap:0.45rem; flex-wrap:wrap; margin-top:0.65rem;">' +
+                                jumpLinks +
                                 '<button class="btn btn-primary btn-sm" onclick="Admin.retryPendingPublication(' + row.id + ')">补偿重试</button>' +
                                 '<button class="btn btn-ghost btn-sm" style="color:var(--accent-red);" onclick="Admin.deletePendingPublication(' + row.id + ')">删除记录</button>' +
                             '</div>' +
