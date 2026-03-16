@@ -240,8 +240,14 @@
     }
     .sidebar-right .utility-card-detail {
         display: block;
+        max-height: none;
+        opacity: 1;
+        visibility: visible;
+        overflow: visible;
         border-top: 0;
-        padding-top: 0;
+        padding: 0 0.78rem 0.78rem;
+        transform: none;
+        transition: none;
     }
     .sidebar-right .utility-accordion-card {
         padding-top: 0.72rem;
