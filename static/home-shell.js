@@ -64,8 +64,10 @@
             bindNavbar() {
                 var navbarEl = document.getElementById('mainNavbar');
                 var mobileNavToggleBtn = document.getElementById('mobileNavToggleBtn');
+                var desktopNavToggleBtn = document.getElementById('desktopNavToggleBtn');
                 var mobileNavPanel = document.getElementById('mobileNavPanel');
                 var isMobileNav = function () { return window.matchMedia('(max-width: 768px)').matches; };
+                var isDesktopNav = function () { return window.matchMedia('(min-width: 1024px)').matches; };
                 var closeMobileNav = function () {
                     if (!navbarEl) return;
                     navbarEl.classList.remove('mobile-nav-open');
@@ -76,15 +78,36 @@
                     navbarEl.classList.add('mobile-nav-open');
                     if (mobileNavToggleBtn) mobileNavToggleBtn.setAttribute('aria-expanded', 'true');
                 };
-                if (!(navbarEl && mobileNavToggleBtn && mobileNavPanel)) return;
-
-                mobileNavToggleBtn.onclick = function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (!isMobileNav()) return;
-                    if (navbarEl.classList.contains('mobile-nav-open')) closeMobileNav();
-                    else openMobileNav();
+                var closeDesktopNav = function () {
+                    if (!navbarEl) return;
+                    navbarEl.classList.remove('desktop-nav-open');
+                    if (desktopNavToggleBtn) desktopNavToggleBtn.setAttribute('aria-expanded', 'false');
                 };
+                var openDesktopNav = function () {
+                    if (!navbarEl) return;
+                    navbarEl.classList.add('desktop-nav-open');
+                    if (desktopNavToggleBtn) desktopNavToggleBtn.setAttribute('aria-expanded', 'true');
+                };
+                if (!(navbarEl && mobileNavPanel)) return;
+
+                if (mobileNavToggleBtn) {
+                    mobileNavToggleBtn.onclick = function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!isMobileNav()) return;
+                        if (navbarEl.classList.contains('mobile-nav-open')) closeMobileNav();
+                        else openMobileNav();
+                    };
+                }
+                if (desktopNavToggleBtn) {
+                    desktopNavToggleBtn.onclick = function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (!isDesktopNav()) return;
+                        if (navbarEl.classList.contains('desktop-nav-open')) closeDesktopNav();
+                        else openDesktopNav();
+                    };
+                }
                 mobileNavPanel.addEventListener('click', function (e) {
                     if (!isMobileNav()) return;
                     var target = e.target;
@@ -93,14 +116,19 @@
                     if (target.closest('button, a')) closeMobileNav();
                 });
                 document.addEventListener('click', function (e) {
-                    if (!isMobileNav()) return;
-                    if (!navbarEl.contains(e.target)) closeMobileNav();
+                    if (isMobileNav()) {
+                        if (!navbarEl.contains(e.target)) closeMobileNav();
+                        return;
+                    }
+                    if (isDesktopNav() && !navbarEl.contains(e.target)) closeDesktopNav();
                 });
                 document.addEventListener('keydown', function (e) {
                     if (e.key === 'Escape') closeMobileNav();
+                    if (e.key === 'Escape') closeDesktopNav();
                 });
                 var handleNavbarResize = debounce(function () {
                     if (!isMobileNav()) closeMobileNav();
+                    if (!isDesktopNav()) closeDesktopNav();
                 }, 180);
                 window.addEventListener('resize', handleNavbarResize, { passive: true });
             },

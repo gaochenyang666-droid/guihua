@@ -111,6 +111,13 @@ def main():
             raise AssertionError(f"ops summary missing alerts: {data}")
         print("ops_summary_ok=1")
 
+        status, data = http_json(base + "/api/admin/flow-events?severity=warn&limit=20", token=token)
+        assert_ok(status, data, "flow events")
+        items = data.get("items") or []
+        if not items:
+            raise AssertionError(f"flow events missing items: {data}")
+        print("ops_events_ok=1")
+
         status, data = http_json(base + "/api/admin/pending-publications/retry-batch", method="POST", token=token)
         assert_ok(status, data, "ops retry batch")
         result = data.get("result") or {}

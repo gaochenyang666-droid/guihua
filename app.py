@@ -1460,6 +1460,22 @@ def admin_ops_summary():
     }
     return jsonify(summary)
 
+
+@app.route('/api/admin/flow-events', methods=['GET'])
+@token_required
+@admin_required
+def admin_flow_events():
+    severity = (request.args.get('severity') or '').strip().lower()
+    event_keyword = (request.args.get('event') or '').strip()
+    limit = max(1, min(int(request.args.get('limit', 100) or 100), 300))
+    query = FlowEvent.query
+    if severity in ('info', 'warn', 'error'):
+        query = query.filter(FlowEvent.severity == severity)
+    if event_keyword:
+        query = query.filter(FlowEvent.event.ilike(f'%{event_keyword.replace("%", "").replace("_", "")}%'))
+    rows = query.order_by(FlowEvent.created_at.desc(), FlowEvent.id.desc()).limit(limit).all()
+    return jsonify({'items': [row.to_dict() for row in rows]})
+
 @app.route('/api/admin/stats', methods=['GET'])
 @token_required
 def admin_stats():

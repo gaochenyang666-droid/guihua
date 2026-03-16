@@ -375,7 +375,15 @@
                             }).join('') +
                         '</div>' +
                         '<div class="glass" style="padding:0.9rem; border-radius:10px;">' +
-                            '<div style="font-weight:700; margin-bottom:0.6rem;">最近事件</div>' +
+                            '<div style="display:flex; align-items:center; justify-content:space-between; gap:0.7rem; margin-bottom:0.6rem; flex-wrap:wrap;">' +
+                                '<div style="font-weight:700;">最近事件</div>' +
+                                '<div style="display:flex; gap:0.45rem; flex-wrap:wrap;">' +
+                                    '<button class="btn btn-ghost btn-sm" onclick="Admin.loadFlowEvents(\'\')">全部</button>' +
+                                    '<button class="btn btn-ghost btn-sm" onclick="Admin.loadFlowEvents(\'error\')">仅错误</button>' +
+                                    '<button class="btn btn-ghost btn-sm" onclick="Admin.loadFlowEvents(\'warn\')">仅警告</button>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div id="adminFlowEventsList">' +
                             (latest.length ? latest.map(function (ev) {
                                 var payload = ev.payload || {};
                                 return '<div style="padding:0.45rem 0; border-bottom:1px dashed var(--border-color);">' +
@@ -384,9 +392,33 @@
                                     '<div style="font-size:0.8rem; color:var(--text-secondary);">' + escapeHtml(JSON.stringify(payload).slice(0, 220)) + '</div>' +
                                 '</div>';
                             }).join('') : '<div style="color:var(--text-muted);">暂无事件</div>') +
+                            '</div>' +
                         '</div>';
                 } catch (e) {
                     body.innerHTML = '<div style="color:var(--accent-red);">' + escapeHtml(e.message || '加载失败') + '</div>';
+                }
+            },
+
+            async loadFlowEvents(severity) {
+                var container = document.getElementById('adminFlowEventsList');
+                if (!container) return;
+                container.innerHTML = '加载中...';
+                try {
+                    var qs = severity ? ('?severity=' + encodeURIComponent(severity) + '&limit=80') : '?limit=80';
+                    var result = await apiJson(API_BASE + '/admin/flow-events' + qs, { check401: false, fallback: {} });
+                    var data = result.data || {};
+                    var items = data.items || [];
+                    if (!result.res.ok) throw new Error(data.error || '加载失败');
+                    container.innerHTML = items.length ? items.map(function (ev) {
+                        var payload = ev.payload || {};
+                        return '<div style="padding:0.45rem 0; border-bottom:1px dashed var(--border-color);">' +
+                            '<div style="font-size:0.8rem; color:var(--text-muted);">' + new Date(ev.created_at).toLocaleString() + ' · ' + escapeHtml(ev.severity || 'info') + '</div>' +
+                            '<div style="font-weight:600;">' + escapeHtml(ev.event || '') + '</div>' +
+                            '<div style="font-size:0.8rem; color:var(--text-secondary); white-space:pre-wrap; word-break:break-word;">' + escapeHtml(JSON.stringify(payload, null, 2)) + '</div>' +
+                        '</div>';
+                    }).join('') : '<div style="color:var(--text-muted);">没有匹配的事件</div>';
+                } catch (e) {
+                    container.innerHTML = '<div style="color:var(--accent-red);">' + escapeHtml(e.message || '加载失败') + '</div>';
                 }
             },
 

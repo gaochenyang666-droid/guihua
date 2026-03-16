@@ -14,6 +14,7 @@
 .logo { display: flex; align-items: center; gap: 0.5rem; font-size: 1.2rem; font-weight: 800; color: var(--accent-purple); text-decoration: none; flex-shrink: 0; order: 0; }
 .logo img { height: 32px; width: auto; }
 .mobile-nav-toggle { display: none; }
+.desktop-nav-toggle { display: none; }
 .mobile-nav-panel { display: contents; }
 .nav-actions {
     display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; order: 1;
@@ -1219,4 +1220,3 @@
         font-size: 0.88rem;
     }
 }
-

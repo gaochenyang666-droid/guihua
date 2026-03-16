@@ -77,6 +77,24 @@
         }
     }
 
+    async function copyText(text, successMessage) {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            toastSuccess(successMessage || '已复制');
+        } catch (_) {
+            toastError('复制失败，请稍后重试');
+        }
+    }
+
     function requireLogin() {
         if (currentUser) return true;
         toastError('请先登录');
@@ -180,6 +198,22 @@
             '<h2 style="margin-bottom:0.5rem;">' + escapeHtml(p.title || '') + '</h2>' +
             '<div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap;">' + meta + '</div>' +
             '<article class="post-detail-content">' + ((p.content == null) ? '' : String(p.content)) + '</article>' +
+            (p.ipfs_cid ? (
+                '<section class="post-arweave-footer glass">' +
+                    '<div class="post-arweave-footer-head">' +
+                        '<div>' +
+                            '<div class="post-arweave-label">Arweave TX ID</div>' +
+                            '<div class="post-arweave-sub">文章末尾保留这条永存档案编号，便于核验与备份。</div>' +
+                        '</div>' +
+                        '<button class="btn btn-ghost btn-sm" type="button" data-action="copy-arweave" data-arweave-tx="' + escapeAttr(p.ipfs_cid) + '">复制 TX ID</button>' +
+                    '</div>' +
+                    '<div class="post-arweave-value">' + escapeHtml(String(p.ipfs_cid)) + '</div>' +
+                    '<div class="post-arweave-links">' +
+                        '<a href="https://arweave.net/' + escapeAttr(p.ipfs_cid) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">打开 Arweave 档案</a>' +
+                        (p.tx_hash ? '<a href="https://bscscan.com/tx/' + escapeAttr(p.tx_hash) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">查看支付凭证</a>' : '') +
+                    '</div>' +
+                '</section>'
+            ) : '') +
             '<div class="on-chain-evidence" style="margin-top:1rem; padding:0.75rem; background:var(--bg-secondary); border-radius:8px; font-size:0.85rem;">' +
                 '<div style="color:var(--text-muted); margin-bottom:0.5rem;">' + (isPermanent ? '✅ 已永久保存 · 链上可验' : 'ℹ️ 当前帖子暂未永存') + '</div>' +
                 '<div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">' +
@@ -372,6 +406,16 @@
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="share"]'), function (btn) {
             btn.addEventListener('click', sharePost);
+        });
+        Array.prototype.forEach.call(body.querySelectorAll('[data-action="copy-arweave"]'), function (btn) {
+            btn.addEventListener('click', function () {
+                var tx = btn.getAttribute('data-arweave-tx') || '';
+                if (!tx) {
+                    toastError('缺少 Arweave TX ID');
+                    return;
+                }
+                copyText(tx, '已复制 Arweave TX ID');
+            });
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="report"]'), function (btn) {
             btn.addEventListener('click', reportPost);
