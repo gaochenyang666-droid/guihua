@@ -2,6 +2,7 @@
     'use strict';
 
         const API_BASE = window.location.origin + '/api';
+        const apiJson = window.apiJson;
         let currentUser = null;
 
         let studioQuill = null;
@@ -119,11 +120,10 @@
 
             async fetchMe() {
                 try {
-                    const res = await fetch(`${API_BASE}/user/me`, {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                    });
+                    const result = await apiJson(`${API_BASE}/user/me`, { fallback: {}, check401: false });
+                    const res = result.res;
                     if (res.ok) {
-                        currentUser = await res.json();
+                        currentUser = result.data;
                         if (!currentUser.is_admin && currentUser.type !== 'web3') {
                             alert('仅限 Web3 创作者或管理员进入');
                             navigateWithTransition('/');
@@ -172,12 +172,13 @@
                 const title = document.getElementById('studioPostTitle').value || '';
                 const content = studioQuill ? studioQuill.root.innerHTML : '';
                 try {
-                    const res = await fetch(`${API_BASE}/posts/precheck`, {
+                    const result = await apiJson(`${API_BASE}/posts/precheck`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ title, content })
+                        body: { title, content },
+                        fallback: {}
                     });
-                    const data = await res.json().catch(() => ({}));
+                    const res = result.res;
+                    const data = result.data;
                     if (!res.ok) return { ok: false, issues: [data.error || '发布前检查失败'], warnings: [] };
                     return data;
                 } catch (e) {
@@ -199,9 +200,9 @@
                 const el = document.getElementById('studioFeeDisplay');
                 if (!el) return;
                 try {
-                    const r = await fetch(`${API_BASE}/config/fees`);
-                    if (r.ok) {
-                        const cfg = await r.json();
+                    const result = await apiJson(`${API_BASE}/config/fees`, { auth: false, fallback: {} });
+                    if (result.res.ok) {
+                        const cfg = result.data;
                         const usdt = (cfg.fee_usdt != null ? cfg.fee_usdt : (Number(cfg.fee) / 1e18)).toFixed(2);
                         el.textContent = cfg.fee_currency === 'USDT' ? `${usdt} USDT` : `${usdt} USDT`;
                     } else {
@@ -239,10 +240,8 @@
                 const token = localStorage.getItem('token');
                 if (!token) return;
                 try {
-                    const res = await fetch(`${API_BASE}/series?mine=1&page=1&per_page=80`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const data = await res.json().catch(() => ({}));
+                    const result = await apiJson(`${API_BASE}/series?mine=1&page=1&per_page=80`, { fallback: {} });
+                    const data = result.data;
                     const items = (data && (data.items || data.series)) || [];
                     this.seriesItems = Array.isArray(items) ? items : [];
                     const currentVal = (preferId != null && preferId !== '') ? String(preferId) : this.seriesSelectValue();
@@ -267,15 +266,13 @@
                 if (!title) return;
                 const description = (prompt('可选：系列简介（可留空）') || '').trim();
                 try {
-                    const res = await fetch(`${API_BASE}/series`, {
+                    const result = await apiJson(`${API_BASE}/series`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-                        },
-                        body: JSON.stringify({ title, description, is_public: true })
+                        body: { title, description, is_public: true },
+                        fallback: {}
                     });
-                    const data = await res.json().catch(() => ({}));
+                    const res = result.res;
+                    const data = result.data;
                     if (!res.ok) {
                         Toast.error(data.error || '创建系列失败');
                         return;
@@ -293,6 +290,7 @@
                 const area = document.getElementById('walletActionArea');
                 const specialArea = document.getElementById('adminSpecialArea');
                 const isAdmin = currentUser && currentUser.is_admin;
+                const hasPending = !!this.pendingTxHash;
                 if (specialArea) specialArea.style.display = isAdmin ? 'block' : 'none';
                 area.innerHTML = isAdmin ? `
                     <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem; margin-bottom: 0.8rem;" onclick="Studio.initPayment()">
@@ -303,9 +301,25 @@
                     </button>
                 ` : `
                     <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.initPayment()">
-                        ⚡ 确认支付并发布
+                        ${hasPending ? '🔄 继续发布（已支付）' : '⚡ 确认支付并发布'}
                     </button>
                 `;
+            },
+
+            updateResumePanel(message, tone) {
+                const panel = document.getElementById('resumeStatePanel');
+                const msgEl = document.getElementById('resumeStateMessage');
+                if (!panel || !msgEl) return;
+                if (!this.pendingTxHash) {
+                    panel.style.display = 'none';
+                    return;
+                }
+                panel.style.display = 'block';
+                msgEl.textContent = message || '已记录一笔待恢复支付，可直接继续发布。';
+                if (tone === 'error') msgEl.style.color = 'var(--accent-red)';
+                else if (tone === 'success') msgEl.style.color = 'var(--accent-green)';
+                else if (tone === 'warn') msgEl.style.color = 'var(--accent-orange)';
+                else msgEl.style.color = 'var(--text-primary)';
             },
 
             addLog(msg) {
@@ -374,12 +388,25 @@
             clearPendingPost() {
                 try { localStorage.removeItem(PENDING_POST_KEY); } catch(e) {}
             },
+            clearPendingState(notify) {
+                this.pendingTxHash = null;
+                this.clearPendingPost();
+                this.checkWalletEnv();
+                this.updateResumePanel('', '');
+                if (notify) Toast.info('已清除待恢复记录');
+            },
             loadPendingPost() {
                 try {
                     const raw = localStorage.getItem(PENDING_POST_KEY);
-                    if (!raw) return;
+                    if (!raw) {
+                        this.updateResumePanel('', '');
+                        return;
+                    }
                     const p = JSON.parse(raw);
-                    if (!p.tx_hash || !p.time || (Date.now() - p.time > 24*60*60*1000)) return;
+                    if (!p.tx_hash || !p.time || (Date.now() - p.time > 24*60*60*1000)) {
+                        this.clearPendingState(false);
+                        return;
+                    }
                     this.pendingTxHash = p.tx_hash;
                     if (p.title) document.getElementById('studioPostTitle').value = p.title;
                     if (p.content && studioQuill) studioQuill.clipboard.dangerouslyPasteHTML(p.content);
@@ -391,6 +418,9 @@
                     this.loadSeriesOptions(seriesVal);
                     const specialBox = document.getElementById('adminSpecialPostCheckbox');
                     if (specialBox) specialBox.checked = !!p.is_special_announcement;
+                    this.checkWalletEnv();
+                    this.updateResumePanel('检测到未完成的发布记录，可直接继续，无需再次支付。', 'warn');
+                    this.checkPendingStatus(p.tx_hash, true);
                     Toast.info('检测到未完成的发布（已支付），可直接点击发布继续，无需再次支付');
                 } catch(e) {}
             },
@@ -405,7 +435,50 @@
                 this.pendingTxHash = txHash;
                 this.savePendingPost(txHash);
                 input.value = '';
+                this.checkWalletEnv();
+                this.updateResumePanel('已记录交易哈希，正在检查当前处理状态…', 'warn');
+                this.checkPendingStatus(txHash, true);
                 Toast.success('已记录该交易哈希，请直接点击「确认支付并发布」继续（不会再次扣款）');
+            },
+
+            async checkPendingStatus(txHash, silent) {
+                const hash = (txHash || this.pendingTxHash || '').trim();
+                if (!hash) {
+                    if (!silent) Toast.info('当前没有待恢复的交易哈希');
+                    return;
+                }
+                this.pendingTxHash = hash;
+                this.updateResumePanel('正在检查链上与发布状态…', 'warn');
+                try {
+                    const result = await apiJson(`${API_BASE}/posts/check_tx?tx_hash=${encodeURIComponent(hash)}`, {
+                        auth: false,
+                        fallback: {}
+                    });
+                    const data = result.data || {};
+                    if (!result.res.ok || data.error) {
+                        this.updateResumePanel(data.error || '暂时无法检查状态，请稍后重试。', 'error');
+                        if (!silent) Toast.error(data.error || '检查状态失败');
+                        return;
+                    }
+                    if (data.status === 'success') {
+                        Draft.clear();
+                        this.pendingTxHash = null;
+                        this.updateResumePanel('该交易对应的帖子已发布完成。', 'success');
+                        this.checkWalletEnv();
+                        if (!silent) Toast.success(data.message || '帖子已成功发布');
+                        return;
+                    }
+                    if (data.status === 'pending') {
+                        this.updateResumePanel(data.message || '支付处理中，可稍后继续发布。', data.stage === 'confirmed_processing' ? 'warn' : '');
+                        if (!silent) Toast.info(data.message || '支付处理中');
+                        return;
+                    }
+                    this.updateResumePanel(data.message || '当前交易状态异常，可稍后重试或联系管理员。', 'error');
+                    if (!silent) Toast.error(data.message || '交易状态异常');
+                } catch (e) {
+                    this.updateResumePanel('状态检查失败，请稍后重试。', 'error');
+                    if (!silent) Toast.error('状态检查失败');
+                }
             },
 
             openDrawer() {
@@ -446,8 +519,9 @@
                 this.openDrawer();
 
                 try {
-                    const cRes = await fetch(`${API_BASE}/config/fees`);
-                    const config = await cRes.json();
+                    const cfgResult = await apiJson(`${API_BASE}/config/fees`, { auth: false, fallback: {} });
+                    const cRes = cfgResult.res;
+                    const config = cfgResult.data || {};
                     if (!cRes.ok) {
                         Toast.error(config.error || '无法获取支付配置');
                         this.closeDrawer();
@@ -512,15 +586,26 @@
                     attempts++;
                     
                     try {
-                        const res = await fetch(`${API_BASE}/posts/check_tx?tx_hash=${txHash}`);
-                        const resp = await res.json();
+                        const result = await apiJson(`${API_BASE}/posts/check_tx?tx_hash=${encodeURIComponent(txHash)}`, {
+                            auth: false,
+                            fallback: {}
+                        });
+                        const resp = result.data || {};
                         
                         if (resp.status === 'success') {
                             this.addLog("✅ 服务器确认成功!");
                             Draft.clear();
+                            this.pendingTxHash = null;
+                            this.checkWalletEnv();
+                            this.updateResumePanel('该交易已发布完成。', 'success');
                             Toast.success('发布成功');
                             setTimeout(() => navigateWithTransition('/'), 2000);
+                        } else if (resp.status === 'error') {
+                            this.addLog("❌ " + (resp.message || '链路状态异常'));
+                            this.updateResumePanel(resp.message || '链路状态异常，请稍后再试。', 'error');
+                            document.getElementById('forceCloseLoading').style.display = 'block';
                         } else {
+                            if (resp.message) this.addLog("ℹ️ " + resp.message);
                             setTimeout(poll, 3000);
                         }
                     } catch (e) {
@@ -571,8 +656,9 @@
                     if (!provider) throw new Error('No wallet found');
 
                     // 1. Fee Config（fee 为 Wei 字符串，勿再 toWei）
-                    const cRes = await fetch(`${API_BASE}/config/fees`);
-                    const config = await cRes.json();
+                    const cfgResult = await apiJson(`${API_BASE}/config/fees`, { auth: false, fallback: {} });
+                    const cRes = cfgResult.res;
+                    const config = cfgResult.data || {};
                     if (!cRes.ok || !config.receive_address) {
                         throw new Error(config.error || '无法获取支付配置');
                     }
@@ -593,7 +679,8 @@
                     }
 
                     // 3. Payment: USDT (BEP-20) transfer（若已付过则跳过）
-                    this.savePendingPost(null);
+                    this.savePendingPost(txHash || undefined);
+                    this.updateResumePanel('已创建恢复记录，如中途失败可直接继续。', 'warn');
                     if (!txHash) {
                         if (!config.usdt_contract) throw new Error('未配置 USDT 合约地址');
                         this.addLog("等待钱包确认 USDT 转账...");
@@ -613,6 +700,7 @@
                         });
                         this.pendingTxHash = txHash;
                         this.savePendingPost(txHash);
+                        this.checkWalletEnv();
                     }
                     
                     this.addLog("交易已广播: " + txHash.substring(0, 10) + "...");
@@ -635,13 +723,9 @@
                     this.addLog("交易确认成功! 正在写入永存档案...");
                     
                     // 5. Backend Upload：支付已确认，后端写入永存档案后创建帖子
-                    const res = await fetch(`${API_BASE}/posts`, {
+                    const publishResult = await apiJson(`${API_BASE}/posts`, {
                         method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
+                        body: {
                             title,
                             content,
                             tx_hash: txHash,
@@ -650,8 +734,11 @@
                             is_special_announcement: specialChecked,
                             images: [],
                             region: '其他'
-                        })
+                        },
+                        fallback: {}
                     });
+                    const res = publishResult.res;
+                    const errData = publishResult.data || {};
                     
                     if (handle401(res)) return;
                     if (res.ok) {
@@ -659,15 +746,18 @@
                         Draft.clear();
                         this.clearPendingPost();
                         this.pendingTxHash = null;
+                        this.checkWalletEnv();
+                        this.updateResumePanel('当前发布已完成。', 'success');
                         Toast.success('发布成功');
                         setTimeout(() => {
                             navigateWithTransition('/');
                         }, 2000);
                     } else {
-                        const errData = await res.json().catch(() => ({}));
                         const msg = errData.error || ('请求失败 ' + res.status);
                         if (res.status === 503 && (errData.code === 'ARWEAVE_FAIL' || msg.includes('永存档案'))) {
                             this.addLog("⚠️ 永存档案写入暂时失败，请点击「重试发布」再试（无需再次支付）");
+                            this.addLog("ℹ️ 当前状态：支付已确认，帖子仍在待发布队列");
+                            this.updateResumePanel('支付已确认，正在等待永存写入恢复。可直接点“继续发布”重试，无需再次支付。', 'warn');
                         }
                         throw new Error(msg);
                     }
@@ -696,6 +786,7 @@
                     // Allow retry without paying again
                     if (this.pendingTxHash && btn) {
                         btn.innerHTML = '🔄 重试发布 (已支付)';
+                        this.updateResumePanel('你可以直接点击“继续发布”重试，或先检查当前状态。', 'warn');
                     }
                 } finally {
                     // Manual close required on failure
@@ -724,13 +815,9 @@
                 const btn = document.getElementById('adminDirectPublishBtn');
                 if (btn) btn.disabled = true;
                 try {
-                    const res = await fetch(`${API_BASE}/posts`, {
+                    const result = await apiJson(`${API_BASE}/posts`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${localStorage.getItem('token')}`
-                        },
-                        body: JSON.stringify({
+                        body: {
                             title,
                             content,
                             tags: tags,
@@ -738,10 +825,12 @@
                             is_special_announcement: specialChecked,
                             images: [],
                             region: '其他'
-                        })
+                        },
+                        fallback: {}
                     });
+                    const res = result.res;
+                    const resp = result.data || {};
                     if (handle401(res)) return;
-                    const resp = await res.json().catch(() => ({}));
                     if (res.ok) {
                         Draft.clear();
                         Toast.success('已发布（普通帖，未上链）');

@@ -89,6 +89,18 @@
                         <input type="text" id="resumeTxHashInput" class="form-input" placeholder="0x..." style="flex: 1; font-family: monospace; font-size: 0.8rem;">
                         <button type="button" class="btn btn-ghost" onclick="Studio.resumeWithTxHash()">用该哈希继续</button>
                     </div>
+                    <div id="resumeStatePanel" style="display:none; margin-top:0.9rem; padding:0.9rem; border-radius:10px; background:rgba(0,0,0,0.22); border:1px solid var(--border-color);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                            <div>
+                                <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.25rem;">恢复发布状态</div>
+                                <div id="resumeStateMessage" style="font-size:0.9rem; color:var(--text-primary);">等待检查交易状态…</div>
+                            </div>
+                            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                                <button type="button" class="btn btn-ghost btn-sm" id="resumeCheckBtn" onclick="Studio.checkPendingStatus()">检查当前状态</button>
+                                <button type="button" class="btn btn-ghost btn-sm" id="resumeClearBtn" onclick="Studio.clearPendingState(true)">清除记录</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <button class="btn btn-ghost" style="width: 100%; margin-top: 1rem;" onclick="Studio.prevStep(1)">返回修改</button>
