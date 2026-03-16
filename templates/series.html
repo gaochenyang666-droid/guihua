@@ -20,7 +20,7 @@
             <span>诡话</span>
         </a>
         <div class="nav-actions">
-            <button class="btn btn-ghost btn-sm" onclick="navigateWithTransition('/')">返回首页</button>
+            <button class="btn btn-ghost btn-sm" id="seriesBackHomeBtn" type="button">返回首页</button>
         </div>
     </nav>
 
@@ -65,17 +65,30 @@
                     <div style="display:grid; gap:0.5rem;">
                         ${items.map((it) => {
                             const p = it.post || {};
-                            return `<button class="btn btn-ghost" style="justify-content:space-between; width:100%;" onclick="navigateWithTransition('/?post=${p.id}')"><span>第 ${it.order_index} 篇 · ${escapeHtml(p.title || '')}</span><span style="font-size:0.76rem; color:var(--text-muted);">查看</span></button>`;
+                            return `<button class="btn btn-ghost series-open-post-btn" style="justify-content:space-between; width:100%;" data-post-id="${p.id}" type="button"><span>第 ${it.order_index} 篇 · ${escapeHtml(p.title || '')}</span><span style="font-size:0.76rem; color:var(--text-muted);">查看</span></button>`;
                         }).join('')}
                     </div>
                 `;
+                Array.prototype.forEach.call(document.querySelectorAll('.series-open-post-btn'), function (btn) {
+                    btn.addEventListener('click', function () {
+                        const pid = Number(btn.getAttribute('data-post-id'));
+                        if (!Number.isFinite(pid)) return;
+                        navigateWithTransition('/?post=' + pid);
+                    });
+                });
             } catch (_) {
                 document.getElementById('seriesMeta').innerHTML = '<div style="color:var(--accent-red);">网络错误</div>';
                 document.getElementById('seriesList').innerHTML = '';
             }
         }
 
-        window.addEventListener('load', loadSeriesPage);
+        window.addEventListener('load', function () {
+            const backBtn = document.getElementById('seriesBackHomeBtn');
+            if (backBtn) backBtn.addEventListener('click', function () {
+                navigateWithTransition('/');
+            });
+            loadSeriesPage();
+        });
     </script>
 </body>
 </html>

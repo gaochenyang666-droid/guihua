@@ -34,7 +34,7 @@
                 var snippet = escapeHtml(String(tc.content || '').replace(/\s+/g, ' ').trim()).slice(0, 56);
                 var likes = Number(tc.likes_count || 0);
                 return '' +
-                    '<div class="timeline-top-comment" onclick="Modal.openDetail(event, ' + post.id + ')">' +
+                    '<div class="timeline-top-comment" data-open-detail="1" data-post-id="' + Number(post.id) + '">' +
                         '<span class="timeline-top-comment-label">热评</span>' +
                         '<span class="timeline-top-comment-text">@' + nick + ': ' + snippet + (snippet.length >= 56 ? '...' : '') + '</span>' +
                         '<span class="timeline-top-comment-like">👍 ' + likes + '</span>' +
@@ -106,7 +106,7 @@
                     '<div class="post-image-wrap">' +
                         '<span class="post-image-skeleton" aria-hidden="true"></span>' +
                         '<div class="post-image-placeholder">加载中</div>' +
-                        '<img src="' + imgSrc + '" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add(\'has-image\');this.parentElement.classList.remove(\'is-fallback\')" onerror="this.remove();this.parentElement.classList.add(\'is-fallback\')">' +
+                        '<img src="' + imgSrc + '" class="post-image js-feed-image" loading="lazy" decoding="async" referrerpolicy="no-referrer">' +
                     '</div>';
             },
             renderImageGallery(imageUrls) {
@@ -121,7 +121,7 @@
                         '<div class="timeline-thumb-wrap">' +
                             '<span class="post-image-skeleton" aria-hidden="true"></span>' +
                             '<div class="post-image-placeholder">图片</div>' +
-                            '<img src="' + safe + '" class="post-image" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.parentElement.classList.add(\'has-image\')" onerror="this.remove();this.parentElement.classList.add(\'is-fallback\')">' +
+                            '<img src="' + safe + '" class="post-image js-feed-image" loading="lazy" decoding="async" referrerpolicy="no-referrer">' +
                             mask +
                         '</div>';
                 }).join('');
@@ -158,7 +158,7 @@
                 ].filter(Boolean).join('');
                 return '' +
                     '<div class="' + itemClass + '" style="--stagger:' + stagger + 'ms;">' +
-                        '<article class="timeline-item glass" data-post-id="' + Number(p.id) + '" onclick="Modal.openDetail(event, ' + p.id + ')">' +
+                        '<article class="timeline-item glass" data-post-id="' + Number(p.id) + '" data-open-detail="1">' +
                             '<div class="timeline-head">' +
                                 '<div class="timeline-author">' +
                                     this.renderAvatar(author) +
@@ -176,16 +176,67 @@
                             '<h3 class="timeline-title">' + escapeHtml(titleText || '（无标题）') + '</h3>' +
                             '<div class="timeline-body">' + (summaryHtml || '（无正文）') + '</div>' +
                             this.renderTopComment(p) +
-                            (shouldCollapse ? ('<button class="timeline-expand-btn" onclick="UI.togglePostExpand(event, ' + p.id + ')">' + (expanded ? '收起正文' : '展开阅读') + '</button>') : '') +
-                            (displayImages.length ? ('<div class="' + coverClass + '" onclick="Modal.openDetail(event, ' + p.id + ')">' + coverHtml + '</div>') : '') +
+                            (shouldCollapse ? ('<button class="timeline-expand-btn" data-expand-post-id="' + Number(p.id) + '">' + (expanded ? '收起正文' : '展开阅读') + '</button>') : '') +
+                            (displayImages.length ? ('<div class="' + coverClass + '" data-open-detail="1" data-post-id="' + Number(p.id) + '">' + coverHtml + '</div>') : '') +
                             '<div class="timeline-actions">' +
-                                '<button class="btn btn-ghost btn-sm timeline-action-btn timeline-action-count" data-feed-action="like" title="恐惧" aria-label="恐惧" onclick="Interact.like(' + p.id + '); event.stopPropagation();">😰 <span>' + Number(p.likes_count || 0) + '</span></button>' +
-                                '<button class="btn btn-ghost btn-sm timeline-action-btn" data-feed-action="bookmark" title="' + (p.is_bookmarked ? '取消收藏' : '收藏') + '" aria-label="' + (p.is_bookmarked ? '取消收藏' : '收藏') + '" onclick="Interact.bookmark(' + p.id + '); event.stopPropagation();">' + (p.is_bookmarked ? '★ <span>已收</span>' : '⭐ <span>收藏</span>') + '</button>' +
-                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="分享" aria-label="分享" data-post-id="' + Number(p.id) + '" data-title="' + escapeAttr(titleText || '') + '" onclick="Interact.share(this); event.stopPropagation();">↗ <span>分享</span></button>' +
-                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="查看详情" aria-label="查看详情" onclick="Modal.openDetail(event, ' + p.id + '); event.stopPropagation();">💬 <span>详情</span></button>' +
+                                '<button class="btn btn-ghost btn-sm timeline-action-btn timeline-action-count" data-feed-action="like" data-post-id="' + Number(p.id) + '" title="恐惧" aria-label="恐惧">😰 <span>' + Number(p.likes_count || 0) + '</span></button>' +
+                                '<button class="btn btn-ghost btn-sm timeline-action-btn" data-feed-action="bookmark" data-post-id="' + Number(p.id) + '" title="' + (p.is_bookmarked ? '取消收藏' : '收藏') + '" aria-label="' + (p.is_bookmarked ? '取消收藏' : '收藏') + '">' + (p.is_bookmarked ? '★ <span>已收</span>' : '⭐ <span>收藏</span>') + '</button>' +
+                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="分享" aria-label="分享" data-feed-action="share" data-post-id="' + Number(p.id) + '" data-title="' + escapeAttr(titleText || '') + '">↗ <span>分享</span></button>' +
+                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="查看详情" aria-label="查看详情" data-feed-action="detail" data-post-id="' + Number(p.id) + '">💬 <span>详情</span></button>' +
                             '</div>' +
                         '</article>' +
                     '</div>';
+            },
+            bindGridEvents(grid) {
+                if (!grid || grid.dataset.bound === '1') return;
+                grid.dataset.bound = '1';
+                grid.addEventListener('click', function (ev) {
+                    var target = ev.target;
+                    if (!(target instanceof Element)) return;
+                    var expandBtn = target.closest('[data-expand-post-id]');
+                    if (expandBtn) {
+                        feedUi.togglePostExpand(ev, expandBtn.getAttribute('data-expand-post-id'));
+                        return;
+                    }
+                    var actionBtn = target.closest('[data-feed-action]');
+                    if (actionBtn) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        var action = actionBtn.getAttribute('data-feed-action');
+                        var postId = Number(actionBtn.getAttribute('data-post-id'));
+                        if (!Number.isFinite(postId)) return;
+                        if (action === 'like') { window.Interact.like(postId); return; }
+                        if (action === 'bookmark') { window.Interact.bookmark(postId); return; }
+                        if (action === 'share') { window.Interact.share(actionBtn); return; }
+                        if (action === 'detail') { window.Modal.openDetail(ev, postId); return; }
+                    }
+                    var detailTarget = target.closest('[data-open-detail="1"]');
+                    if (detailTarget) {
+                        var detailHost = detailTarget.closest('[data-post-id]');
+                        var detailRaw = detailTarget.getAttribute('data-post-id') || (detailHost ? detailHost.getAttribute('data-post-id') : '');
+                        var detailId = Number(detailRaw);
+                        if (Number.isFinite(detailId)) window.Modal.openDetail(ev, detailId);
+                    }
+                });
+            },
+            bindGridImages(grid) {
+                if (!grid) return;
+                Array.prototype.forEach.call(grid.querySelectorAll('.js-feed-image'), function (img) {
+                    if (img.dataset.bound === '1') return;
+                    img.dataset.bound = '1';
+                    img.addEventListener('load', function () {
+                        var parent = img.parentElement;
+                        if (!parent) return;
+                        parent.classList.add('has-image');
+                        parent.classList.remove('is-fallback');
+                    });
+                    img.addEventListener('error', function () {
+                        var parent = img.parentElement;
+                        if (!parent) return;
+                        if (img.parentNode) img.parentNode.removeChild(img);
+                        parent.classList.add('is-fallback');
+                    });
+                });
             },
             renderPosts(posts, append) {
                 var grid = document.getElementById('postGrid');
@@ -199,6 +250,8 @@
                 var html = (posts || []).map((p, idx) => this.renderPostCard(p, idx, append)).join('');
                 if (append) grid.insertAdjacentHTML('beforeend', html);
                 else grid.innerHTML = html;
+                this.bindGridEvents(grid);
+                this.bindGridImages(grid);
                 Post.prepareReveal(grid, append);
                 var loadingEl = document.getElementById('loadingArea');
                 if (loadingEl) loadingEl.style.display = 'none';

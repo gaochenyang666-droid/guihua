@@ -123,7 +123,6 @@ def _build_csp_header():
         "script-src": [
             "'self'",
             "'unsafe-inline'",
-            "'unsafe-eval'",
             "https://cdn.jsdelivr.net",
             "https://unpkg.com",
             "https://cdnjs.cloudflare.com",

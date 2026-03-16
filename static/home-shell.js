@@ -56,9 +56,53 @@
                 this.bindNavbar();
                 this.bindUtilityPanels();
                 this.bindSearch();
+                this.bindPrimaryActions();
 
                 var logoutBtn = document.getElementById('logoutBtn');
                 if (logoutBtn) logoutBtn.onclick = function () { Auth.logout(); };
+            },
+            bindPrimaryActions() {
+                var openLogin = function () {
+                    if (window.openLoginPage) window.openLoginPage();
+                    else window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+                };
+                var openProfile = function (ev) {
+                    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+                    if (window.currentUser) {
+                        navigateWithTransition('/profile?user=' + (window.currentUser.username || window.currentUser.address));
+                    } else {
+                        openLogin();
+                    }
+                };
+                var createBtn = document.getElementById('createStudioBtn');
+                if (createBtn) createBtn.onclick = function () { Auth.checkAndGoStudio(); };
+                var homeLoginBtn = document.getElementById('homeLoginBtn');
+                if (homeLoginBtn) homeLoginBtn.onclick = openLogin;
+                var donateFabBtn = document.getElementById('donateFabBtn');
+                if (donateFabBtn) donateFabBtn.onclick = function () { if (window.Donate) window.Donate.openModal(); };
+                var footerDonateLink = document.getElementById('footerDonateLink');
+                if (footerDonateLink) footerDonateLink.onclick = function (e) { e.preventDefault(); if (window.Donate) window.Donate.openModal(); };
+                var leftProfileBtn = document.getElementById('leftProfileBtn');
+                if (leftProfileBtn) leftProfileBtn.onclick = openProfile;
+                var bottomCreateLink = document.getElementById('bottomCreateLink');
+                if (bottomCreateLink) bottomCreateLink.onclick = function (e) { e.preventDefault(); Auth.checkAndGoStudio(); };
+                var bottomProfileLink = document.getElementById('bottomProfileLink');
+                if (bottomProfileLink) bottomProfileLink.onclick = openProfile;
+                var notificationReadAllBtn = document.getElementById('notificationReadAllBtn');
+                if (notificationReadAllBtn) notificationReadAllBtn.onclick = function () {
+                    if (window.Notification && typeof window.Notification.readAll === 'function') window.Notification.readAll();
+                };
+                document.querySelectorAll('.nav-sort-card .nav-item').forEach(function (item) {
+                    item.addEventListener('click', function () {
+                        if (window.UI && typeof window.UI.handleNav === 'function') window.UI.handleNav(item, item.getAttribute('data-sort') || 'new');
+                    });
+                });
+                var checkinBtn = document.getElementById('checkinBtn');
+                if (checkinBtn) {
+                    checkinBtn.onclick = function () {
+                        if (window.Checkin && typeof window.Checkin.sign === 'function') window.Checkin.sign();
+                    };
+                }
             },
 
             bindNavbar() {

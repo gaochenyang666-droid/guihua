@@ -50,12 +50,12 @@
 
             <div class="nav-actions">
                 <!-- 创作者入口 -->
-                <button class="btn btn-ghost" style="color: var(--accent-green); border-color: var(--accent-green);" onclick="Auth.checkAndGoStudio()">
+                <button class="btn btn-ghost" id="createStudioBtn" type="button" style="color: var(--accent-green); border-color: var(--accent-green);">
                     <i class="fas fa-magic"></i> <span>创作</span>
                 </button>
 
                 <div id="authButtons">
-                    <button class="btn btn-primary" onclick="if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">登录</button>
+                    <button class="btn btn-primary" id="homeLoginBtn" type="button">登录</button>
                 </div>
 
                 <div class="user-menu" id="userMenu" style="display: none;">
@@ -85,7 +85,7 @@
         </button>
     </nav>
 
-    <button class="donate-fab" type="button" onclick="Donate.openModal()">☕ 支持站长</button>
+    <button class="donate-fab" id="donateFabBtn" type="button">☕ 支持站长</button>
 
     <div id="siteAnnouncementBar" class="site-announcement glass" hidden>
         <div class="site-announcement-inner">
@@ -104,14 +104,14 @@
                     </div>
                 </div>
                 <div class="profile-quick-actions">
-                    <button class="btn btn-ghost btn-sm profile-quick-btn" id="leftProfileBtn" type="button" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);}">查看个人页</button>
+                    <button class="btn btn-ghost btn-sm profile-quick-btn" id="leftProfileBtn" type="button">查看个人页</button>
                     <button class="btn btn-ghost btn-sm profile-quick-btn profile-quick-bind-btn" id="leftBindWalletBtn" type="button" hidden>Web2 绑定钱包</button>
                 </div>
             </div>
             <div class="sidebar-card nav-sort-card glass">
-                <div class="nav-item active" data-sort="hot" onclick="UI.handleNav(this, 'hot')"><span class="nav-item-icon">🔥</span><span class="nav-item-label">热门</span></div>
-                <div class="nav-item" data-sort="new" onclick="UI.handleNav(this, 'new')"><span class="nav-item-icon">✨</span><span class="nav-item-label">最新</span></div>
-                <div class="nav-item" data-sort="bookmarks" onclick="UI.handleNav(this, 'bookmarks')"><span class="nav-item-icon">⭐</span><span class="nav-item-label">收藏</span></div>
+                <div class="nav-item active" data-sort="hot"><span class="nav-item-icon">🔥</span><span class="nav-item-label">热门</span></div>
+                <div class="nav-item" data-sort="new"><span class="nav-item-icon">✨</span><span class="nav-item-label">最新</span></div>
+                <div class="nav-item" data-sort="bookmarks"><span class="nav-item-icon">⭐</span><span class="nav-item-label">收藏</span></div>
             </div>
             <div class="sidebar-card glass onboarding-card" id="onboardingCard" hidden>
                 <div class="onboarding-head">
@@ -227,7 +227,7 @@
                     本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
                 </p>
             </div>
-            <p class="site-footer-meta">© 2026 诡话 (GuiHua) | <a href="#" onclick="Donate.openModal(); return false;" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
+            <p class="site-footer-meta">© 2026 诡话 (GuiHua) | <a href="#" id="footerDonateLink" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
         </div>
     </footer>
 
@@ -237,10 +237,10 @@
             <i class="fas fa-home"></i>
             <span>首页</span>
         </a>
-        <a href="#" onclick="Auth.checkAndGoStudio(); return false;" class="bottom-nav-item">
+        <a href="#" id="bottomCreateLink" class="bottom-nav-item">
             <i class="fas fa-plus-circle nav-highlight-btn" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
         </a>
-        <a href="#" onclick="if(currentUser) navigateWithTransition('/profile?user='+(currentUser.username||currentUser.address)); else if(window.openLoginPage){openLoginPage();}else{window.location.href='/login?next='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash);} return false;" class="bottom-nav-item">
+        <a href="#" id="bottomProfileLink" class="bottom-nav-item">
             <i class="fas fa-user"></i>
             <span>我的</span>
         </a>
@@ -429,7 +429,7 @@
             </div>
             <div style="display:flex; justify-content:space-between; margin-bottom:1rem; align-items:center;">
                 <span style="font-size:0.8rem; color:var(--text-secondary);">最近收到的消息</span>
-                <button class="btn btn-ghost" style="padding:0.2rem 0.5rem; font-size:0.75rem;" onclick="Notification.readAll()">全部已读</button>
+                <button class="btn btn-ghost" id="notificationReadAllBtn" type="button" style="padding:0.2rem 0.5rem; font-size:0.75rem;">全部已读</button>
             </div>
             <div id="notificationList">
                 <!-- Loaded via JS -->
