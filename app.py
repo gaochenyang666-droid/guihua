@@ -223,6 +223,12 @@ from services.app_support import (
     compute_asset_version as _svc_compute_asset_version,
     load_text_file as _svc_load_text_file,
 )
+from services.site_settings import (
+    get_setting_value as _svc_get_setting_value,
+    set_setting_value as _svc_set_setting_value,
+    get_group_link_urls as _svc_get_group_link_urls,
+    validate_group_link_urls as _svc_validate_group_link_urls,
+)
 
 
 def _new_user(**kwargs):
@@ -299,19 +305,11 @@ def _get_user_level(user):
 
 
 def _get_setting_value(setting_key, default_value=''):
-    row = AppSetting.query.filter_by(setting_key=setting_key).first()
-    if not row or row.setting_value is None:
-        return default_value
-    return str(row.setting_value).strip()
+    return _svc_get_setting_value(AppSetting, setting_key, default_value)
 
 
 def _set_setting_value(setting_key, setting_value):
-    row = AppSetting.query.filter_by(setting_key=setting_key).first()
-    if not row:
-        row = AppSetting(setting_key=setting_key, setting_value=setting_value)
-        db.session.add(row)
-    else:
-        row.setting_value = setting_value
+    return _svc_set_setting_value(db.session, AppSetting, setting_key, setting_value)
 
 
 def _build_group_links_for_user(user):
@@ -775,10 +773,7 @@ def get_group_links():
 @token_required
 @admin_required
 def get_admin_group_links():
-    return jsonify({
-        'co_create_url': _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], ''),
-        'core_url': _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], '')
-    })
+    return jsonify(_svc_get_group_link_urls(AppSetting, TELEGRAM_GROUP_SETTING_KEYS))
 
 
 @app.route('/api/admin/group-links', methods=['PUT'])
@@ -788,11 +783,9 @@ def set_admin_group_links():
     data = request.get_json(silent=True) or {}
     co_url = (data.get('co_create_url') or '').strip()
     core_url = (data.get('core_url') or '').strip()
-    for val in (co_url, core_url):
-        if val and not (val.startswith('https://t.me/') or val.startswith('http://t.me/') or val.startswith('https://telegram.me/')):
-            return jsonify({'error': '群链接仅支持 Telegram（t.me / telegram.me）'}), 400
-        if len(val) > 1000:
-            return jsonify({'error': '链接过长'}), 400
+    ok, err = _svc_validate_group_link_urls(co_url, core_url)
+    if not ok:
+        return jsonify({'error': err}), 400
     _set_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], co_url)
     _set_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], core_url)
     db.session.commit()
@@ -1447,18 +1440,18 @@ def get_notifications():
 def read_notification(id):
     notif = Notification.query.get_or_404(id)
     if notif.user_id != g.current_user.id:
-        return jsonify({'error': 'Not your notification'}), 403
+        return jsonify({'error': '这不是你的通知'}), 403
         
     notif.is_read = True
     db.session.commit()
-    return jsonify({'message': 'Marked as read'})
+    return jsonify({'message': '已标记为已读'})
 
 @app.route('/api/notifications/read_all', methods=['PUT'])
 @token_required
 def read_all_notifications():
     Notification.query.filter_by(user_id=g.current_user.id, is_read=False).update({'is_read': True})
     db.session.commit()
-    return jsonify({'message': 'All marked as read'})
+    return jsonify({'message': '已全部标记为已读'})
 
 def _get_posts_fallback(page, per_page, current_user_id):
     return _posts_get_posts_fallback(page, per_page, current_user_id)
@@ -1502,7 +1495,7 @@ def create_post():
         return jsonify({'error': '请求过于频繁'}), 429
     # 1. Permission Check
     if not g.current_user.is_admin and not g.current_user.address:
-        return jsonify({'error': 'Wallet binding required'}), 400
+        return jsonify({'error': '请先绑定钱包'}), 400
     
     # Check if multipart/form-data (for image upload)
     if 'image' in request.files:
@@ -1564,7 +1557,7 @@ def create_post():
     # 2. Region Validation
     valid_regions = ['中国', '台湾', '香港', '澳门', '新加坡', '马来西亚', '日本', '韩国', '其他']
     if region not in valid_regions:
-        return jsonify({'error': f'Invalid region. Allowed: {", ".join(valid_regions)}'}), 400
+        return jsonify({'error': f'地区不合法，可选范围：{", ".join(valid_regions)}'}), 400
 
     # 3. Logic Branching（is_paid 仅由后端校验结果决定，绝不信任客户端传入）
     is_paid = False
@@ -1577,7 +1570,7 @@ def create_post():
     else:
         # Regular User: 必须带 tx_hash，且经 verify_transaction 校验 to/from/value 与唯一性（min_amount = 1 USD 等值 BNB）
         if not tx_hash:
-            return jsonify({'error': 'Transaction hash required'}), 400
+            return jsonify({'error': '缺少交易哈希'}), 400
         is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address, min_amount=get_post_fee_usdt_raw(), payment_type='usdt')
         if not is_valid:
             return jsonify({'error': _humanize_verify_error(error_msg)}), 400
@@ -1680,7 +1673,7 @@ def create_post():
         db.session.rollback()
         err_str = str(e).lower()
         if 'unique' in err_str and 'tx_hash' in err_str:
-            return jsonify({'error': 'Transaction hash already used'}), 400
+            return jsonify({'error': '该交易已被使用'}), 400
         # 管理员发帖常见：数据库 tx_hash/ipfs_cid 为 NOT NULL 时插 None 会报错
         if 'null' in err_str or 'not null' in err_str:
             print(f"Create Post DB Error (nullable?): {e}")
@@ -1690,9 +1683,9 @@ def create_post():
             }), 500
         print(f"Create Post DB Error: {e}")
         traceback.print_exc()
-        return jsonify({'error': 'Database error'}), 500
+        return jsonify({'error': '服务器暂时不可用，请稍后重试'}), 500
     
-    return jsonify({'message': 'Post created', 'post': post.to_dict()}), 201
+    return jsonify({'message': '帖子已发布', 'post': post.to_dict()}), 201
 
 # 浏览量防刷：同一 IP 对同一帖子 60 秒内只计一次
 _view_count_key = {}
@@ -1740,7 +1733,7 @@ def get_post_detail(post_id):
         current_user_id = payload.get('user_id') if payload else None
         viewer = User.query.get(current_user_id) if current_user_id else None
         if post.is_hidden and not (viewer and (viewer.is_admin or viewer.id == post.author_id)):
-            return jsonify({'error': 'Post not found'}), 404
+            return jsonify({'error': '帖子不存在'}), 404
         # 浏览量 +1（同 IP 60 秒内仅计一次）
         try:
             ip = (request.remote_addr or 'unknown').strip()
@@ -2006,19 +1999,19 @@ def toggle_comment_like(comment_id):
     comment = Comment.query.get_or_404(comment_id)
     post = Post.query.get(comment.post_id) if comment.post_id else None
     if not post:
-        return jsonify({'error': 'Post not found'}), 404
+        return jsonify({'error': '帖子不存在'}), 404
     if post.is_hidden and not (g.current_user.is_admin or post.author_id == g.current_user.id):
-        return jsonify({'error': 'Permission denied'}), 403
+        return jsonify({'error': '没有权限操作该评论'}), 403
 
     like = CommentLike.query.filter_by(user_id=g.current_user.id, comment_id=comment_id).first()
     if like:
         db.session.delete(like)
         liked = False
-        msg = 'Comment unliked'
+        msg = '已取消评论点赞'
     else:
         db.session.add(CommentLike(user_id=g.current_user.id, comment_id=comment_id))
         liked = True
-        msg = 'Comment liked'
+        msg = '已点赞评论'
     db.session.commit()
     likes_count = CommentLike.query.filter_by(comment_id=comment_id).count()
     return jsonify({'message': msg, 'liked': liked, 'likes_count': likes_count, 'comment_id': comment_id})
@@ -2032,10 +2025,10 @@ def like_post(post_id):
         like = Like.query.filter_by(user_id=g.current_user.id, post_id=post.id).first()
         if like:
             db.session.delete(like)
-            msg = 'Unliked'
+            msg = '已取消恐惧'
         else:
             db.session.add(Like(user_id=g.current_user.id, post_id=post.id))
-            msg = 'Liked'
+            msg = '已恐惧'
             # Notification
             if post.author_id != g.current_user.id:
                 notif = Notification(
@@ -2064,10 +2057,10 @@ def bookmark_post(post_id):
         bm = Bookmark.query.filter_by(user_id=g.current_user.id, post_id=post.id).first()
         if bm:
             db.session.delete(bm)
-            msg = 'Unbookmarked'
+            msg = '已取消收藏'
         else:
             db.session.add(Bookmark(user_id=g.current_user.id, post_id=post.id))
-            msg = 'Bookmarked'
+            msg = '已收藏'
         db.session.commit()
         return jsonify({'message': msg})
     except Exception as e:

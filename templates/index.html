@@ -21,10 +21,7 @@
     <div class="ghost-fire-container" id="ghostFireContainer"></div>
 
     <nav class="navbar glass" id="mainNavbar">
-        <a href="/" class="logo">
-            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
-            <span>诡话</span>
-        </a>
+        {% include 'partials/navbar_brand.html' %}
 
         <button class="mobile-nav-toggle btn btn-ghost" id="mobileNavToggleBtn" type="button" aria-label="展开导航菜单" aria-expanded="false" aria-controls="mobileNavPanel">
             <i class="fas fa-bars"></i>
