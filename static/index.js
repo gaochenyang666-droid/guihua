@@ -227,6 +227,13 @@
                             auditBtn.style.color = 'var(--text-secondary)';
                             auditBtn.textContent = '🧾 日志';
                             auditBtn.onclick = Admin.openAuditLogs;
+                            const opsBtn = document.createElement('button');
+                            opsBtn.id = 'adminOpsBtn';
+                            opsBtn.className = 'btn btn-ghost';
+                            opsBtn.style.color = 'var(--accent-red)';
+                            opsBtn.style.borderColor = 'var(--accent-red)';
+                            opsBtn.textContent = '🚨 告警';
+                            opsBtn.onclick = Admin.openOpsSummary;
                             const pendingBtn = document.createElement('button');
                             pendingBtn.id = 'adminPendingBtn';
                             pendingBtn.className = 'btn btn-ghost';
@@ -241,6 +248,7 @@
                             addAdminAction(reportsBtn);
                             addAdminAction(annBtn);
                             addAdminAction(groupBtn);
+                            addAdminAction(opsBtn);
                             addAdminAction(pendingBtn);
                             addAdminAction(auditBtn);
                             addAdminAction(statsBtn);

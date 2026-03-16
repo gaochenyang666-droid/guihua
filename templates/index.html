@@ -405,6 +405,16 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="adminOpsModal" onclick="Modal.close('adminOpsModal')">
+        <div class="modal glass" style="max-width: 860px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>🚨 运维监控</h3>
+                <button class="modal-close" onclick="Modal.close('adminOpsModal')">&times;</button>
+            </div>
+            <div id="adminOpsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+        </div>
+    </div>
+
     <!-- Notifications Modal -->
     <div class="modal-overlay" id="notificationModal" onclick="Modal.close('notificationModal')">
         <div class="modal glass" onclick="event.stopPropagation()">

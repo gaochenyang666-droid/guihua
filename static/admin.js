@@ -262,10 +262,10 @@
                     var items = data.items || [];
                     if (!result.res.ok) throw new Error(data.error || '加载失败');
                     if (!items.length) {
-                        body.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem;">当前没有待恢复发布记录</div>';
+                        body.innerHTML = '<div style="display:flex; justify-content:flex-end; margin-bottom:0.75rem;"><button class="btn btn-ghost btn-sm" onclick="Admin.runPendingBatchRetry()">运行一轮自动补偿</button></div><div style="color:var(--text-muted); text-align:center; padding:1rem;">当前没有待恢复发布记录</div>';
                         return;
                     }
-                    body.innerHTML = items.map(function (row) {
+                    body.innerHTML = '<div style="display:flex; justify-content:flex-end; margin-bottom:0.75rem;"><button class="btn btn-ghost btn-sm" onclick="Admin.runPendingBatchRetry()">运行一轮自动补偿</button></div>' + items.map(function (row) {
                         var who = escapeHtml(row.nickname || row.username || ('用户#' + row.user_id));
                         var statusColor = row.status === 'awaiting_retry' ? 'var(--accent-orange)' : (row.status === 'storage_ready' ? 'var(--accent-green)' : 'var(--accent-purple)');
                         return '<div class="glass" style="padding:0.8rem; margin-bottom:0.75rem; border-radius:10px;">' +
@@ -283,6 +283,25 @@
                     }).join('');
                 } catch (e) {
                     body.innerHTML = '<div style="color:var(--accent-red);">' + escapeHtml(e.message || '加载失败') + '</div>';
+                }
+            },
+
+            async runPendingBatchRetry() {
+                try {
+                    var result = await apiJson(API_BASE + '/admin/pending-publications/retry-batch', {
+                        method: 'POST',
+                        check401: false,
+                        fallback: {}
+                    });
+                    if (result.res.ok) {
+                        var summary = result.data && result.data.result ? result.data.result : {};
+                        Toast.success('补偿完成：恢复 ' + (summary.recovered || 0) + '，跳过 ' + (summary.skipped || 0));
+                        this.openPendingPublications();
+                    } else {
+                        Toast.error(result.data.error || '执行补偿失败');
+                    }
+                } catch (_) {
+                    Toast.error('网络错误');
                 }
             },
 
@@ -320,6 +339,54 @@
                     }
                 } catch (_) {
                     Toast.error('网络错误');
+                }
+            },
+
+            async openOpsSummary() {
+                Modal.open('adminOpsModal');
+                var body = document.getElementById('adminOpsBody');
+                if (!body) return;
+                body.innerHTML = '加载中...';
+                try {
+                    var result = await apiJson(API_BASE + '/admin/ops/summary', { check401: false, fallback: {} });
+                    var data = result.data || {};
+                    if (!result.res.ok) throw new Error(data.error || '加载失败');
+                    var alerts = Array.isArray(data.alerts) ? data.alerts : [];
+                    var latest = (((data.events || {}).latest) || []);
+                    var pending = data.pending || {};
+                    var lastHour = (data.events || {}).last_hour || {};
+                    var worker = data.worker || {};
+                    body.innerHTML = '' +
+                        '<div class="glass" style="padding:0.9rem; margin-bottom:0.8rem; border-radius:10px;">' +
+                            '<div style="display:flex; gap:0.7rem; flex-wrap:wrap;">' +
+                                '<div><div style="font-size:0.78rem; color:var(--text-muted);">待发布总数</div><div style="font-size:1.35rem; font-weight:700;">' + escapeHtml(String(pending.total || 0)) + '</div></div>' +
+                                '<div><div style="font-size:0.78rem; color:var(--text-muted);">最近一小时错误</div><div style="font-size:1.35rem; font-weight:700; color:var(--accent-red);">' + escapeHtml(String(lastHour.error || 0)) + '</div></div>' +
+                                '<div><div style="font-size:0.78rem; color:var(--text-muted);">最近一小时警告</div><div style="font-size:1.35rem; font-weight:700; color:var(--accent-orange);">' + escapeHtml(String(lastHour.warn || 0)) + '</div></div>' +
+                                '<div><div style="font-size:0.78rem; color:var(--text-muted);">自动补偿</div><div style="font-size:1.05rem; font-weight:700; color:' + (worker.enabled ? 'var(--accent-green)' : 'var(--text-muted)') + ';">' + (worker.enabled ? ('运行中 / ' + escapeHtml(String(worker.interval_seconds || 0)) + 's') : '未启用') + '</div></div>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div style="display:grid; gap:0.7rem; margin-bottom:0.8rem;">' +
+                            alerts.map(function (alert) {
+                                var color = alert.severity === 'error' ? 'var(--accent-red)' : (alert.severity === 'warn' ? 'var(--accent-orange)' : 'var(--accent-green)');
+                                return '<div class="glass" style="padding:0.8rem; border-radius:10px; border:1px solid ' + color + ';">' +
+                                    '<div style="font-weight:700; color:' + color + ';">' + escapeHtml(alert.title || '告警') + '</div>' +
+                                    '<div style="font-size:0.86rem; color:var(--text-secondary); margin-top:0.25rem;">' + escapeHtml(alert.message || '') + '</div>' +
+                                '</div>';
+                            }).join('') +
+                        '</div>' +
+                        '<div class="glass" style="padding:0.9rem; border-radius:10px;">' +
+                            '<div style="font-weight:700; margin-bottom:0.6rem;">最近事件</div>' +
+                            (latest.length ? latest.map(function (ev) {
+                                var payload = ev.payload || {};
+                                return '<div style="padding:0.45rem 0; border-bottom:1px dashed var(--border-color);">' +
+                                    '<div style="font-size:0.8rem; color:var(--text-muted);">' + new Date(ev.created_at).toLocaleString() + ' · ' + escapeHtml(ev.severity || 'info') + '</div>' +
+                                    '<div style="font-weight:600;">' + escapeHtml(ev.event || '') + '</div>' +
+                                    '<div style="font-size:0.8rem; color:var(--text-secondary);">' + escapeHtml(JSON.stringify(payload).slice(0, 220)) + '</div>' +
+                                '</div>';
+                            }).join('') : '<div style="color:var(--text-muted);">暂无事件</div>') +
+                        '</div>';
+                } catch (e) {
+                    body.innerHTML = '<div style="color:var(--accent-red);">' + escapeHtml(e.message || '加载失败') + '</div>';
                 }
             },
 

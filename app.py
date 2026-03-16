@@ -162,7 +162,7 @@ db.init_app(app)
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
 from models import (User, Post, Vote, Comment, Like, CommentLike, Bookmark, Notification, UsedTransaction,
     PendingPublication,
-    UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog, AppSetting, Series, SeriesPost,
+    FlowEvent, UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog, AppSetting, Series, SeriesPost,
     build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
     calc_level_info, checkin_exp_by_streak)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
@@ -238,6 +238,13 @@ from services.schema_compat import (
     ensure_announcements_columns as _svc_ensure_announcements_columns,
 )
 from services.observability import log_event as _svc_log_event
+from services.ops_monitor import build_ops_summary as _svc_build_ops_summary
+from services.publish_compensation import (
+    run_compensation_batch as _svc_run_compensation_batch,
+    start_compensation_worker as _svc_start_compensation_worker,
+    compensation_interval_seconds as _svc_compensation_interval_seconds,
+    should_start_compensation_worker as _svc_should_start_compensation_worker,
+)
 
 
 def _new_user(**kwargs):
@@ -1421,6 +1428,37 @@ def delete_pending_publication_admin(pending_id):
     db.session.commit()
     _log_flow_event('pending_publication_admin_deleted', pending_id=pending_id, tx_hash=tx_hash, admin_id=g.current_user.id)
     return jsonify({'message': '待恢复记录已删除'})
+
+
+@app.route('/api/admin/pending-publications/retry-batch', methods=['POST'])
+@token_required
+@admin_required
+def retry_pending_publication_batch_admin():
+    result = _svc_run_compensation_batch(
+        app,
+        PendingPublication,
+        _resume_pending_publication_row,
+        app.logger,
+        limit=10,
+        min_age_seconds=0,
+    )
+    _log_flow_event('pending_publication_batch_retry', admin_id=g.current_user.id, **result)
+    return jsonify({
+        'message': '已执行一轮待发布补偿任务',
+        'result': result
+    })
+
+
+@app.route('/api/admin/ops/summary', methods=['GET'])
+@token_required
+@admin_required
+def admin_ops_summary():
+    summary = _svc_build_ops_summary(FlowEvent, PendingPublication, AdminAuditLog)
+    summary['worker'] = {
+        'enabled': _svc_should_start_compensation_worker() and _svc_compensation_interval_seconds() > 0,
+        'interval_seconds': _svc_compensation_interval_seconds(),
+    }
+    return jsonify(summary)
 
 @app.route('/api/admin/stats', methods=['GET'])
 @token_required
@@ -3069,6 +3107,11 @@ def _ensure_pending_publications_table():
     """启动时确保待恢复发布表存在。"""
     return _svc_ensure_table(PendingPublication.__table__, db.engine, 'pending_publications table')
 
+
+def _ensure_flow_events_table():
+    """启动时确保流转事件表存在。"""
+    return _svc_ensure_table(FlowEvent.__table__, db.engine, 'flow_events table')
+
 def _ensure_posts_tx_nullable():
     """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
     return _svc_ensure_posts_tx_nullable(db.session, db.engine.dialect.name)
@@ -3134,9 +3177,20 @@ def _run_startup_tasks():
     _ensure_announcements_columns()
     _ensure_series_tables()
     _ensure_pending_publications_table()
+    _ensure_flow_events_table()
     if _should_run_init_db():
         init_db_data()
     _check_receive_address()
+    started, interval = _svc_start_compensation_worker(
+        app,
+        PendingPublication,
+        _resume_pending_publication_row,
+        app.logger,
+        limit=8,
+        min_age_seconds=90,
+    )
+    if started:
+        app.logger.info('[publish-compensation] worker started interval=%ss', interval)
 
 if __name__ == '__main__':
     with app.app_context():

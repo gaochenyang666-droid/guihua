@@ -462,6 +462,30 @@ class PendingPublication(db.Model):
         }
 
 
+class FlowEvent(db.Model):
+    __tablename__ = 'flow_events'
+    id = db.Column(db.Integer, primary_key=True)
+    event = db.Column(db.String(80), nullable=False, index=True)
+    severity = db.Column(db.String(16), nullable=False, default='info', index=True)
+    payload_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    def to_dict(self):
+        try:
+            payload = json.loads(self.payload_json) if self.payload_json else {}
+        except (TypeError, ValueError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return {
+            'id': self.id,
+            'event': self.event,
+            'severity': self.severity,
+            'payload': payload,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class UserVote(db.Model):
     __tablename__ = 'user_votes'
     id = db.Column(db.Integer, primary_key=True)
