@@ -219,6 +219,18 @@ from services.startup_tasks import (
     check_receive_address as _svc_check_receive_address,
     should_run_init_db as _svc_should_run_init_db,
 )
+from services.schema_compat import (
+    ensure_users_wallet_address as _svc_ensure_users_wallet_address,
+    ensure_users_withdrawable_balance as _svc_ensure_users_withdrawable_balance,
+    ensure_users_checkin_columns as _svc_ensure_users_checkin_columns,
+    ensure_posts_tx_nullable as _svc_ensure_posts_tx_nullable,
+    ensure_posts_pin_columns as _svc_ensure_posts_pin_columns,
+    ensure_posts_special_column as _svc_ensure_posts_special_column,
+    ensure_posts_tags_column as _svc_ensure_posts_tags_column,
+    ensure_notifications_columns as _svc_ensure_notifications_columns,
+    ensure_reports_columns as _svc_ensure_reports_columns,
+    ensure_announcements_columns as _svc_ensure_announcements_columns,
+)
 
 
 def _new_user(**kwargs):
@@ -2615,128 +2627,17 @@ def init_db_data():
 
 def _ensure_users_wallet_address():
     """启动时确保 users 表存在 wallet_address 列（Render 等可能为旧 schema）。仅在实际变更时打日志。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            r = db.session.execute(text(
-                "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='wallet_address'"
-            ))
-            if r.scalar() is not None:
-                return
-            db.session.execute(text('ALTER TABLE users ADD COLUMN wallet_address VARCHAR(42)'))
-            db.session.commit()
-            print('[Startup] users.wallet_address added.')
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(users)")).fetchall()
-            existing = {c[1] for c in cols}
-            if 'wallet_address' not in existing:
-                db.session.execute(text('ALTER TABLE users ADD COLUMN wallet_address VARCHAR(42)'))
-                db.session.commit()
-                print('[Startup] users.wallet_address added.')
-            return
-    except Exception as e:
-        db.session.rollback()
-        if 'already exists' not in str(e).lower():
-            print(f'[Startup] users.wallet_address skip: {e}')
+    return _svc_ensure_users_wallet_address(db.session, db.engine.dialect.name)
 
 
 def _ensure_users_withdrawable_balance():
     """启动时确保 users 表存在 withdrawable_balance 列。仅在实际变更时打日志。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            r = db.session.execute(text(
-                "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='withdrawable_balance'"
-            ))
-            if r.scalar() is not None:
-                return
-            db.session.execute(text("ALTER TABLE users ADD COLUMN withdrawable_balance VARCHAR(50) DEFAULT '0'"))
-            db.session.commit()
-            print('[Startup] users.withdrawable_balance added.')
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(users)")).fetchall()
-            existing = {c[1] for c in cols}
-            if 'withdrawable_balance' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN withdrawable_balance VARCHAR(50) DEFAULT '0'"))
-                db.session.commit()
-                print('[Startup] users.withdrawable_balance added.')
-            return
-    except Exception as e:
-        db.session.rollback()
-        if 'already exists' not in str(e).lower():
-            print(f'[Startup] users.withdrawable_balance skip: {e}')
+    return _svc_ensure_users_withdrawable_balance(db.session, db.engine.dialect.name)
 
 
 def _ensure_users_checkin_columns():
     """启动时确保 users 表存在签到经验与成就佩戴相关列。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            cols = db.session.execute(text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name='users' AND column_name IN ('experience_points','checkin_streak','last_checkin_date','equipped_achievement_key','show_tip_thanks')
-            """)).fetchall()
-            existing = {c[0] for c in cols}
-            changed = False
-            if 'experience_points' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN experience_points INTEGER DEFAULT 0"))
-                print('[Startup] users.experience_points added.')
-                changed = True
-            if 'checkin_streak' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN checkin_streak INTEGER DEFAULT 0"))
-                print('[Startup] users.checkin_streak added.')
-                changed = True
-            if 'last_checkin_date' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN last_checkin_date DATE"))
-                print('[Startup] users.last_checkin_date added.')
-                changed = True
-            if 'equipped_achievement_key' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN equipped_achievement_key VARCHAR(64)"))
-                print('[Startup] users.equipped_achievement_key added.')
-                changed = True
-            if 'show_tip_thanks' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN show_tip_thanks BOOLEAN DEFAULT false"))
-                print('[Startup] users.show_tip_thanks added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(users)")).fetchall()
-            existing = {c[1] for c in cols}
-            changed = False
-            if 'experience_points' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN experience_points INTEGER DEFAULT 0"))
-                print('[Startup] users.experience_points added.')
-                changed = True
-            if 'checkin_streak' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN checkin_streak INTEGER DEFAULT 0"))
-                print('[Startup] users.checkin_streak added.')
-                changed = True
-            if 'last_checkin_date' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN last_checkin_date DATE"))
-                print('[Startup] users.last_checkin_date added.')
-                changed = True
-            if 'equipped_achievement_key' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN equipped_achievement_key VARCHAR(64)"))
-                print('[Startup] users.equipped_achievement_key added.')
-                changed = True
-            if 'show_tip_thanks' not in existing:
-                db.session.execute(text("ALTER TABLE users ADD COLUMN show_tip_thanks BOOLEAN DEFAULT 0"))
-                print('[Startup] users.show_tip_thanks added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-    except Exception as e:
-        db.session.rollback()
-        if 'already exists' not in str(e).lower():
-            print(f'[Startup] users checkin columns skip: {e}')
+    return _svc_ensure_users_checkin_columns(db.session, db.engine.dialect.name)
 
 
 def _ensure_checkin_logs_table():
@@ -2750,295 +2651,37 @@ def _ensure_app_settings_table():
 
 def _ensure_posts_tx_nullable():
     """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
-    from sqlalchemy import text
-    if db.engine.dialect.name != 'postgresql':
-        return
-    for col in ('tx_hash', 'ipfs_cid'):
-        try:
-            r = db.session.execute(text(
-                "SELECT is_nullable FROM information_schema.columns WHERE table_name='posts' AND column_name=:col"
-            ), {'col': col})
-            row = r.fetchone()
-            if not row or row[0] == 'YES':
-                continue
-            db.session.execute(text(f'ALTER TABLE posts ALTER COLUMN {col} DROP NOT NULL'))
-            db.session.commit()
-            print(f'[Startup] posts.{col} set nullable.')
-        except Exception as e:
-            db.session.rollback()
-            if 'already' in str(e).lower() or 'does not exist' in str(e).lower():
-                pass
-            else:
-                print(f'[Startup] posts.{col} nullable skip: {e}')
+    return _svc_ensure_posts_tx_nullable(db.session, db.engine.dialect.name)
 
 
 def _ensure_posts_pin_columns():
     """启动时确保 posts 表存在置顶相关列。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            cols = db.session.execute(text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name='posts' AND column_name IN ('is_pinned','pinned_at','pinned_by')
-            """)).fetchall()
-            existing = {c[0] for c in cols}
-            if 'is_pinned' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT false"))
-                print('[Startup] posts.is_pinned added.')
-            if 'pinned_at' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_at TIMESTAMP NULL"))
-                print('[Startup] posts.pinned_at added.')
-            if 'pinned_by' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_by BIGINT NULL"))
-                print('[Startup] posts.pinned_by added.')
-            db.session.commit()
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(posts)")).fetchall()
-            existing = {c[1] for c in cols}
-            changed = False
-            if 'is_pinned' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_pinned BOOLEAN DEFAULT 0"))
-                print('[Startup] posts.is_pinned added.')
-                changed = True
-            if 'pinned_at' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_at DATETIME"))
-                print('[Startup] posts.pinned_at added.')
-                changed = True
-            if 'pinned_by' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN pinned_by BIGINT"))
-                print('[Startup] posts.pinned_by added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-    except Exception as e:
-        db.session.rollback()
-        print(f'[Startup] posts pin columns skip: {e}')
+    return _svc_ensure_posts_pin_columns(db.session, db.engine.dialect.name)
 
 
 def _ensure_posts_special_column():
     """启动时确保 posts 表存在特殊公告列。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            r = db.session.execute(text(
-                "SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='is_special_announcement'"
-            ))
-            if r.scalar() is None:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_special_announcement BOOLEAN DEFAULT false"))
-                db.session.commit()
-                print('[Startup] posts.is_special_announcement added.')
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(posts)")).fetchall()
-            existing = {c[1] for c in cols}
-            if 'is_special_announcement' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN is_special_announcement BOOLEAN DEFAULT 0"))
-                db.session.commit()
-                print('[Startup] posts.is_special_announcement added.')
-            return
-    except Exception as e:
-        db.session.rollback()
-        print(f'[Startup] posts special column skip: {e}')
+    return _svc_ensure_posts_special_column(db.session, db.engine.dialect.name)
 
 
 def _ensure_posts_tags_column():
     """启动时确保 posts.tags 列存在。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            r = db.session.execute(text(
-                "SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='tags'"
-            ))
-            if r.scalar() is None:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN tags TEXT"))
-                db.session.commit()
-                print('[Startup] posts.tags added.')
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(posts)")).fetchall()
-            existing = {c[1] for c in cols}
-            if 'tags' not in existing:
-                db.session.execute(text("ALTER TABLE posts ADD COLUMN tags TEXT"))
-                db.session.commit()
-                print('[Startup] posts.tags added.')
-            return
-    except Exception as e:
-        db.session.rollback()
-        print(f'[Startup] posts tags column skip: {e}')
+    return _svc_ensure_posts_tags_column(db.session, db.engine.dialect.name)
 
 
 def _ensure_notifications_columns():
     """启动时确保 notifications.content/link 列存在。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            cols = db.session.execute(text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name='notifications' AND column_name IN ('content','link')
-            """)).fetchall()
-            existing = {c[0] for c in cols}
-            changed = False
-            if 'content' not in existing:
-                db.session.execute(text("ALTER TABLE notifications ADD COLUMN content VARCHAR(500)"))
-                print('[Startup] notifications.content added.')
-                changed = True
-            if 'link' not in existing:
-                db.session.execute(text("ALTER TABLE notifications ADD COLUMN link VARCHAR(500)"))
-                print('[Startup] notifications.link added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(notifications)")).fetchall()
-            existing = {c[1] for c in cols}
-            changed = False
-            if 'content' not in existing:
-                db.session.execute(text("ALTER TABLE notifications ADD COLUMN content VARCHAR(500)"))
-                print('[Startup] notifications.content added.')
-                changed = True
-            if 'link' not in existing:
-                db.session.execute(text("ALTER TABLE notifications ADD COLUMN link VARCHAR(500)"))
-                print('[Startup] notifications.link added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-    except Exception as e:
-        db.session.rollback()
-        print(f'[Startup] notifications columns skip: {e}')
+    return _svc_ensure_notifications_columns(db.session, db.engine.dialect.name)
 
 
 def _ensure_reports_columns():
     """启动时兼容 reports 历史表结构（补齐新旧字段并避免 NOT NULL 报错）。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            cols = db.session.execute(text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name='reports' AND column_name IN ('target_type','target_id','reported_user_id','post_id','admin_note','admin_notes','result_notified_at')
-            """)).fetchall()
-            existing = {c[0] for c in cols}
-            changed = False
-            if 'target_type' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_type VARCHAR(20) NOT NULL DEFAULT 'user'"))
-                print('[Startup] reports.target_type added.')
-                changed = True
-            if 'target_id' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_id BIGINT NOT NULL DEFAULT 0"))
-                print('[Startup] reports.target_id added.')
-                changed = True
-            if 'reported_user_id' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN reported_user_id BIGINT NULL"))
-                print('[Startup] reports.reported_user_id added.')
-                changed = True
-            if 'post_id' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN post_id BIGINT NULL"))
-                print('[Startup] reports.post_id added.')
-                changed = True
-            if 'admin_note' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_note VARCHAR(500) NULL"))
-                print('[Startup] reports.admin_note added.')
-                changed = True
-            if 'admin_notes' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_notes VARCHAR(500) NULL"))
-                print('[Startup] reports.admin_notes added.')
-                changed = True
-            if 'result_notified_at' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN result_notified_at TIMESTAMP NULL"))
-                print('[Startup] reports.result_notified_at added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(reports)")).fetchall()
-            existing = {c[1] for c in cols}
-            changed = False
-            if 'target_type' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_type VARCHAR(20) NOT NULL DEFAULT 'user'"))
-                print('[Startup] reports.target_type added.')
-                changed = True
-            if 'target_id' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN target_id BIGINT NOT NULL DEFAULT 0"))
-                print('[Startup] reports.target_id added.')
-                changed = True
-            if 'reported_user_id' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN reported_user_id BIGINT"))
-                print('[Startup] reports.reported_user_id added.')
-                changed = True
-            if 'post_id' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN post_id BIGINT"))
-                print('[Startup] reports.post_id added.')
-                changed = True
-            if 'admin_note' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_note VARCHAR(500)"))
-                print('[Startup] reports.admin_note added.')
-                changed = True
-            if 'admin_notes' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN admin_notes VARCHAR(500)"))
-                print('[Startup] reports.admin_notes added.')
-                changed = True
-            if 'result_notified_at' not in existing:
-                db.session.execute(text("ALTER TABLE reports ADD COLUMN result_notified_at DATETIME"))
-                print('[Startup] reports.result_notified_at added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-    except Exception as e:
-        db.session.rollback()
-        print(f'[Startup] reports columns skip: {e}')
+    return _svc_ensure_reports_columns(db.session, db.engine.dialect.name)
 
 
 def _ensure_announcements_columns():
     """启动时兼容 announcements 历史表结构（entry_type / starts_at）。"""
-    from sqlalchemy import text
-    dialect = db.engine.dialect.name
-    try:
-        if dialect == 'postgresql':
-            cols = db.session.execute(text("""
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name='announcements' AND column_name IN ('entry_type','starts_at')
-            """)).fetchall()
-            existing = {c[0] for c in cols}
-            changed = False
-            if 'entry_type' not in existing:
-                db.session.execute(text("ALTER TABLE announcements ADD COLUMN entry_type VARCHAR(20) DEFAULT 'announcement'"))
-                print('[Startup] announcements.entry_type added.')
-                changed = True
-            if 'starts_at' not in existing:
-                db.session.execute(text("ALTER TABLE announcements ADD COLUMN starts_at TIMESTAMP NULL"))
-                print('[Startup] announcements.starts_at added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-        if dialect == 'sqlite':
-            cols = db.session.execute(text("PRAGMA table_info(announcements)")).fetchall()
-            existing = {c[1] for c in cols}
-            changed = False
-            if 'entry_type' not in existing:
-                db.session.execute(text("ALTER TABLE announcements ADD COLUMN entry_type VARCHAR(20) DEFAULT 'announcement'"))
-                print('[Startup] announcements.entry_type added.')
-                changed = True
-            if 'starts_at' not in existing:
-                db.session.execute(text("ALTER TABLE announcements ADD COLUMN starts_at DATETIME"))
-                print('[Startup] announcements.starts_at added.')
-                changed = True
-            if changed:
-                db.session.commit()
-            return
-    except Exception as e:
-        db.session.rollback()
-        print(f'[Startup] announcements columns skip: {e}')
+    return _svc_ensure_announcements_columns(db.session, db.engine.dialect.name)
 
 
 def _ensure_series_tables():
