@@ -659,4 +659,4 @@
     window.EditProfile = EditProfile;
 
     window.addEventListener('load', loadProfile);
-+})();
+})();
