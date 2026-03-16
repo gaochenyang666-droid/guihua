@@ -96,7 +96,7 @@ def main():
     ensure_admin()
     created_post_id = None
     synthetic_post_id = None
-    pending_tx_hash = "0x" + ("cd" * 32)
+    pending_tx_hash = "qa_pending_retry_hash"
     try:
         token = login(base)
         payload = {"title": f"QA 发布链路 {int(time.time())}", "content": "<p>Smoke post body.</p>"}
@@ -154,6 +154,23 @@ def main():
         if pending.get("tx_hash") != pending_tx_hash:
             raise AssertionError(f"pending latest mismatch: {data}")
         print("post_pending_latest_ok=1")
+        status, data = http_json(
+            base + "/api/posts/pending/retry",
+            method="POST",
+            token=token,
+            payload={
+                "tx_hash": pending_tx_hash,
+                "title": "QA Pending Publish",
+                "content": "<p>pending</p>",
+                "tags": ["qa"],
+            },
+        )
+        if status != 503:
+            raise AssertionError(f"pending retry should be 503 while hash is fake: status={status} data={data}")
+        retry_pending = data.get("pending") or {}
+        if retry_pending.get("tx_hash") != pending_tx_hash:
+            raise AssertionError(f"pending retry missing row: {data}")
+        print("post_pending_retry_ok=1")
         status, data = http_json(base + "/api/posts/pending/clear", method="POST", token=token, payload={"tx_hash": pending_tx_hash})
         assert_ok(status, data, "pending clear")
         print("post_pending_clear_ok=1")

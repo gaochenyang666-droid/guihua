@@ -395,6 +395,16 @@
         </div>
     </div>
 
+    <div class="modal-overlay" id="adminPendingModal" onclick="Modal.close('adminPendingModal')">
+        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3>🧷 待发布补偿队列</h3>
+                <button class="modal-close" onclick="Modal.close('adminPendingModal')">&times;</button>
+            </div>
+            <div id="adminPendingBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+        </div>
+    </div>
+
     <!-- Notifications Modal -->
     <div class="modal-overlay" id="notificationModal" onclick="Modal.close('notificationModal')">
         <div class="modal glass" onclick="event.stopPropagation()">

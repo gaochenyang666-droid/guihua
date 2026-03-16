@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
 from app import app, db, _new_user  # noqa: E402
-from models import User, Post, Comment, Like, Bookmark  # noqa: E402
+from models import User, Post, Comment, Like, Bookmark, PendingPublication  # noqa: E402
 
 
 ADMIN_USERNAME = "qa_admin_smoke"
@@ -75,6 +75,14 @@ def cleanup_post(post_id):
         db.session.commit()
 
 
+def cleanup_pending(tx_hash):
+    with app.app_context():
+        row = PendingPublication.query.filter_by(tx_hash=tx_hash).first()
+        if row:
+            db.session.delete(row)
+            db.session.commit()
+
+
 def http_json(url, method="GET", token=None, payload=None):
     headers = {"User-Agent": "guihua-admin-smoke/1.0"}
     if token:
@@ -118,6 +126,7 @@ def login(base, username):
 def main():
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
     post_id = None
+    pending_tx_hash = "0x" + ("ef" * 32)
     try:
         post_id = ensure_users_and_post()
         admin_token = login(base, ADMIN_USERNAME)
@@ -160,6 +169,34 @@ def main():
         assert_ok(status, data, "admin delete")
         post_id = None
         print("admin_delete_ok=1")
+
+        with app.app_context():
+            admin_id = User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar()
+            row = PendingPublication(
+                user_id=admin_id,
+                tx_hash=pending_tx_hash,
+                title="QA Admin Pending",
+                content="<p>pending</p>",
+                tags='["qa"]',
+                status='awaiting_retry',
+                last_error='待管理员处理',
+            )
+            db.session.add(row)
+            db.session.commit()
+
+        status, data = http_json(f"{base}/api/admin/pending-publications", token=admin_token)
+        assert_ok(status, data, "admin pending list")
+        items = data.get("items") or []
+        if not any((row.get("tx_hash") == pending_tx_hash) for row in items):
+            raise AssertionError(f"pending publication not found in admin list: {data}")
+        print("admin_pending_list_ok=1")
+
+        pending_id = next((row.get("id") for row in items if row.get("tx_hash") == pending_tx_hash), None)
+        if not pending_id:
+            raise AssertionError(f"pending publication id missing: {data}")
+        status, data = http_json(f"{base}/api/admin/pending-publications/{pending_id}", method="DELETE", token=admin_token)
+        assert_ok(status, data, "admin pending delete")
+        print("admin_pending_delete_ok=1")
         print("admin_flow_ok=1")
         return 0
     except Exception as exc:
@@ -171,6 +208,10 @@ def main():
                 cleanup_post(post_id)
             except Exception:
                 pass
+        try:
+            cleanup_pending(pending_tx_hash)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

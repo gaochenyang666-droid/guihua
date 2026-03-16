@@ -654,6 +654,45 @@
                 poll();
             },
 
+            async resumePendingPublication(txHash, title, content, tags, seriesId, specialChecked) {
+                this.addLog("检测到已支付交易，正在走服务端补偿发布...");
+                const result = await apiJson(`${API_BASE}/posts/pending/retry`, {
+                    method: 'POST',
+                    body: {
+                        tx_hash: txHash,
+                        title,
+                        content,
+                        tags: tags,
+                        series_id: seriesId || null,
+                        is_special_announcement: specialChecked,
+                        region: '其他'
+                    },
+                    fallback: {}
+                });
+                const res = result.res;
+                const data = result.data || {};
+                if (handle401(res)) return { handled: true, ok: false };
+                if (res.ok) {
+                    this.addLog("✅ 待恢复发布已补偿完成!");
+                    Draft.clear();
+                    this.clearPendingPost();
+                    this.pendingTxHash = null;
+                    this.checkWalletEnv();
+                    this.updateResumePanel('当前发布已完成。', 'success');
+                    Toast.success(data.message || '发布成功');
+                    setTimeout(() => {
+                        navigateWithTransition('/');
+                    }, 2000);
+                    return { handled: true, ok: true };
+                }
+                const msg = data.error || (data.pending && data.pending.last_error) || ('请求失败 ' + res.status);
+                if (res.status === 503 && data.pending) {
+                    this.addLog("ℹ️ " + msg);
+                    this.updateResumePanel(msg, data.pending.status === 'awaiting_retry' ? 'warn' : 'error');
+                }
+                throw new Error(msg);
+            },
+
             async publish() {
                 if (this.isPublishing) return;
                 
@@ -682,6 +721,10 @@
                 try {
                     const pre = await this.runPrecheck();
                     if (!pre.ok) throw new Error((pre.issues && pre.issues[0]) || '发布前检查未通过');
+                    if (txHash) {
+                        const resumed = await this.resumePendingPublication(txHash, title, content, tags, seriesId, specialChecked);
+                        if (resumed && resumed.handled) return;
+                    }
                     // Initialize Web3 if needed
                     if (typeof window.web3 === 'undefined') {
                         if (window.BinanceChain || window.ethereum) {

@@ -251,6 +251,78 @@
                 }
             },
 
+            async openPendingPublications() {
+                Modal.open('adminPendingModal');
+                var body = document.getElementById('adminPendingBody');
+                if (!body) return;
+                body.innerHTML = '加载中...';
+                try {
+                    var result = await apiJson(API_BASE + '/admin/pending-publications', { check401: false, fallback: {} });
+                    var data = result.data || {};
+                    var items = data.items || [];
+                    if (!result.res.ok) throw new Error(data.error || '加载失败');
+                    if (!items.length) {
+                        body.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:1rem;">当前没有待恢复发布记录</div>';
+                        return;
+                    }
+                    body.innerHTML = items.map(function (row) {
+                        var who = escapeHtml(row.nickname || row.username || ('用户#' + row.user_id));
+                        var statusColor = row.status === 'awaiting_retry' ? 'var(--accent-orange)' : (row.status === 'storage_ready' ? 'var(--accent-green)' : 'var(--accent-purple)');
+                        return '<div class="glass" style="padding:0.8rem; margin-bottom:0.75rem; border-radius:10px;">' +
+                            '<div style="display:flex; justify-content:space-between; gap:0.6rem; flex-wrap:wrap; align-items:center;">' +
+                                '<div><b>' + escapeHtml(row.title || '未命名帖子') + '</b><div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.2rem;">' + who + ' · ' + escapeHtml(row.tx_hash || '') + '</div></div>' +
+                                '<span style="font-size:0.82rem; color:' + statusColor + ';">' + escapeHtml(row.status || 'pending') + '</span>' +
+                            '</div>' +
+                            (row.last_error ? ('<div style="font-size:0.82rem; color:var(--text-secondary); margin-top:0.5rem;">' + escapeHtml(row.last_error) + '</div>') : '') +
+                            '<div style="font-size:0.76rem; color:var(--text-muted); margin-top:0.45rem;">更新时间: ' + (row.updated_at ? new Date(row.updated_at).toLocaleString() : '-') + '</div>' +
+                            '<div style="display:flex; gap:0.45rem; flex-wrap:wrap; margin-top:0.65rem;">' +
+                                '<button class="btn btn-primary btn-sm" onclick="Admin.retryPendingPublication(' + row.id + ')">补偿重试</button>' +
+                                '<button class="btn btn-ghost btn-sm" style="color:var(--accent-red);" onclick="Admin.deletePendingPublication(' + row.id + ')">删除记录</button>' +
+                            '</div>' +
+                        '</div>';
+                    }).join('');
+                } catch (e) {
+                    body.innerHTML = '<div style="color:var(--accent-red);">' + escapeHtml(e.message || '加载失败') + '</div>';
+                }
+            },
+
+            async retryPendingPublication(pendingId) {
+                try {
+                    var result = await apiJson(API_BASE + '/admin/pending-publications/' + pendingId + '/retry', {
+                        method: 'POST',
+                        check401: false,
+                        fallback: {}
+                    });
+                    if (result.res.ok) {
+                        Toast.success(result.data.message || '补偿完成');
+                        this.openPendingPublications();
+                    } else {
+                        Toast.error((result.data && (result.data.error || (result.data.pending && result.data.pending.last_error))) || '补偿失败');
+                    }
+                } catch (_) {
+                    Toast.error('网络错误');
+                }
+            },
+
+            async deletePendingPublication(pendingId) {
+                if (!confirm('确定删除这条待恢复记录？')) return;
+                try {
+                    var result = await apiJson(API_BASE + '/admin/pending-publications/' + pendingId, {
+                        method: 'DELETE',
+                        check401: false,
+                        fallback: {}
+                    });
+                    if (result.res.ok) {
+                        Toast.success(result.data.message || '已删除');
+                        this.openPendingPublications();
+                    } else {
+                        Toast.error(result.data.error || '删除失败');
+                    }
+                } catch (_) {
+                    Toast.error('网络错误');
+                }
+            },
+
             async editGroupLinks() {
                 try {
                     var result = await apiJson(API_BASE + '/admin/group-links', { check401: false });

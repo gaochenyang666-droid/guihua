@@ -1222,6 +1222,206 @@ def clear_pending_post():
         _log_flow_event('pending_publication_cleared', tx_hash=row.tx_hash, user_id=g.current_user.id)
     return jsonify({'message': '待恢复记录已清除'})
 
+
+def _resume_pending_publication_row(row, actor_user=None):
+    if not row:
+        return False, '未找到待恢复记录', None, None
+    owner = db.session.get(User, row.user_id)
+    if not owner:
+        return False, '该待恢复记录对应的用户不存在', None, row
+    existing_post = Post.query.filter_by(tx_hash=row.tx_hash).first()
+    if existing_post:
+        _svc_clear_pending_publication(PendingPublication, db.session, tx_hash=row.tx_hash)
+        db.session.commit()
+        return True, '帖子已存在，已同步清理待恢复记录', existing_post, None
+
+    inspect = _svc_inspect_transaction_status(row.tx_hash, tx_confirmations=TX_CONFIRMATIONS_NEEDED)
+    row.confirmations = int(inspect.get('confirmations', 0) or 0)
+    if not inspect.get('ok') and inspect.get('stage') != 'confirmed':
+        row.status = 'awaiting_retry'
+        row.last_error = inspect.get('message') or '交易状态异常'
+        db.session.commit()
+        return False, row.last_error, None, row
+    if inspect.get('stage') not in ('confirmed',) and inspect.get('stage') not in ('awaiting_confirmation', 'broadcasted'):
+        row.status = 'awaiting_retry'
+        row.last_error = inspect.get('message') or '交易状态异常'
+        db.session.commit()
+        return False, row.last_error, None, row
+    if inspect.get('stage') in ('awaiting_confirmation', 'broadcasted'):
+        row.status = 'payment_verified'
+        row.last_error = inspect.get('message') or '链上确认中'
+        db.session.commit()
+        return False, row.last_error, None, row
+
+    try:
+        normalized_tags = []
+        try:
+            normalized_tags = json.loads(row.tags) if row.tags else []
+        except Exception:
+            normalized_tags = []
+        if not isinstance(normalized_tags, list):
+            normalized_tags = []
+
+        clean_title = bleach.clean(row.title or '', strip=True)
+        clean_content = _bleach_clean_post_content(row.content or '')
+        if not clean_title or not clean_content.strip():
+            row.status = 'awaiting_retry'
+            row.last_error = '待恢复记录缺少完整标题或正文'
+            db.session.commit()
+            return False, row.last_error, None, row
+
+        target_series = db.session.get(Series, row.series_id) if row.series_id else None
+        if target_series and not _series_can_edit(target_series, owner):
+            target_series = None
+
+        if not row.ipfs_cid:
+            payload = {
+                'title': clean_title,
+                'content': clean_content,
+                'tags': normalized_tags,
+                'author': owner.address,
+                'timestamp': datetime.utcnow().isoformat(),
+                'tx_hash': row.tx_hash,
+                'region': row.region or '其他',
+                'platform': 'GuiHua Web3 (Arweave)'
+            }
+            storage_id, storage_type, last_error = upload_to_arweave_with_retry(payload, retries=3)
+            if not storage_id:
+                row.status = 'awaiting_retry'
+                row.last_error = '支付已确认，但永存档案写入失败。可直接继续发布重试，无需再次支付。'
+                db.session.commit()
+                return False, row.last_error, None, row
+            row.ipfs_cid = storage_id
+            row.status = 'storage_ready'
+            row.last_error = None
+            db.session.flush()
+
+        post = Post(
+            title=clean_title,
+            content=clean_content,
+            cover_image=None,
+            images='[]',
+            tags=json.dumps(normalized_tags, ensure_ascii=False),
+            author_id=owner.id,
+            tx_hash=row.tx_hash,
+            ipfs_cid=row.ipfs_cid,
+            is_paid=True,
+            is_on_chain=True,
+            region=row.region or '其他',
+            is_special_announcement=bool(row.is_special_announcement) if owner.is_admin else False,
+            post_type=1
+        )
+        db.session.add(post)
+        db.session.flush()
+
+        if target_series:
+            max_order = db.session.query(func.max(SeriesPost.order_index)).filter(SeriesPost.series_id == target_series.id).scalar() or 0
+            db.session.add(SeriesPost(series_id=target_series.id, post_id=post.id, order_index=int(max_order) + 1))
+
+        if not UsedTransaction.query.filter_by(tx_hash=row.tx_hash).first():
+            db.session.add(UsedTransaction(tx_hash=row.tx_hash, user_id=owner.id))
+
+        mention_source = re.sub(r'<[^>]+>', ' ', clean_content or '')
+        mention_tokens = _extract_mention_tokens(mention_source)
+        mention_users = _resolve_mentioned_users(mention_tokens, exclude_user_id=owner.id)
+        for u in mention_users:
+            db.session.add(Notification(
+                user_id=u.id,
+                sender_id=owner.id,
+                post_id=post.id,
+                comment_id=None,
+                type='mention',
+                content='在帖子中提到了你',
+                link=f"/?post={post.id}"
+            ))
+
+        db.session.delete(row)
+        db.session.commit()
+        _log_flow_event(
+            'pending_publication_recovered',
+            tx_hash=post.tx_hash,
+            post_id=post.id,
+            operator_user_id=getattr(actor_user, 'id', None),
+            target_user_id=owner.id,
+        )
+        return True, '待恢复发布已补偿完成', post, None
+    except Exception as e:
+        db.session.rollback()
+        row = PendingPublication.query.filter_by(tx_hash=row.tx_hash).first()
+        if row:
+            row.status = 'awaiting_retry'
+            row.last_error = '支付已确认，但发布流程未完成。可直接继续发布重试。'
+            db.session.commit()
+        _log_flow_event('pending_publication_recovery_failed', tx_hash=getattr(row, 'tx_hash', None), reason=str(e)[:180])
+        return False, '待恢复发布补偿失败，请稍后重试', None, row
+
+
+@app.route('/api/posts/pending/retry', methods=['POST'])
+@token_required
+def retry_pending_post():
+    data = request.get_json(silent=True) or {}
+    tx_hash = (data.get('tx_hash') or '').strip()
+    if not tx_hash:
+        return jsonify({'error': '缺少交易哈希'}), 400
+    row = PendingPublication.query.filter_by(tx_hash=tx_hash, user_id=g.current_user.id).first()
+    if not row:
+        payload = {
+            'title': data.get('title') or '',
+            'content': data.get('content') or '',
+            'tags': _normalize_tags(data.get('tags') or data.get('tag_names')),
+            'region': data.get('region') or '其他',
+            'series_id': data.get('series_id'),
+            'is_special_announcement': bool(data.get('is_special_announcement')) if g.current_user.is_admin else False,
+        }
+        row = _svc_upsert_pending_publication(
+            PendingPublication, db.session, g.current_user.id, tx_hash,
+            payload=payload, status='initiated'
+        )
+        db.session.commit()
+    ok, message, post, pending_row = _resume_pending_publication_row(row, actor_user=g.current_user)
+    if ok:
+        return jsonify({'message': message, 'post': post.to_dict(g.current_user.id)}), 200
+    if pending_row:
+        return jsonify({'error': message, 'pending': pending_row.to_dict()}), 503
+    return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/pending-publications', methods=['GET'])
+@token_required
+@admin_required
+def list_pending_publications():
+    rows = PendingPublication.query.order_by(PendingPublication.updated_at.desc(), PendingPublication.id.desc()).limit(200).all()
+    return jsonify({'items': [{
+        **row.to_dict(),
+        'nickname': row.user.nickname if row.user else None,
+        'username': row.user.username if row.user else None,
+    } for row in rows]})
+
+
+@app.route('/api/admin/pending-publications/<int:pending_id>/retry', methods=['POST'])
+@token_required
+@admin_required
+def retry_pending_publication_admin(pending_id):
+    row = PendingPublication.query.get_or_404(pending_id)
+    ok, message, post, pending_row = _resume_pending_publication_row(row, actor_user=g.current_user)
+    if ok:
+        return jsonify({'message': message, 'post': post.to_dict(g.current_user.id)}), 200
+    if pending_row:
+        return jsonify({'error': message, 'pending': pending_row.to_dict()}), 503
+    return jsonify({'error': message}), 400
+
+
+@app.route('/api/admin/pending-publications/<int:pending_id>', methods=['DELETE'])
+@token_required
+@admin_required
+def delete_pending_publication_admin(pending_id):
+    row = PendingPublication.query.get_or_404(pending_id)
+    tx_hash = row.tx_hash
+    db.session.delete(row)
+    db.session.commit()
+    _log_flow_event('pending_publication_admin_deleted', pending_id=pending_id, tx_hash=tx_hash, admin_id=g.current_user.id)
+    return jsonify({'message': '待恢复记录已删除'})
+
 @app.route('/api/admin/stats', methods=['GET'])
 @token_required
 def admin_stats():

@@ -227,6 +227,13 @@
                             auditBtn.style.color = 'var(--text-secondary)';
                             auditBtn.textContent = '🧾 日志';
                             auditBtn.onclick = Admin.openAuditLogs;
+                            const pendingBtn = document.createElement('button');
+                            pendingBtn.id = 'adminPendingBtn';
+                            pendingBtn.className = 'btn btn-ghost';
+                            pendingBtn.style.color = 'var(--accent-orange)';
+                            pendingBtn.style.borderColor = 'var(--accent-orange)';
+                            pendingBtn.textContent = '🧷 待发布';
+                            pendingBtn.onclick = Admin.openPendingPublications;
                             const addAdminAction = (el) => {
                                 if (el.parentNode !== userMenuAdmin) userMenuAdmin.appendChild(el);
                             };
@@ -234,6 +241,7 @@
                             addAdminAction(reportsBtn);
                             addAdminAction(annBtn);
                             addAdminAction(groupBtn);
+                            addAdminAction(pendingBtn);
                             addAdminAction(auditBtn);
                             addAdminAction(statsBtn);
                         }
