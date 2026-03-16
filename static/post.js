@@ -7,23 +7,21 @@
     var postId = Number(root && root.getAttribute('data-post-id'));
     var currentUser = null;
     var currentPost = null;
-    var replyParentId = null;
-    var replyTargetName = '';
-    var replyDraftText = '';
-    var commentsRenderToken = 0;
-    var visibleCommentCount = 0;
-    var commentSortMode = 'latest';
-    var showAuthorCommentsOnly = false;
-    var lightboxItems = [];
-    var lightboxIndex = 0;
-    var INITIAL_COMMENT_BATCH = 6;
-    var COMMENT_BATCH_SIZE = 6;
 
     var apiJson = window.apiJson;
     var escapeAttr = window.escapeAttr;
     var mentionifyText = window.mentionifyText;
-    var equippedTitleByKey = window.equippedTitleByKey;
     var renderAuthorBadge = window.renderAuthorBadge;
+    var postCommentsFactory = window.GHPostCommentsFactory;
+    var postLightboxFactory = window.GHPostLightboxFactory;
+    var postComments = postCommentsFactory ? postCommentsFactory({
+        escapeAttr: escapeAttr,
+        mentionifyText: mentionifyText,
+        escapeHtml: window.escapeHtml
+    }) : null;
+    var postLightbox = postLightboxFactory ? postLightboxFactory() : null;
+    var commentsState = postComments ? postComments.createState() : null;
+    var lightboxState = postLightbox ? postLightbox.createState() : null;
 
     function toastError(msg) {
         if (window.Toast && Toast.error) Toast.error(msg || '操作失败');
@@ -110,54 +108,6 @@
         }
     }
 
-    function renderComments(list, depth) {
-        depth = depth || 0;
-        if (!Array.isArray(list) || !list.length) return '';
-        return list.map(function (c) {
-            var author = (c && c.author) || {};
-            var nick = author.nickname || '匿名';
-            var created = c && c.created_at ? new Date(c.created_at).toLocaleString() : '';
-            var replies = renderComments(c && c.replies, depth + 1);
-            var replyCount = Array.isArray(c && c.replies) ? c.replies.length : 0;
-            var collapseDeepReplies = depth >= 1 && replyCount > 0;
-            var replyThreadId = 'reply-thread-' + Number(c.id || 0) + '-' + depth;
-            var margin = depth * 20;
-            var border = depth > 0 ? '2px solid var(--border-color)' : 'none';
-            var padding = depth > 0 ? '0.9rem' : '0';
-            var authorTag = isPostAuthor(author) ? '<span class="comment-role-badge author">作者</span>' : '';
-            var adminTag = author && author.is_admin ? '<span class="comment-role-badge admin">管理员</span>' : '';
-            var commentClasses = ['comment-item'];
-            if (isPostAuthor(author)) commentClasses.push('is-author-comment');
-            if (author && author.is_admin) commentClasses.push('is-admin-comment');
-            var inlineReplyComposer = replyParentId === Number(c.id)
-                ? (
-                    '<div class="inline-reply-box">' +
-                        '<div class="inline-reply-title">回复 @' + escapeHtml(replyTargetName || nick) + '</div>' +
-                        '<div class="inline-reply-actions">' +
-                            '<input type="text" id="inlineReplyInput" class="form-input" placeholder="写下你的回复..." value="' + escapeAttr(replyDraftText || '') + '">' +
-                            '<button class="btn btn-primary btn-sm" type="button" data-action="submit-inline-reply">发送</button>' +
-                            '<button class="btn btn-ghost btn-sm" type="button" data-action="cancel-inline-reply">取消</button>' +
-                        '</div>' +
-                    '</div>'
-                )
-                : '';
-            return (
-                '<div class="' + commentClasses.join(' ') + '" style="margin-left:' + margin + 'px; border-left:' + border + '; padding-left:' + padding + ';">' +
-                '<div class="comment-header"><div class="comment-author-line"><span class="comment-author-name">' + escapeHtml(nick) + '</span>' + authorTag + adminTag + '</div><span>' + escapeHtml(created) + '</span></div>' +
-                '<div style="margin-bottom:0.45rem;">' + mentionifyText((c && c.content) || '') + '</div>' +
-                '<div style="display:flex; gap:0.45rem; flex-wrap:wrap;">' +
-                    '<button class="btn btn-ghost btn-sm" type="button" data-action="reply" data-parent-id="' + Number(c.id) + '" data-nickname="' + escapeAttr(nick) + '">↩ 回复</button>' +
-                    '<button class="btn btn-ghost btn-sm" type="button" data-action="like-comment" data-comment-id="' + Number(c.id) + '">' + ((c && c.is_liked) ? '👍 已赞' : '👍 点赞') + ' (' + Number((c && c.likes_count) || 0) + ')</button>' +
-                '</div>' +
-                inlineReplyComposer +
-                (collapseDeepReplies
-                    ? '<div class="comment-thread-toggle-wrap"><button class="btn btn-ghost btn-sm comment-thread-toggle" type="button" data-action="toggle-replies" data-target-id="' + replyThreadId + '" data-collapsed-label="展开 ' + replyCount + ' 条深层回复" data-expanded-label="收起深层回复" aria-expanded="false">展开 ' + replyCount + ' 条深层回复</button></div><div class="comment-thread-group" id="' + replyThreadId + '" hidden>' + replies + '</div>'
-                    : replies) +
-                '</div>'
-            );
-        }).join('');
-    }
-
     function renderPostLoadingShell() {
         return '' +
             '<div class="post-page-loading-shell">' +
@@ -176,121 +126,11 @@
             '</div>';
     }
 
-    function renderCommentsLoadingState() {
-        return '' +
-            '<div class="comments-loading-state">' +
-                '<div class="skeleton-block skeleton-line"></div>' +
-                '<div class="skeleton-block skeleton-line short"></div>' +
-                '<div class="skeleton-block skeleton-line"></div>' +
-            '</div>';
-    }
-
-    function resetCommentVisibility(post) {
-        var total = getProcessedComments(post).length;
-        visibleCommentCount = Math.min(INITIAL_COMMENT_BATCH, total);
-    }
-
-    function isPostAuthor(user) {
-        if (!currentPost || !currentPost.author || !user) return false;
-        var postAuthor = currentPost.author || {};
-        if (postAuthor.id != null && user.id != null && Number(postAuthor.id) === Number(user.id)) return true;
-        if (postAuthor.username && user.username && String(postAuthor.username) === String(user.username)) return true;
-        return false;
-    }
-
-    function getCommentTimestamp(comment) {
-        if (!comment || !comment.created_at) return 0;
-        var ts = new Date(comment.created_at).getTime();
-        return Number.isFinite(ts) ? ts : 0;
-    }
-
-    function compareComments(a, b) {
-        var mode = commentSortMode === 'hot' ? 'hot' : 'latest';
-        if (mode === 'hot') {
-            var hotDiff = Number((b && b.likes_count) || 0) - Number((a && a.likes_count) || 0);
-            if (hotDiff !== 0) return hotDiff;
-        }
-        return getCommentTimestamp(b) - getCommentTimestamp(a);
-    }
-
-    function buildProcessedComment(comment) {
-        if (!comment) return null;
-        var sourceReplies = Array.isArray(comment.replies) ? comment.replies : [];
-        var nextReplies = sourceReplies
-            .map(buildProcessedComment)
-            .filter(Boolean)
-            .sort(compareComments);
-        var authorMatch = isPostAuthor(comment.author || {});
-        if (showAuthorCommentsOnly && !authorMatch && !nextReplies.length) return null;
-        return Object.assign({}, comment, { replies: nextReplies });
-    }
-
-    function getProcessedComments(post) {
-        var list = Array.isArray(post && post.comments) ? post.comments : [];
-        return list
-            .map(buildProcessedComment)
-            .filter(Boolean)
-            .sort(compareComments);
-    }
-
-    function renderVisibleComments(post) {
-        var list = getProcessedComments(post);
-        var visible = list.slice(0, visibleCommentCount || list.length);
-        return renderComments(visible, 0);
-    }
-
-    function updateCommentsToolbar(post) {
-        var latestBtn = document.getElementById('commentsSortLatestBtn');
-        var hotBtn = document.getElementById('commentsSortHotBtn');
-        var authorBtn = document.getElementById('commentsAuthorOnlyBtn');
-        var meta = document.getElementById('commentsFilterMeta');
-        var total = getProcessedComments(post).length;
-        if (latestBtn) latestBtn.classList.toggle('active', commentSortMode === 'latest');
-        if (hotBtn) hotBtn.classList.toggle('active', commentSortMode === 'hot');
-        if (authorBtn) authorBtn.classList.toggle('active', !!showAuthorCommentsOnly);
-        if (authorBtn) authorBtn.textContent = showAuthorCommentsOnly ? '查看全部回复' : '只看作者回复';
-        if (meta) {
-            var shown = Math.min(visibleCommentCount || 0, total);
-            meta.textContent = total ? ('已显示 ' + shown + ' / ' + total + ' 条') : '暂无评论';
-        }
-    }
-
-    function updateCommentsMoreButton(post) {
-        var btn = document.getElementById('commentsMoreBtn');
-        if (!btn) return;
-        var total = getProcessedComments(post).length;
-        if (!total || visibleCommentCount >= total) {
-            btn.hidden = true;
-            btn.textContent = '';
-            return;
-        }
-        var remain = Math.max(0, total - visibleCommentCount);
-        btn.hidden = false;
-        btn.textContent = '展开更多评论（剩余 ' + remain + ' 条）';
-    }
-
     function scheduleCommentsRender(post) {
-        commentsRenderToken += 1;
-        var token = commentsRenderToken;
-        var run = function () {
-            if (token !== commentsRenderToken) return;
-            var host = document.getElementById('postCommentsList');
-            if (!host) return;
-            var commentsHtml = renderVisibleComments(post);
-            host.innerHTML = commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>';
-            bindCommentListEvents();
-            updateCommentsToolbar(post);
-            updateCommentsMoreButton(post);
-            var inlineInput = document.getElementById('inlineReplyInput');
-            if (inlineInput && replyParentId) inlineInput.focus();
-        };
-        if (window.requestAnimationFrame) {
-            window.requestAnimationFrame(function () {
-                window.setTimeout(run, 40);
-            });
-            return;
-        }
-        window.setTimeout(run, 40);
+        if (!postComments || !commentsState) return;
+        postComments.scheduleRender(commentsState, post, {
+            bindEvents: bindCommentListEvents
+        });
     }
 
     function renderSeries(series) {
@@ -310,8 +150,9 @@
 
     function renderPost(p) {
         currentPost = p;
-        commentsRenderToken += 1;
-        resetCommentVisibility(p);
+        if (postComments && commentsState) {
+            postComments.resetVisibility(commentsState, p);
+        }
         var isPermanent = !!(p.is_permanent || p.tx_hash || p.ipfs_cid || p.is_on_chain || p.post_type === 1);
         var seriesHtml = renderSeries(p.series || []);
         var canComment = !!(p.allow_comments || (currentUser && currentUser.is_admin));
@@ -364,7 +205,7 @@
                     '</div>' +
                     '<div class="comments-filter-meta" id="commentsFilterMeta"></div>' +
                 '</div>' +
-                '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + renderCommentsLoadingState() + '</div>' +
+                '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + (postComments ? postComments.renderLoadingState() : '') + '</div>' +
                 '<div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>' +
                 '<div style="display:flex; gap:0.5rem;">' +
                     '<input type="text" id="commentInput" class="form-input" placeholder="' + (canComment ? '发表评论...' : '评论区已关闭') + '" ' + (canComment ? '' : 'disabled') + '>' +
@@ -382,20 +223,6 @@
         });
     }
 
-    function setReply(parentId, nickname) {
-        replyParentId = parentId;
-        replyTargetName = nickname || '匿名';
-        replyDraftText = '';
-        scheduleCommentsRender(currentPost);
-    }
-
-    function cancelReply() {
-        replyParentId = null;
-        replyTargetName = '';
-        replyDraftText = '';
-        scheduleCommentsRender(currentPost);
-    }
-
     function updatePostActionButtons() {
         if (!body || !currentPost) return;
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="like"]'), function (btn) {
@@ -404,33 +231,6 @@
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="bookmark"]'), function (btn) {
             btn.textContent = '⭐ 收藏' + (currentPost.is_bookmarked ? '（已收）' : '');
         });
-    }
-
-    function findCommentNode(list, commentId) {
-        if (!Array.isArray(list)) return null;
-        for (var i = 0; i < list.length; i += 1) {
-            var item = list[i];
-            if (!item) continue;
-            if (Number(item.id) === Number(commentId)) return item;
-            var found = findCommentNode(item.replies || [], commentId);
-            if (found) return found;
-        }
-        return null;
-    }
-
-    function insertCommentIntoState(comment) {
-        if (!currentPost || !comment) return;
-        currentPost.comments = Array.isArray(currentPost.comments) ? currentPost.comments : [];
-        comment.replies = Array.isArray(comment.replies) ? comment.replies : [];
-        if (comment.parent_id) {
-            var parent = findCommentNode(currentPost.comments, comment.parent_id);
-            if (parent) {
-                parent.replies = Array.isArray(parent.replies) ? parent.replies : [];
-                parent.replies.unshift(comment);
-                return;
-            }
-        }
-        currentPost.comments.unshift(comment);
     }
 
     async function doPost(url, payload, extraOpts) {
@@ -483,85 +283,6 @@
             return;
         }
         toastSuccess(data.message || '举报已提交');
-    }
-
-    async function submitComment() {
-        if (!requireLogin()) return;
-        if (!currentPost) return;
-        var input = replyParentId ? document.getElementById('inlineReplyInput') : document.getElementById('commentInput');
-        var submitBtn = replyParentId
-            ? body && body.querySelector('[data-action="submit-inline-reply"]')
-            : document.getElementById('commentSendBtn');
-        if (!input) return;
-        var content = (input.value || '').trim();
-        if (!content) {
-            toastError('评论不能为空');
-            return;
-        }
-        if (replyParentId) replyDraftText = content;
-        input.disabled = true;
-        if (submitBtn) submitBtn.disabled = true;
-        var payload = { content: content };
-        if (replyParentId) payload.parent_id = replyParentId;
-        var result = await doPost(API_BASE + '/posts/' + postId + '/comments', payload);
-        var res = result.res;
-        var data = result.data;
-        if (!res.ok) {
-            input.disabled = false;
-            if (submitBtn) submitBtn.disabled = false;
-            toastError(data.error || '评论失败');
-            return;
-        }
-        input.value = '';
-        input.disabled = false;
-        if (submitBtn) submitBtn.disabled = false;
-        insertCommentIntoState(data && data.comment);
-        if (!replyParentId) {
-            var nextTotal = getProcessedComments(currentPost).length;
-            visibleCommentCount = Math.min(nextTotal, Math.max(visibleCommentCount + 1, INITIAL_COMMENT_BATCH));
-        }
-        cancelReply();
-        scheduleCommentsRender(currentPost);
-    }
-
-    async function likeComment(commentId) {
-        if (!requireLogin()) return;
-        var cid = Number(commentId);
-        if (!Number.isFinite(cid) || cid <= 0) return;
-        var result = await doPost(API_BASE + '/comments/' + cid + '/like');
-        var res = result.res;
-        var data = result.data;
-        if (!res.ok) {
-            toastError(data.error || '操作失败');
-            return;
-        }
-        var target = findCommentNode(currentPost && currentPost.comments, cid);
-        if (target) {
-            target.is_liked = !!data.liked;
-            target.likes_count = Number(data.likes_count || 0);
-            scheduleCommentsRender(currentPost);
-        }
-    }
-
-    function loadMoreComments() {
-        var total = getProcessedComments(currentPost).length;
-        if (!total) return;
-        visibleCommentCount = Math.min(total, visibleCommentCount + COMMENT_BATCH_SIZE);
-        scheduleCommentsRender(currentPost);
-    }
-
-    function changeCommentSort(mode) {
-        var nextMode = mode === 'hot' ? 'hot' : 'latest';
-        if (commentSortMode === nextMode) return;
-        commentSortMode = nextMode;
-        resetCommentVisibility(currentPost);
-        scheduleCommentsRender(currentPost);
-    }
-
-    function toggleAuthorCommentsOnly() {
-        showAuthorCommentsOnly = !showAuthorCommentsOnly;
-        resetCommentVisibility(currentPost);
-        scheduleCommentsRender(currentPost);
     }
 
     async function adminDeletePost() {
@@ -626,149 +347,23 @@
     }
 
     function bindCommentListEvents() {
-        if (!body) return;
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="reply"]'), function (btn) {
-            btn.addEventListener('click', function () {
-                var pid = Number(btn.getAttribute('data-parent-id'));
-                var nick = btn.getAttribute('data-nickname') || '匿名';
-                setReply(pid, nick);
-            });
+        if (!postComments || !commentsState || !currentPost) return;
+        postComments.bindListEvents(commentsState, currentPost, {
+            body: body,
+            apiBase: API_BASE,
+            postId: postId,
+            requireLogin: requireLogin,
+            requestJson: requestJson,
+            toastError: toastError,
+            renderHooks: {
+                bindEvents: bindCommentListEvents
+            }
         });
-        Array.prototype.forEach.call(body.querySelectorAll('#inlineReplyInput'), function (input) {
-            input.addEventListener('input', function () {
-                replyDraftText = input.value || '';
-            });
-            input.addEventListener('keydown', function (evt) {
-                if (evt.key === 'Enter' && !evt.shiftKey) {
-                    evt.preventDefault();
-                    submitComment();
-                }
-            });
-        });
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="like-comment"]'), function (btn) {
-            btn.addEventListener('click', function () {
-                likeComment(btn.getAttribute('data-comment-id'));
-            });
-        });
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="toggle-replies"]'), function (btn) {
-            btn.addEventListener('click', function () {
-                var targetId = btn.getAttribute('data-target-id') || '';
-                if (!targetId) return;
-                var thread = document.getElementById(targetId);
-                if (!thread) return;
-                var nextHidden = !thread.hidden;
-                thread.hidden = nextHidden;
-                btn.setAttribute('aria-expanded', String(!nextHidden));
-                btn.textContent = nextHidden
-                    ? (btn.getAttribute('data-collapsed-label') || '展开回复')
-                    : (btn.getAttribute('data-expanded-label') || '收起回复');
-            });
-        });
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="sort-comments"]'), function (btn) {
-            btn.addEventListener('click', function () {
-                changeCommentSort(btn.getAttribute('data-sort-mode'));
-            });
-        });
-        Array.prototype.forEach.call(body.querySelectorAll('[data-action="toggle-author-comments"]'), function (btn) {
-            btn.addEventListener('click', toggleAuthorCommentsOnly);
-        });
-    }
-
-    function ensureImageLightbox() {
-        var existing = document.getElementById('postImageLightbox');
-        if (existing) return existing;
-        var overlay = document.createElement('div');
-        overlay.id = 'postImageLightbox';
-        overlay.className = 'post-image-lightbox';
-        overlay.hidden = true;
-        overlay.innerHTML = '' +
-            '<button class="post-image-lightbox-close" type="button" aria-label="关闭看图" data-action="close-lightbox">✕</button>' +
-            '<button class="post-image-lightbox-nav prev" type="button" aria-label="上一张" data-action="prev-lightbox">‹</button>' +
-            '<div class="post-image-lightbox-stage">' +
-                '<img class="post-image-lightbox-img" alt="帖子图片预览">' +
-                '<div class="post-image-lightbox-meta" id="postImageLightboxMeta"></div>' +
-            '</div>' +
-            '<button class="post-image-lightbox-nav next" type="button" aria-label="下一张" data-action="next-lightbox">›</button>';
-        document.body.appendChild(overlay);
-        overlay.addEventListener('click', function (evt) {
-            if (evt.target === overlay) closeImageLightbox();
-        });
-        Array.prototype.forEach.call(overlay.querySelectorAll('[data-action="close-lightbox"]'), function (btn) {
-            btn.addEventListener('click', closeImageLightbox);
-        });
-        Array.prototype.forEach.call(overlay.querySelectorAll('[data-action="prev-lightbox"]'), function (btn) {
-            btn.addEventListener('click', function (evt) {
-                evt.stopPropagation();
-                shiftImageLightbox(-1);
-            });
-        });
-        Array.prototype.forEach.call(overlay.querySelectorAll('[data-action="next-lightbox"]'), function (btn) {
-            btn.addEventListener('click', function (evt) {
-                evt.stopPropagation();
-                shiftImageLightbox(1);
-            });
-        });
-        return overlay;
-    }
-
-    function renderLightboxImage() {
-        var overlay = document.getElementById('postImageLightbox');
-        if (!overlay || !lightboxItems.length) return;
-        var img = overlay.querySelector('.post-image-lightbox-img');
-        var meta = document.getElementById('postImageLightboxMeta');
-        var prevBtn = overlay.querySelector('[data-action="prev-lightbox"]');
-        var nextBtn = overlay.querySelector('[data-action="next-lightbox"]');
-        var item = lightboxItems[lightboxIndex] || {};
-        if (img) {
-            img.src = item.src || '';
-            img.alt = item.alt || '帖子图片预览';
-        }
-        if (meta) meta.textContent = lightboxItems.length > 1 ? ('第 ' + (lightboxIndex + 1) + ' / ' + lightboxItems.length + ' 张') : '点击空白处关闭';
-        if (prevBtn) prevBtn.hidden = lightboxItems.length <= 1;
-        if (nextBtn) nextBtn.hidden = lightboxItems.length <= 1;
-    }
-
-    function openImageLightbox(index) {
-        var overlay = ensureImageLightbox();
-        if (!overlay || !lightboxItems.length) return;
-        lightboxIndex = Math.max(0, Math.min(Number(index) || 0, lightboxItems.length - 1));
-        renderLightboxImage();
-        overlay.hidden = false;
-        document.body.classList.add('lightbox-open');
-    }
-
-    function closeImageLightbox() {
-        var overlay = document.getElementById('postImageLightbox');
-        if (!overlay) return;
-        overlay.hidden = true;
-        document.body.classList.remove('lightbox-open');
-    }
-
-    function shiftImageLightbox(delta) {
-        if (!lightboxItems.length) return;
-        lightboxIndex = (lightboxIndex + delta + lightboxItems.length) % lightboxItems.length;
-        renderLightboxImage();
     }
 
     function bindPostEvents() {
         if (!body) return;
-        var contentImages = body.querySelectorAll('.post-detail-content img');
-        lightboxItems = [];
-        Array.prototype.forEach.call(contentImages, function (im, idx) {
-            im.setAttribute('referrerpolicy', 'no-referrer');
-            im.loading = 'lazy';
-            im.decoding = 'async';
-            im.classList.add('post-detail-image');
-            im.setAttribute('data-lightbox-index', String(idx));
-            lightboxItems.push({
-                src: im.getAttribute('src') || '',
-                alt: im.getAttribute('alt') || ('帖子图片 ' + (idx + 1))
-            });
-            im.addEventListener('click', function (evt) {
-                evt.preventDefault();
-                openImageLightbox(idx);
-            });
-        });
+        if (postLightbox && lightboxState) postLightbox.bindContentImages(body, lightboxState);
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="like"]'), function (btn) {
             btn.addEventListener('click', likePost);
         });
@@ -782,25 +377,72 @@
             btn.addEventListener('click', reportPost);
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="comment"]'), function (btn) {
-            btn.addEventListener('click', submitComment);
+            btn.addEventListener('click', function () {
+                if (!postComments || !commentsState) return;
+                postComments.submitComment(commentsState, currentPost, {
+                    body: body,
+                    apiBase: API_BASE,
+                    postId: postId,
+                    requireLogin: requireLogin,
+                    requestJson: requestJson,
+                    toastError: toastError,
+                    renderHooks: {
+                        bindEvents: bindCommentListEvents
+                    }
+                });
+            });
         });
         var rootCommentInput = document.getElementById('commentInput');
         if (rootCommentInput) {
             rootCommentInput.addEventListener('keydown', function (evt) {
                 if (evt.key === 'Enter' && !evt.shiftKey) {
                     evt.preventDefault();
-                    submitComment();
+                    if (!postComments || !commentsState) return;
+                    postComments.submitComment(commentsState, currentPost, {
+                        body: body,
+                        apiBase: API_BASE,
+                        postId: postId,
+                        requireLogin: requireLogin,
+                        requestJson: requestJson,
+                        toastError: toastError,
+                        renderHooks: {
+                            bindEvents: bindCommentListEvents
+                        }
+                    });
                 }
             });
         }
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="submit-inline-reply"]'), function (btn) {
-            btn.addEventListener('click', submitComment);
+            btn.addEventListener('click', function () {
+                if (!postComments || !commentsState) return;
+                postComments.submitComment(commentsState, currentPost, {
+                    body: body,
+                    apiBase: API_BASE,
+                    postId: postId,
+                    requireLogin: requireLogin,
+                    requestJson: requestJson,
+                    toastError: toastError,
+                    renderHooks: {
+                        bindEvents: bindCommentListEvents
+                    }
+                });
+            });
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="cancel-inline-reply"]'), function (btn) {
-            btn.addEventListener('click', cancelReply);
+            btn.addEventListener('click', function () {
+                if (!postComments || !commentsState) return;
+                postComments.cancelReply(commentsState, currentPost, {
+                    bindEvents: bindCommentListEvents
+                });
+            });
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="more-comments"]'), function (btn) {
-            btn.addEventListener('click', loadMoreComments);
+            btn.addEventListener('click', function () {
+                if (!postComments || !commentsState) return;
+                postComments.loadMoreComments(commentsState, currentPost, {
+                    bindEvents: bindCommentListEvents
+                });
+            });
         });
         Array.prototype.forEach.call(body.querySelectorAll('[data-action="admin-delete"]'), function (btn) {
             btn.addEventListener('click', adminDeletePost);
@@ -817,18 +459,7 @@
     }
 
     document.addEventListener('keydown', function (evt) {
-        var overlay = document.getElementById('postImageLightbox');
-        if (!overlay || overlay.hidden) return;
-        if (evt.key === 'Escape') {
-            evt.preventDefault();
-            closeImageLightbox();
-        } else if (evt.key === 'ArrowLeft') {
-            evt.preventDefault();
-            shiftImageLightbox(-1);
-        } else if (evt.key === 'ArrowRight') {
-            evt.preventDefault();
-            shiftImageLightbox(1);
-        }
+        if (postLightbox && lightboxState) postLightbox.handleKeydown(lightboxState, evt);
     });
 
     async function loadPost() {
