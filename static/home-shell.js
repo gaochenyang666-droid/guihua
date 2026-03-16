@@ -153,7 +153,7 @@
                         }
                         return;
                     }
-                    var targetParent = mobileUtilityMount || leftSidebarEl;
+                    var targetParent = leftSidebarEl || mobileUtilityMount;
                     if (!targetParent) return;
                     if (mobileUtilityHost.parentElement !== targetParent) {
                         targetParent.appendChild(mobileUtilityHost);
