@@ -30,61 +30,7 @@
         <div id="postsArea" class="post-list"></div>
     </div>
 
-    <!-- Edit Profile Modal -->
-    <div class="modal-overlay" id="editProfileModal">
-        <div class="modal glass">
-            <div class="modal-header">
-                <h3>✏️ 编辑资料</h3>
-                <button class="modal-close" onclick="EditProfile.close()">&times;</button>
-            </div>
-            <div class="form-group" style="text-align: center;">
-                <div id="previewAvatar" class="avatar-lg" style="margin: 0 auto 1rem auto;">👻</div>
-                <button class="btn btn-ghost btn-sm" onclick="EditProfile.randomizeAvatar()">🎲 随机生成鬼魂头像</button>
-            </div>
-            <div class="form-group">
-                <label class="form-label">昵称</label>
-                <input type="text" class="form-input" id="editNickname" maxlength="50">
-            </div>
-            <div class="form-group">
-                <label class="form-label">个人简介</label>
-                <textarea class="form-input" id="editBio" maxlength="500" placeholder="写点什么..."></textarea>
-            </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="EditProfile.save()">保存修改</button>
-        </div>
-    </div>
-
-    <!-- Change Password Modal (logged-in, Web2 only) -->
-    <div class="modal-overlay" id="changePasswordModal" onclick="EditProfile.closeChangePassword()">
-        <div class="modal glass" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h3>🔒 修改密码</h3>
-                <button class="modal-close" onclick="EditProfile.closeChangePassword()">&times;</button>
-            </div>
-            <div class="form-group">
-                <label class="form-label">当前密码</label>
-                <input type="password" class="form-input" id="cpOldPasswordIn" placeholder="当前密码">
-            </div>
-            <div class="form-group">
-                <label class="form-label">新密码</label>
-                <input type="password" class="form-input" id="cpNewPasswordIn" placeholder="新密码">
-            </div>
-            <div class="form-group">
-                <label class="form-label">确认新密码</label>
-                <input type="password" class="form-input" id="cpConfirmPasswordIn" placeholder="再输入一次">
-            </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="EditProfile.submitChangePassword()">确认修改</button>
-        </div>
-    </div>
-
-    <div class="modal-overlay" id="achievementsModal" onclick="Achievements.closeWall()" style="align-items:flex-start; overflow-y:auto; padding:calc(var(--nav-height) + 8px) 0 12px;">
-        <div class="modal glass" style="width:min(760px, 94vw); max-width:760px; max-height: calc(100vh - var(--nav-height) - 28px); overflow: hidden; display: flex; flex-direction: column; margin:0 auto;" onclick="event.stopPropagation()">
-            <div class="modal-header">
-                <h3>🏆 成就安装墙</h3>
-                <button class="modal-close" onclick="Achievements.closeWall()">&times;</button>
-            </div>
-            <div id="achievementsWallBody" style="overflow:auto; flex:1; padding-right:0.2rem;">加载中...</div>
-        </div>
-    </div>
+    {% include 'partials/profile_modals.html' %}
 
     <script>
         const API_BASE = window.location.origin + '/api';

@@ -141,14 +141,7 @@
         {% with subtitle='Web3' %}
         {% include 'partials/navbar_brand.html' %}
         {% endwith %}
-        
-        <div class="nav-actions">
-            <div class="user-menu" id="userMenu" style="display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                <span id="userDisplayName" style="font-size: 0.9rem;"></span>
-                <span id="userIdBadge"></span>
-                <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
-            </div>
-        </div>
+        {% include 'partials/studio_user_menu.html' %}
     </nav>
 
     <!-- Main Content -->

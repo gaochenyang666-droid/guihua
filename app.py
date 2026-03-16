@@ -116,70 +116,45 @@ _pending_wallet_nonce_redis_prefix = 'auth:pending_wallet_nonce:'
 
 
 def _prune_pending_wallet_nonces(now=None):
-    now = now or datetime.utcnow()
-    expired_keys = [
-        k for k, v in _pending_wallet_nonces.items()
-        if not v or not v.get('created_at') or now - v['created_at'] > timedelta(minutes=WALLET_NONCE_TTL_MINUTES)
-    ]
-    for k in expired_keys:
-        _pending_wallet_nonces.pop(k, None)
+    _svc_prune_pending_wallet_nonces(_pending_wallet_nonces, WALLET_NONCE_TTL_MINUTES, now=now)
 
 
 def _pending_wallet_nonce_redis_key(address):
-    return f"{_pending_wallet_nonce_redis_prefix}{str(address or '').lower()}"
+    return _svc_pending_wallet_nonce_redis_key(_pending_wallet_nonce_redis_prefix, address)
 
 
 def _set_pending_wallet_nonce(address, nonce, created_at=None):
-    created_at = created_at or datetime.utcnow()
     redis_conn = _get_redis_client()
-    payload = {
-        'nonce': str(nonce or ''),
-        'created_at': created_at.isoformat()
-    }
-    if redis_conn:
-        try:
-            redis_conn.set(
-                _pending_wallet_nonce_redis_key(address),
-                json.dumps(payload, ensure_ascii=False),
-                ex=max(60, WALLET_NONCE_TTL_MINUTES * 60)
-            )
-            return
-        except Exception:
-            pass
-    _pending_wallet_nonces[str(address or '').lower()] = {
-        'nonce': payload['nonce'],
-        'created_at': created_at
-    }
+    return _svc_set_pending_wallet_nonce(
+        _pending_wallet_nonces,
+        redis_conn,
+        _pending_wallet_nonce_redis_key(address),
+        WALLET_NONCE_TTL_MINUTES,
+        address,
+        nonce,
+        created_at=created_at,
+    )
 
 
 def _get_pending_wallet_nonce(address):
-    addr = str(address or '').lower()
     redis_conn = _get_redis_client()
-    if redis_conn:
-        try:
-            raw = redis_conn.get(_pending_wallet_nonce_redis_key(addr))
-            if raw:
-                text = raw.decode('utf-8') if isinstance(raw, (bytes, bytearray)) else str(raw)
-                obj = json.loads(text) if text and text.startswith('{') else {'nonce': text}
-                created_at = _parse_iso_datetime(obj.get('created_at')) if obj.get('created_at') else None
-                return {
-                    'nonce': obj.get('nonce'),
-                    'created_at': created_at
-                }
-        except Exception:
-            pass
-    return _pending_wallet_nonces.get(addr)
+    return _svc_get_pending_wallet_nonce(
+        _pending_wallet_nonces,
+        redis_conn,
+        _pending_wallet_nonce_redis_key(address),
+        address,
+        _parse_iso_datetime,
+    )
 
 
 def _delete_pending_wallet_nonce(address):
-    addr = str(address or '').lower()
     redis_conn = _get_redis_client()
-    if redis_conn:
-        try:
-            redis_conn.delete(_pending_wallet_nonce_redis_key(addr))
-        except Exception:
-            pass
-    _pending_wallet_nonces.pop(addr, None)
+    return _svc_delete_pending_wallet_nonce(
+        _pending_wallet_nonces,
+        redis_conn,
+        _pending_wallet_nonce_redis_key(address),
+        address,
+    )
 
 from extensions import db
 db.init_app(app)
@@ -228,6 +203,21 @@ from services.site_settings import (
     set_setting_value as _svc_set_setting_value,
     get_group_link_urls as _svc_get_group_link_urls,
     validate_group_link_urls as _svc_validate_group_link_urls,
+)
+from services.runtime_state import (
+    prune_pending_wallet_nonces as _svc_prune_pending_wallet_nonces,
+    pending_wallet_nonce_redis_key as _svc_pending_wallet_nonce_redis_key,
+    set_pending_wallet_nonce as _svc_set_pending_wallet_nonce,
+    get_pending_wallet_nonce as _svc_get_pending_wallet_nonce,
+    delete_pending_wallet_nonce as _svc_delete_pending_wallet_nonce,
+    allow_view_count_increment as _svc_allow_view_count_increment,
+)
+from services.startup_tasks import (
+    ensure_bootstrap_admin as _svc_ensure_bootstrap_admin,
+    seed_default_article as _svc_seed_default_article,
+    ensure_table as _svc_ensure_table,
+    check_receive_address as _svc_check_receive_address,
+    should_run_init_db as _svc_should_run_init_db,
 )
 
 
@@ -401,12 +391,12 @@ def get_nonce():
         return jsonify({'error': '请求过于频繁'}), 429
     _prune_pending_wallet_nonces()
     address = request.args.get('address')
-    if not address: return jsonify({'error': 'Missing address'}), 400
+    if not address: return jsonify({'error': '缺少钱包地址'}), 400
     
     try:
         address = Web3.to_checksum_address(address)
     except (ValueError, AttributeError):
-        return jsonify({'error': 'Invalid address format'}), 400
+        return jsonify({'error': '钱包地址格式无效'}), 400
 
     user = User.query.filter_by(address=address).first()
     if user:
@@ -427,7 +417,7 @@ def verify_signature():
     _prune_pending_wallet_nonces()
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'Invalid or empty JSON'}), 400
+        return jsonify({'error': '请求体为空或 JSON 格式无效'}), 400
     address = data.get('address')
     signature = data.get('signature')
     message = data.get('message')
@@ -435,7 +425,7 @@ def verify_signature():
     try:
         address = Web3.to_checksum_address(address)
     except (ValueError, AttributeError):
-        return jsonify({'error': 'Invalid address format'}), 400
+        return jsonify({'error': '钱包地址格式无效'}), 400
     
     # In production, verify signature here using web3
     from eth_account.messages import encode_defunct
@@ -453,12 +443,12 @@ def verify_signature():
             nonce_value = pending.get('nonce')
             nonce_created_at = pending.get('created_at')
         if not nonce_value:
-            return jsonify({'error': 'Nonce not found, please request again'}), 401
+            return jsonify({'error': '签名挑战已失效，请重新获取'}), 401
 
     # Check nonce expiration
     if not nonce_created_at or datetime.utcnow() - nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
         _delete_pending_wallet_nonce(address)
-        return jsonify({'error': 'Nonce expired, please sign again'}), 401
+        return jsonify({'error': '签名挑战已过期，请重新签名'}), 401
 
     # 严格全文本匹配，防止假站用同一 nonce 骗用户签名后到本站登录
     # 支持两种格式：旧版 "Sign this message to login: {nonce}"，新版 "Sign this message to login to {host}: {nonce}"
@@ -471,17 +461,17 @@ def verify_signature():
         or (msg_stripped.startswith(expected_new_prefix) and msg_stripped.endswith(expected_new_suffix))
     )
     if not valid:
-        return jsonify({'error': 'Message does not match expected format'}), 400
+        return jsonify({'error': '签名消息格式不匹配'}), 400
 
     try:
         msg = encode_defunct(text=message)
         recovered_address = Account.recover_message(msg, signature=signature)
         
         if recovered_address.lower() != address.lower():
-             return jsonify({'error': 'Invalid signature'}), 401
+             return jsonify({'error': '签名无效'}), 401
     except Exception as e:
         print(f"Verify Error: {e}")
-        return jsonify({'error': 'Verification failed'}), 400
+        return jsonify({'error': '签名校验失败'}), 400
     
     # 首次验签成功才建号，并轮换 nonce 防重放
     if not user:
@@ -492,7 +482,7 @@ def verify_signature():
             db.session.commit()
         except Exception:
             db.session.rollback()
-            return jsonify({'error': 'Failed to create user, please retry'}), 500
+            return jsonify({'error': '创建用户失败，请稍后重试'}), 500
         finally:
             _delete_pending_wallet_nonce(address)
     else:
@@ -533,7 +523,7 @@ def register():
         except Exception as e:
             db.session.rollback()
             print(f"Register Error: {e}")
-            return jsonify({'error': 'Registration failed'}), 500
+        return jsonify({'error': '注册失败，请稍后重试'}), 500
         
         token = jwt.encode({
             'user_id': user.id,
@@ -543,7 +533,7 @@ def register():
         return jsonify({'token': token, 'user': user.to_dict()}), 201
     except Exception as e:
         print(f"Register Error: {e}")
-        return jsonify({'error': 'Registration failed'}), 500
+        return jsonify({'error': '注册失败，请稍后重试'}), 500
 
 @app.route('/api/auth/web2/login', methods=['POST'])
 def login():
@@ -551,7 +541,7 @@ def login():
         return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'Invalid or empty JSON'}), 400
+        return jsonify({'error': '请求体为空或 JSON 格式无效'}), 400
     username = (data.get('username') or '').strip()
     password = data.get('password')
     if not username:
@@ -586,7 +576,7 @@ def change_password_no_login():
         return jsonify({'error': '请求过于频繁，请稍后再试'}), 429
     data = request.get_json(silent=True) or {}
     if not data:
-        return jsonify({'error': 'Missing data'}), 400
+        return jsonify({'error': '缺少请求数据'}), 400
     username = data.get('username')
     old_password = data.get('old_password')
     new_password = data.get('new_password')
@@ -836,16 +826,16 @@ def bind_wallet():
     # Check if address already used by other account
     existing_user = User.query.filter_by(address=address).first()
     if existing_user and existing_user.id != g.current_user.id:
-        return jsonify({'error': 'Address already bound to another account'}), 400
+        return jsonify({'error': '该钱包已绑定到其他账号'}), 400
 
     # 绑定签名必须带当前登录用户 nonce，且 5 分钟内有效，防重放
     if not g.current_user.nonce_created_at or datetime.utcnow() - g.current_user.nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
-        return jsonify({'error': 'Nonce expired, please request a new bind nonce'}), 401
+        return jsonify({'error': '绑定挑战已过期，请重新获取'}), 401
     msg_stripped = (message or '').strip()
     expected_legacy = f"Bind wallet {address} to user {g.current_user.username}. Nonce: {g.current_user.nonce}"
     expected_new = f"Bind wallet {address} to account {g.current_user.id} on {request.host}: {g.current_user.nonce}"
     if msg_stripped not in (expected_legacy, expected_new):
-        return jsonify({'error': 'Message does not match expected bind format'}), 400
+        return jsonify({'error': '绑定签名消息格式不匹配'}), 400
         
     # Verify signature
     from eth_account.messages import encode_defunct
@@ -856,16 +846,16 @@ def bind_wallet():
         recovered_address = Account.recover_message(msg, signature=signature)
         
         if Web3.to_checksum_address(recovered_address) != address:
-             return jsonify({'error': 'Invalid signature'}), 401
+             return jsonify({'error': '签名无效'}), 401
     except Exception as e:
         print(f"Verify Error: {e}")
-        return jsonify({'error': 'Verification failed'}), 400
+        return jsonify({'error': '签名校验失败'}), 400
         
     g.current_user.address = address
     g.current_user.refresh_nonce()
     db.session.commit()
     
-    return jsonify({'message': 'Wallet bound successfully', 'user': g.current_user.to_dict()})
+    return jsonify({'message': '钱包绑定成功', 'user': g.current_user.to_dict()})
 
 @app.route('/api/user/bind_wallet/nonce', methods=['GET'])
 @token_required
@@ -879,7 +869,7 @@ def get_bind_wallet_nonce():
 def get_fees():
     receive_address = app.config['BSC']['RECEIVE_ADDRESS']
     if not receive_address:
-        return jsonify({'error': 'Platform receive address not configured'}), 503
+        return jsonify({'error': '平台收款地址未配置'}), 503
     fee_raw = get_post_fee_usdt_raw()
     decimals = app.config['BSC']['USDT_DECIMALS']
     fee_usdt = round(fee_raw / (10 ** decimals), 4)
@@ -1038,7 +1028,7 @@ def list_public_announcements():
 def search_posts():
     q = request.args.get('q', '').strip()
     if len(q) > 200:
-        return jsonify({'error': 'Search query too long', 'posts': []}), 400
+        return jsonify({'error': '搜索关键词过长', 'posts': []}), 400
     page = max(1, request.args.get('page', 1, type=int))
     per_page = min(max(1, request.args.get('per_page', 20, type=int)), 50)
     from_date_raw = (request.args.get('from_date') or '').strip()
@@ -1094,7 +1084,7 @@ def search_posts():
 def check_tx_status():
     tx_hash = request.args.get('tx_hash')
     if not tx_hash:
-        return jsonify({'error': 'Missing tx_hash'}), 400
+        return jsonify({'error': '缺少交易哈希'}), 400
         
     # Check if it exists in Post (Published successfully)
     post = Post.query.filter_by(tx_hash=tx_hash).first()
@@ -1107,7 +1097,7 @@ def check_tx_status():
 @token_required
 def admin_stats():
     if not g.current_user.is_admin:
-        return jsonify({'error': 'Admin only'}), 403
+        return jsonify({'error': '仅管理员可操作'}), 403
         
     # Stats
     total_users = User.query.count()
@@ -1146,7 +1136,7 @@ def admin_stats():
 def get_user_profile(username):
     token = (username or '').strip()
     if not token:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': '用户不存在'}), 404
 
     user = None
     if token.isdigit():
@@ -1161,7 +1151,7 @@ def get_user_profile(username):
     if not user:
         user = User.query.filter(func.lower(User.nickname) == token.lower()).first()
     if not user:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': '用户不存在'}), 404
         
     payload = _get_optional_jwt_payload()
     current_user_id = payload.get('user_id') if payload else None
@@ -1695,35 +1685,29 @@ _view_count_fallback_warned = False
 
 def _prune_view_count_keys(now):
     global _view_count_key
-    expired = [k for k, t in _view_count_key.items() if now - t >= _view_count_ttl]
-    for k in expired:
-        _view_count_key.pop(k, None)
+    # 兼容旧调用点；实际逻辑已收口到 services.runtime_state。
+    _ = now
+    return None
 
 
 def _allow_view_count_increment(post_id, ip):
     redis_conn = _get_redis_client()
-    if redis_conn:
-        key = f"view:{post_id}:{ip}"
-        try:
-            ok = redis_conn.set(key, '1', ex=_view_count_ttl, nx=True)
-            return bool(ok)
-        except Exception:
-            pass
-    # Fallback 仅在单进程下有效；多 worker 生产环境建议启用 Redis。
     global _view_count_fallback_warned
-    if not _view_count_fallback_warned:
-        _view_count_fallback_warned = True
+    allowed, warned, warn_message = _svc_allow_view_count_increment(
+        _view_count_key,
+        redis_conn,
+        _view_count_ttl,
+        post_id,
+        ip,
+        fallback_warned=_view_count_fallback_warned,
+    )
+    _view_count_fallback_warned = warned
+    if warn_message:
         try:
-            print('[ViewCount] Redis unavailable, fallback is process-local and may overcount under multi-worker.')
+            print(warn_message)
         except Exception:
             pass
-    now = time.time()
-    key = f"{post_id}:{ip}"
-    _prune_view_count_keys(now)
-    if key in _view_count_key and now - _view_count_key[key] < _view_count_ttl:
-        return False
-    _view_count_key[key] = now
-    return True
+    return allowed
 
 @app.route('/api/posts/<int:post_id>', methods=['GET'])
 def get_post_detail(post_id):
@@ -1802,7 +1786,7 @@ def get_post_detail(post_id):
         return jsonify(post_data)
     except Exception as e:
         print(f"Post Detail Error: {e}")
-        return jsonify({'error': 'Failed to load post'}), 500
+        return jsonify({'error': '加载帖子失败，请稍后重试'}), 500
 
 @app.route('/api/posts/<int:post_id>/sync-arweave', methods=['POST'])
 @token_required
@@ -1909,7 +1893,7 @@ def add_comment(post_id):
         return jsonify({'error': '评论过于频繁，请稍后再试'}), 429
     post = Post.query.get_or_404(post_id)
     if not post.allow_comments and not g.current_user.is_admin:
-        return jsonify({'error': 'Comments are closed for this post'}), 403
+        return jsonify({'error': '这篇帖子已关闭评论'}), 403
 
     data = request.get_json(silent=True) or {}
     if not data:
@@ -2607,71 +2591,12 @@ def _load_seed_article_content():
 
 def _ensure_bootstrap_admin():
     """Ensure there is at least one admin. Create one only when env vars are provided."""
-    admin = User.query.filter_by(is_admin=True).first()
-    if admin:
-        return admin
-
-    bootstrap_username = (os.environ.get('BOOTSTRAP_ADMIN_USERNAME') or '').strip()
-    bootstrap_password = (os.environ.get('BOOTSTRAP_ADMIN_PASSWORD') or '').strip()
-    if not bootstrap_username or not bootstrap_password:
-        print("Skip bootstrap admin: set BOOTSTRAP_ADMIN_USERNAME and BOOTSTRAP_ADMIN_PASSWORD to enable.")
-        return None
-
-    existing = User.query.filter_by(username=bootstrap_username).first()
-    if existing:
-        existing.is_admin = True
-        if not existing.password_hash:
-            existing.set_password(bootstrap_password)
-        admin = existing
-    else:
-        admin = _new_user(
-            username=bootstrap_username,
-            nickname=bootstrap_username,
-            is_admin=True,
-            avatar='👺'
-        )
-        admin.set_password(bootstrap_password)
-        db.session.add(admin)
-    try:
-        db.session.commit()
-        print(f"Bootstrap admin ensured: {bootstrap_username}")
-        return admin
-    except Exception as e:
-        db.session.rollback()
-        print(f"Init Data Error (bootstrap admin): {e}")
-        return None
+    return _svc_ensure_bootstrap_admin(User, db.session, _new_user)
 
 
 def _seed_default_article(admin_id):
     """Seed one default article for first-time setup."""
-    title = '甘肃“再生人”华先生访问记'
-    try:
-        existing = Post.query.filter(Post.title.ilike('%华先生访问记%')).first()
-    except Exception as e:
-        print(f"Init DB: seed post check failed: {e}")
-        return
-    if existing or not admin_id:
-        return
-
-    content = _load_seed_article_content()
-    if not content:
-        print("Init DB: seed content missing, skip article creation.")
-        return
-
-    try:
-        post = Post(
-            title=title,
-            content=content,
-            cover_image=None,
-            author_id=admin_id,
-            is_paid=True
-        )
-        db.session.add(post)
-        db.session.commit()
-        print("Article created.")
-    except Exception as e:
-        db.session.rollback()
-        print(f"Init DB: seed article insert failed: {e}")
+    return _svc_seed_default_article(Post, db.session, admin_id, _load_seed_article_content)
 
 
 def init_db_data():
@@ -2816,18 +2741,12 @@ def _ensure_users_checkin_columns():
 
 def _ensure_checkin_logs_table():
     """启动时确保签到日志表存在（create_all 对历史库补表）。"""
-    try:
-        CheckinLog.__table__.create(db.engine, checkfirst=True)
-    except Exception as e:
-        print(f'[Startup] checkin_logs table skip: {e}')
+    return _svc_ensure_table(CheckinLog.__table__, db.engine, 'checkin_logs table')
 
 
 def _ensure_app_settings_table():
     """启动时确保站点配置表存在。"""
-    try:
-        AppSetting.__table__.create(db.engine, checkfirst=True)
-    except Exception as e:
-        print(f'[Startup] app_settings table skip: {e}')
+    return _svc_ensure_table(AppSetting.__table__, db.engine, 'app_settings table')
 
 def _ensure_posts_tx_nullable():
     """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
@@ -3124,27 +3043,16 @@ def _ensure_announcements_columns():
 
 def _ensure_series_tables():
     """启动时确保系列表存在。"""
-    try:
-        Series.__table__.create(db.engine, checkfirst=True)
-        SeriesPost.__table__.create(db.engine, checkfirst=True)
-    except Exception as e:
-        print(f'[Startup] series tables skip: {e}')
+    _svc_ensure_table(Series.__table__, db.engine, 'series table')
+    _svc_ensure_table(SeriesPost.__table__, db.engine, 'series_post table')
 
 def _check_receive_address():
     """启动时检查：未配置 RECEIVE_ADDRESS 时打印明确错误提示（发帖费与站长赞赏需要）。"""
-    addr = app.config.get('BSC', {}).get('RECEIVE_ADDRESS')
-    if not addr or not str(addr).strip():
-        print('=' * 60)
-        print('ERROR: RECEIVE_ADDRESS is not set or empty.')
-        print('  Set RECEIVE_ADDRESS in .env (or environment) to enable:')
-        print('  - Post fee collection')
-        print('  - Donate to platform')
-        print('  Example: RECEIVE_ADDRESS=0xYourBSCWalletAddress')
-        print('=' * 60)
+    return _svc_check_receive_address(app.config.get('BSC', {}).get('RECEIVE_ADDRESS'))
 
 # 仅当设置 ALLOW_INIT_DB=true 时执行种子数据（避免每次重启都插测试文章；需造数时在 Render 临时加该环境变量）
 def _should_run_init_db():
-    return os.environ.get('ALLOW_INIT_DB', '').strip().lower() in ('true', '1', 'yes')
+    return _svc_should_run_init_db()
 
 
 def _run_startup_tasks():
