@@ -120,7 +120,7 @@
                         <p class="onboarding-progress-label">完成进度 <span id="onboardingProgress">0/0</span></p>
                     </div>
                     <div class="onboarding-right">
-                        <button class="onboarding-close-btn" id="onboardingCloseBtn" type="button" onclick="if(window.Onboarding&&window.Onboarding.dismiss){window.Onboarding.dismiss();}return false;">✕</button>
+                        <button class="onboarding-close-btn" id="onboardingCloseBtn" type="button" data-action="onboarding-dismiss" aria-label="关闭">✕</button>
                         <div class="onboarding-ring" id="onboardingRing">
                             <span id="onboardingPercent">0%</span>
                         </div>
@@ -153,7 +153,7 @@
             <div id="mobileUtilityMount"></div>
         </main>
 
-        <aside class="sidebar sidebar-right" id="rightSidebar">
+        <aside class="sidebar sidebar-right utility-tier" id="rightSidebar">
             <div class="mobile-utility-host" id="mobileUtilityHost">
                 <div class="mobile-utility-stack" id="mobileUtilityStack">
             <div class="sidebar-card glass checkin-card utility-accordion-card" id="checkinCard" data-utility-key="checkin" hidden>
@@ -185,7 +185,7 @@
                     </div>
                     <div class="checkin-progress"><span id="checkinProgressBar"></span></div>
                     <div class="checkin-actions">
-                        <button class="btn btn-ghost btn-sm" id="checkinBtn" type="button" onclick="Checkin.sign()">立即签到</button>
+                        <button class="btn btn-ghost btn-sm" id="checkinBtn" type="button" data-action="checkin-sign">立即签到</button>
                         <span class="checkin-tip" id="checkinTip">经验规则：连续第 N 天 = min(12, N*2)，每 3 天额外 +3</span>
                     </div>
                 </div>
@@ -247,11 +247,11 @@
     </div>
 
     <!-- Login/Register Modal -->
-    <div class="modal-overlay" id="loginModal" onclick="Modal.close('loginModal')">
-        <div class="modal glass" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="loginModal" data-dismiss="loginModal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+        <div class="modal glass">
             <div class="modal-header">
-                <h3>🚪 入境方式 </h3>
-                <button class="modal-close" onclick="Modal.close('loginModal')">&times;</button>
+                <h3 id="loginModalTitle">🚪 入境方式</h3>
+                <button class="modal-close" type="button" data-dismiss="loginModal" aria-label="关闭">&times;</button>
             </div>
             
             <div id="authForms">
@@ -271,16 +271,16 @@
                         <div class="auth-divider">
                             <span>或</span>
                         </div>
-                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" onclick="Auth.openWalletSelector()">
+                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" data-action="auth-open-wallet">
                             <i class="fas fa-wallet"></i> 钱包登录（多种钱包）
                         </button>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">支持 Binance Wallet、MetaMask、WalletConnect 扫码</p>
                         <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
 
                         <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                            <a href="#" onclick="Auth.toggleForm('register'); return false;" style="color: var(--accent-purple);">没有账号？点击注册</a>
+                            <a href="#" data-action="auth-toggle" data-mode="register" style="color: var(--accent-purple);">没有账号？点击注册</a>
                             <span style="color: var(--text-muted);"> · </span>
-                            <a href="#" onclick="Auth.toggleForm('changePassword'); return false;" style="color: var(--accent-purple);">找回密码</a>
+                            <a href="#" data-action="auth-toggle" data-mode="changePassword" style="color: var(--accent-purple);">找回密码</a>
                         </div>
                     </form>
                 </div>
@@ -295,9 +295,9 @@
                         <label class="form-label">密码（至少 6 位）</label>
                         <input type="password" class="form-input" id="regPassword" placeholder="至少6位" minlength="6" required />
                     </div>
-                    <button class="btn btn-primary" style="width: 100%;" onclick="Auth.register()">立即签约</button>
+                    <button class="btn btn-primary" style="width: 100%;" type="button" data-action="auth-register">立即签约</button>
                     <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                        <a href="#" onclick="Auth.toggleForm('login'); return false;" style="color: var(--text-secondary);">返回登录</a>
+                        <a href="#" data-action="auth-toggle" data-mode="login" style="color: var(--text-secondary);">返回登录</a>
                     </div>
                 </div>
 
@@ -319,9 +319,9 @@
                         <label class="form-label">确认新密码</label>
                         <input type="password" class="form-input" id="cpConfirmPassword" placeholder="再输入一次新密码" />
                     </div>
-                    <button type="button" class="btn btn-primary" style="width: 100%;" onclick="Auth.changePassword()">确认修改密码</button>
+                    <button type="button" class="btn btn-primary" style="width: 100%;" data-action="auth-change-password">确认修改密码</button>
                     <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                        <a href="#" onclick="Auth.toggleForm('login'); return false;" style="color: var(--text-secondary);">返回登录</a>
+                        <a href="#" data-action="auth-toggle" data-mode="login" style="color: var(--text-secondary);">返回登录</a>
                     </div>
                 </div>
             </div>
@@ -329,11 +329,11 @@
     </div>
 
     <!-- Wallet Selector Modal -->
-    <div class="modal-overlay" id="walletSelectModal" onclick="Modal.close('walletSelectModal')">
-        <div class="modal glass wallet-select-modal" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="walletSelectModal" data-dismiss="walletSelectModal" role="dialog" aria-modal="true">
+        <div class="modal glass wallet-select-modal">
             <div class="modal-header">
                 <h3>连接钱包</h3>
-                <button class="modal-close" onclick="Modal.close('walletSelectModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="walletSelectModal" aria-label="关闭">&times;</button>
             </div>
             <div id="walletSelectList"></div>
             <div id="walletSelectQr" class="wallet-select-qr" style="display:none;"></div>
@@ -341,11 +341,11 @@
     </div>
 
     <!-- Admin Stats Modal -->
-    <div class="modal-overlay" id="adminStatsModal" onclick="Modal.close('adminStatsModal')">
-        <div class="modal glass" style="max-width: 600px;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="adminStatsModal" data-dismiss="adminStatsModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width: 600px;">
             <div class="modal-header">
                 <h3>📊 财富看板 (Admin)</h3>
-                <button class="modal-close" onclick="Modal.close('adminStatsModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="adminStatsModal" aria-label="关闭">&times;</button>
             </div>
             <div id="adminStatsBody" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                 <!-- Stats loaded here -->
@@ -354,78 +354,78 @@
     </div>
 
     <!-- Admin Reports Modal -->
-    <div class="modal-overlay" id="adminReportsModal" onclick="Modal.close('adminReportsModal')">
-        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="adminReportsModal" data-dismiss="adminReportsModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
             <div class="modal-header">
                 <h3>🚩 举报列表</h3>
-                <button class="modal-close" onclick="Modal.close('adminReportsModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="adminReportsModal" aria-label="关闭">&times;</button>
             </div>
             <div id="adminReportsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
         </div>
     </div>
 
     <!-- Admin Users Modal -->
-    <div class="modal-overlay" id="adminUsersModal" onclick="Modal.close('adminUsersModal')">
-        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="adminUsersModal" data-dismiss="adminUsersModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
             <div class="modal-header">
                 <h3>👥 用户列表</h3>
-                <button class="modal-close" onclick="Modal.close('adminUsersModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="adminUsersModal" aria-label="关闭">&times;</button>
             </div>
             <div id="adminUsersBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
         </div>
     </div>
 
     <!-- Admin Announcements Modal -->
-    <div class="modal-overlay" id="adminAnnouncementsModal" onclick="Modal.close('adminAnnouncementsModal')">
-        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="adminAnnouncementsModal" data-dismiss="adminAnnouncementsModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
             <div class="modal-header">
                 <h3>📣 公告管理</h3>
-                <button class="modal-close" onclick="Modal.close('adminAnnouncementsModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="adminAnnouncementsModal" aria-label="关闭">&times;</button>
             </div>
             <div style="padding: 0 1rem 0.8rem;">
-                <button class="btn btn-primary btn-sm" onclick="Admin.createAnnouncement()">新增公告</button>
+                <button class="btn btn-primary btn-sm" type="button" id="adminCreateAnnouncementBtn">新增公告</button>
             </div>
             <div id="adminAnnouncementsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
         </div>
     </div>
 
     <!-- Admin Audit Modal -->
-    <div class="modal-overlay" id="adminAuditModal" onclick="Modal.close('adminAuditModal')">
-        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="adminAuditModal" data-dismiss="adminAuditModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
             <div class="modal-header">
                 <h3>🧾 管理审计日志</h3>
-                <button class="modal-close" onclick="Modal.close('adminAuditModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="adminAuditModal" aria-label="关闭">&times;</button>
             </div>
             <div id="adminAuditBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
         </div>
     </div>
 
-    <div class="modal-overlay" id="adminPendingModal" onclick="Modal.close('adminPendingModal')">
-        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="adminPendingModal" data-dismiss="adminPendingModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
             <div class="modal-header">
                 <h3>🧷 待发布补偿队列</h3>
-                <button class="modal-close" onclick="Modal.close('adminPendingModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="adminPendingModal" aria-label="关闭">&times;</button>
             </div>
             <div id="adminPendingBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
         </div>
     </div>
 
-    <div class="modal-overlay" id="adminOpsModal" onclick="Modal.close('adminOpsModal')">
-        <div class="modal glass" style="max-width: 860px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="adminOpsModal" data-dismiss="adminOpsModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width: 860px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
             <div class="modal-header">
                 <h3>🚨 运维监控</h3>
-                <button class="modal-close" onclick="Modal.close('adminOpsModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="adminOpsModal" aria-label="关闭">&times;</button>
             </div>
             <div id="adminOpsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
         </div>
     </div>
 
     <!-- Notifications Modal -->
-    <div class="modal-overlay" id="notificationModal" onclick="Modal.close('notificationModal')">
-        <div class="modal glass" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="notificationModal" data-dismiss="notificationModal" role="dialog" aria-modal="true">
+        <div class="modal glass">
             <div class="modal-header">
                 <h3>🔔 通知</h3>
-                <button class="modal-close" onclick="Modal.close('notificationModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="notificationModal" aria-label="关闭">&times;</button>
             </div>
             <div style="display:flex; justify-content:space-between; margin-bottom:1rem; align-items:center;">
                 <span style="font-size:0.8rem; color:var(--text-secondary);">最近收到的消息</span>
@@ -438,11 +438,11 @@
     </div>
 
     <!-- Donate Modal -->
-    <div class="modal-overlay" id="donateModal" onclick="Modal.close('donateModal')">
-        <div class="modal glass" style="text-align: center;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="donateModal" data-dismiss="donateModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="text-align: center;">
             <div class="modal-header">
                 <h3>☕ 赞赏站长</h3>
-                <button class="modal-close" onclick="Modal.close('donateModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="donateModal" aria-label="关闭">&times;</button>
             </div>
             <div style="font-size: 3rem; margin-bottom: 1rem;">🙏</div>
             <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
@@ -454,31 +454,31 @@
                 <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC USDT)</p>
                 <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
                     <code style="color: var(--accent-purple); word-break: break-all;" id="donateAddress">—</code>
-                    <button class="btn btn-ghost" onclick="var a=document.getElementById('donateAddress').textContent; if(!a || a==='—' || a.trim()==='') { Toast.error('请等待地址加载'); } else { navigator.clipboard.writeText(a).then(function(){ Toast.success('已复制'); }); }" style="padding: 0.2rem 0.5rem;">📋</button>
+                    <button class="btn btn-ghost" type="button" data-action="donate-copy-address" style="padding: 0.2rem 0.5rem;">📋</button>
                 </div>
             </div>
             <div class="donate-amount-group">
                 <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">选择金额或自定义（USDT）</p>
                 <div style="display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; margin-bottom: 0.8rem;">
-                    <button class="btn btn-ghost" onclick="Donate.send(1)">💰 1 USDT</button>
-                    <button class="btn btn-ghost" onclick="Donate.send(5)">💰 5 USDT</button>
-                    <button class="btn btn-primary" onclick="Donate.send(10)">💎 10 USDT</button>
+                    <button class="btn btn-ghost" type="button" data-action="donate-send-preset" data-amount="1">💰 1 USDT</button>
+                    <button class="btn btn-ghost" type="button" data-action="donate-send-preset" data-amount="5">💰 5 USDT</button>
+                    <button class="btn btn-primary" type="button" data-action="donate-send-preset" data-amount="10">💎 10 USDT</button>
                 </div>
                 <div class="form-group" style="margin-bottom: 0.8rem;">
                     <label class="form-label">自定义金额 (USDT)</label>
                     <input type="number" id="donateCustomAmount" class="form-input" min="0.1" step="0.1" placeholder="输入金额">
                 </div>
             </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="Donate.send(parseFloat(document.getElementById('donateCustomAmount').value) || 0)">确认打赏上述金额</button>
+            <button class="btn btn-primary" type="button" data-action="donate-send-custom" style="width: 100%;">确认打赏上述金额</button>
         </div>
     </div>
 
     <!-- 打赏作者模态框：USDT 直接转入作者钱包，不经过平台、无抽成 -->
-    <div class="modal-overlay" id="tipAuthorModal" onclick="Modal.close('tipAuthorModal')">
-        <div class="modal glass" style="text-align: left;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="tipAuthorModal" data-dismiss="tipAuthorModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="text-align: left;">
             <div class="modal-header">
                 <h3>💰 打赏作者</h3>
-                <button class="modal-close" onclick="Modal.close('tipAuthorModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="tipAuthorModal" aria-label="关闭">&times;</button>
             </div>
             <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.6rem;">
                 打赏将<strong style="color: var(--accent-green);">直接转入作者绑定的钱包</strong>，不经过平台、无抽成。
@@ -486,38 +486,38 @@
             <div style="margin-bottom: 1rem; padding: 0.6rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.85rem;">
                 <strong style="color: var(--text-secondary);">发帖人钱包ID：</strong>
                 <span id="tipAuthorAddressDisplay" style="word-break: break-all; color: var(--accent-green);">-</span>
-                <button type="button" class="btn btn-ghost btn-sm" id="tipAuthorCopyBtn" style="margin-left: 0.5rem; display: none;" onclick="TipAuthor.copyAddress()">复制</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="tipAuthorCopyBtn" style="margin-left: 0.5rem; display: none;" data-action="tip-author-copy">复制</button>
             </div>
             <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem;">选择金额 (USDT)</p>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.8rem;">
-                <button class="btn btn-ghost" onclick="document.getElementById('tipAmountInput').value=1; ">1 USDT</button>
-                <button class="btn btn-ghost" onclick="document.getElementById('tipAmountInput').value=5;">5 USDT</button>
-                <button class="btn btn-ghost" onclick="document.getElementById('tipAmountInput').value=10;">10 USDT</button>
+                <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="1">1 USDT</button>
+                <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="5">5 USDT</button>
+                <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="10">10 USDT</button>
             </div>
             <div class="form-group">
                 <label class="form-label">金额 (USDT，可自定义，最低 1)</label>
                 <input type="number" id="tipAmountInput" class="form-input" value="1" min="1" step="0.1" placeholder="1">
             </div>
-            <button class="btn btn-primary" style="width: 100%;" onclick="TipAuthor.send()">确认打赏</button>
+            <button class="btn btn-primary" type="button" data-action="tip-author-send" style="width: 100%;">确认打赏</button>
         </div>
     </div>
 
     <!-- 详情模态框 -->
-    <div class="modal-overlay post-detail-modal" id="postDetailModal" onclick="Modal.close('postDetailModal')">
-        <div class="modal glass" onclick="event.stopPropagation()">
+    <div class="modal-overlay post-detail-modal" id="postDetailModal" data-dismiss="postDetailModal" role="dialog" aria-modal="true">
+        <div class="modal glass">
             <div class="modal-header">
                 <h3>📖 档案</h3>
-                <button class="modal-close" onclick="Modal.close('postDetailModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="postDetailModal" aria-label="关闭">&times;</button>
             </div>
             <div id="postDetailBody"></div>
         </div>
     </div>
     
-    <div class="modal-overlay" id="noticeCenterModal" onclick="Modal.close('noticeCenterModal')">
-        <div class="modal glass" style="max-width:760px; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;" onclick="event.stopPropagation()">
+    <div class="modal-overlay" id="noticeCenterModal" data-dismiss="noticeCenterModal" role="dialog" aria-modal="true">
+        <div class="modal glass" style="max-width:760px; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;">
             <div class="modal-header">
                 <h3 id="noticeCenterTitle">📣 公告</h3>
-                <button class="modal-close" onclick="Modal.close('noticeCenterModal')">&times;</button>
+                <button class="modal-close" type="button" data-dismiss="noticeCenterModal" aria-label="关闭">&times;</button>
             </div>
             <div id="noticeCenterBody" style="overflow:auto; flex:1; padding:0 0.2rem 0.5rem;">加载中...</div>
         </div>

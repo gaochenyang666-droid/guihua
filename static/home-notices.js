@@ -8,6 +8,23 @@
         var Modal = deps.Modal;
         var navigateWithTransition = deps.navigateWithTransition;
         var apiJson = window.apiJson;
+        var notificationDelegated = false;
+
+        function bindNotificationDelegation(Notification) {
+            if (notificationDelegated) return;
+            notificationDelegated = true;
+            document.addEventListener('click', function (e) {
+                var target = e.target;
+                if (!target || !target.closest) return;
+                var row = target.closest('[data-notification-id]');
+                if (!row) return;
+                e.preventDefault();
+                var notificationId = Number(row.getAttribute('data-notification-id'));
+                var postIdRaw = row.getAttribute('data-notification-post-id');
+                var postId = postIdRaw === '' || postIdRaw == null ? null : Number(postIdRaw);
+                Notification.read(notificationId, Number.isFinite(postId) ? postId : null);
+            }, true);
+        }
 
         var Notification = {
             async load() {
@@ -32,7 +49,7 @@
                         return '有新动态';
                     };
                     list.innerHTML = result.data.notifications.map(function (n) {
-                        return '<div style="padding:0.8rem; border-bottom:1px solid var(--border-color); ' + (!n.is_read ? 'background:rgba(124,58,237,0.1);' : '') + ' cursor:pointer;" onclick="Notification.read(' + n.id + ', ' + (n.post_id != null ? n.post_id : 'null') + ')">' +
+                        return '<div style="padding:0.8rem; border-bottom:1px solid var(--border-color); ' + (!n.is_read ? 'background:rgba(124,58,237,0.1);' : '') + ' cursor:pointer;" data-notification-id="' + n.id + '" data-notification-post-id="' + (n.post_id != null ? n.post_id : '') + '">' +
                             '<div style="font-size:0.9rem; margin-bottom:0.2rem;"><b>' + escapeHtml((n.sender && n.sender.nickname) || '系统') + '</b> ' + escapeHtml(typeText(n)) + '</div>' +
                             '<div style="font-size:0.8rem; color:var(--text-muted);">' + escapeHtml(n.post_title || '') + '</div>' +
                             '<div style="font-size:0.7rem; color:var(--text-secondary); margin-top:0.3rem;">' + new Date(n.created_at).toLocaleString() + '</div>' +
@@ -106,6 +123,8 @@
                 else window.location.href = next;
             }
         };
+
+        bindNotificationDelegation(Notification);
 
         return {
             Notification: Notification,

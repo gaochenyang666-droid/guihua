@@ -10,8 +10,58 @@
         var getSiteNotice = deps.getSiteNotice;
         var getGroupLinks = deps.getGroupLinks;
         var apiJson = window.apiJson;
+        var delegatedBound = false;
 
-        return {
+        function bindDelegatedActions(Admin) {
+            if (delegatedBound) return;
+            delegatedBound = true;
+            document.addEventListener('click', function (e) {
+                var target = e.target;
+                if (!target || !target.closest) return;
+                var btn = target.closest('[data-admin-action]');
+                if (!btn) return;
+                var action = btn.getAttribute('data-admin-action') || '';
+                if (!action) return;
+                e.preventDefault();
+                if (action === 'resolve-report') {
+                    Admin.resolveReport(Number(btn.getAttribute('data-report-id')), btn.getAttribute('data-status'));
+                    return;
+                }
+                if (action === 'toggle-ban') {
+                    Admin.toggleBan(Number(btn.getAttribute('data-user-id')), btn.getAttribute('data-is-banned') === 'true');
+                    return;
+                }
+                if (action === 'toggle-announcement') {
+                    Admin.toggleAnnouncementActive(Number(btn.getAttribute('data-announcement-id')), btn.getAttribute('data-active') === 'true');
+                    return;
+                }
+                if (action === 'delete-announcement') {
+                    Admin.deleteAnnouncement(Number(btn.getAttribute('data-announcement-id')));
+                    return;
+                }
+                if (action === 'filter-pending') {
+                    Admin.openPendingPublications();
+                    return;
+                }
+                if (action === 'run-pending-batch') {
+                    Admin.runPendingBatchRetry();
+                    return;
+                }
+                if (action === 'retry-pending') {
+                    Admin.retryPendingPublication(Number(btn.getAttribute('data-pending-id')));
+                    return;
+                }
+                if (action === 'delete-pending') {
+                    Admin.deletePendingPublication(Number(btn.getAttribute('data-pending-id')));
+                    return;
+                }
+                if (action === 'filter-flow-events') {
+                    Admin.loadFlowEvents(btn.getAttribute('data-severity') || '');
+                }
+            }, true);
+        }
+
+        var Admin = {
             async confirmHighRisk(actionLabel, options) {
                 options = options || {};
                 var needsPhrase = options.needsPhrase !== false;
@@ -83,7 +133,7 @@
                             '<div style="margin-bottom: 0.4rem;">举报人: ' + escapeHtml(r.reporter_nickname || '') + ' · 被举报: ' + escapeHtml(r.reported_nickname || '') + (r.post_title ? (' · 帖子: ' + escapeHtml(r.post_title)) : '') + '</div>' +
                             '<div style="font-size: 0.9rem; color: var(--text-primary); margin-bottom: 0.5rem;">' + escapeHtml(r.reason || '') + '</div>' +
                             (r.admin_notes ? ('<div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">备注: ' + escapeHtml(r.admin_notes) + '</div>') : '') +
-                            (r.status === 'pending' ? '<div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;"><button class="btn btn-primary btn-sm" onclick="Admin.resolveReport(' + r.id + ', \'resolved\')">已处理</button><button class="btn btn-ghost btn-sm" onclick="Admin.resolveReport(' + r.id + ', \'dismissed\')">忽略</button></div>' : '') +
+                            (r.status === 'pending' ? '<div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;"><button class="btn btn-primary btn-sm" type="button" data-admin-action="resolve-report" data-report-id="' + r.id + '" data-status="resolved">已处理</button><button class="btn btn-ghost btn-sm" type="button" data-admin-action="resolve-report" data-report-id="' + r.id + '" data-status="dismissed">忽略</button></div>' : '') +
                         '</div>';
                     }).join('');
                 } catch (e) {
@@ -128,7 +178,7 @@
                     body.innerHTML = list.map(function (u) {
                         return '<div class="glass" style="padding: 0.75rem; margin-bottom: 0.75rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">' +
                             '<div><div style="font-weight: 600;">' + escapeHtml(u.nickname || u.username || '') + '</div><div style="font-size: 0.8rem; color: var(--text-muted);">ID: ' + u.id + ' · ' + (u.type === 'web3' ? '钱包' : 'Web2') + '</div></div>' +
-                            (!u.is_admin ? ('<button class="btn btn-ghost btn-sm" style="color: var(--accent-red);" onclick="Admin.toggleBan(' + u.id + ', ' + u.is_banned + ')">' + (u.is_banned ? '解除封禁' : '封禁') + '</button>') : '<span style="font-size: 0.8rem; color: var(--accent-gold);">管理员</span>') +
+                            (!u.is_admin ? ('<button class="btn btn-ghost btn-sm" type="button" data-admin-action="toggle-ban" data-user-id="' + u.id + '" data-is-banned="' + (u.is_banned ? 'true' : 'false') + '" style="color: var(--accent-red);">' + (u.is_banned ? '解除封禁' : '封禁') + '</button>') : '<span style="font-size: 0.8rem; color: var(--accent-gold);">管理员</span>') +
                         '</div>';
                     }).join('');
                 } catch (e) {
@@ -172,7 +222,7 @@
                             '<div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:center;"><b>' + (a.entry_type === 'activity' ? '🎉 ' : '📣 ') + escapeHtml(a.title || '') + '</b><span style="font-size:0.78rem; color:' + (a.is_active ? 'var(--accent-green)' : 'var(--text-muted)') + ';">' + (a.is_active ? '生效中' : '未生效') + '</span></div>' +
                             '<div style="font-size:0.86rem; margin:0.45rem 0;">' + escapeHtml(a.content || '') + '</div>' +
                             '<div style="font-size:0.74rem; color:var(--text-muted); margin-bottom:0.45rem;">类型: ' + escapeHtml(a.entry_type || 'announcement') + (a.starts_at ? (' · 开始: ' + new Date(a.starts_at).toLocaleString()) : '') + (a.expires_at ? (' · 结束: ' + new Date(a.expires_at).toLocaleString()) : '') + '</div>' +
-                            '<div style="display:flex; gap:0.45rem; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" onclick="Admin.toggleAnnouncementActive(' + a.id + ', ' + (a.is_active ? 'false' : 'true') + ')">' + (a.is_active ? '停用' : '启用') + '</button><button class="btn btn-ghost btn-sm" style="color:var(--accent-red);" onclick="Admin.deleteAnnouncement(' + a.id + ')">删除</button></div>' +
+                            '<div style="display:flex; gap:0.45rem; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" type="button" data-admin-action="toggle-announcement" data-announcement-id="' + a.id + '" data-active="' + (a.is_active ? 'false' : 'true') + '">' + (a.is_active ? '停用' : '启用') + '</button><button class="btn btn-ghost btn-sm" type="button" data-admin-action="delete-announcement" data-announcement-id="' + a.id + '" style="color:var(--accent-red);">删除</button></div>' +
                         '</div>';
                     }).join('');
                 } catch (e) {
@@ -295,9 +345,9 @@
                                     '<option value="initiated"' + ((statusFilterEl && statusFilterEl.value === 'initiated') ? ' selected' : '') + '>initiated</option>' +
                                 '</select>' +
                                 '<input class="form-input" id="adminPendingSearch" type="text" placeholder="搜标题 / TX / 错误" value="' + escapeAttr((searchFilterEl && searchFilterEl.value) || '') + '" style="min-width:220px; max-width:320px;">' +
-                                '<button class="btn btn-ghost btn-sm" onclick="Admin.openPendingPublications()">筛选</button>' +
+                                '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="filter-pending">筛选</button>' +
                             '</div>' +
-                            '<button class="btn btn-ghost btn-sm" onclick="Admin.runPendingBatchRetry()">运行一轮自动补偿</button>' +
+                            '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="run-pending-batch">运行一轮自动补偿</button>' +
                         '</div>';
                     if (!items.length) {
                         body.innerHTML = toolbar + '<div style="color:var(--text-muted); text-align:center; padding:1rem;">当前没有待恢复发布记录</div>';
@@ -318,8 +368,8 @@
                             '<div style="font-size:0.76rem; color:var(--text-muted); margin-top:0.45rem;">更新时间: ' + (row.updated_at ? new Date(row.updated_at).toLocaleString() : '-') + '</div>' +
                             '<div style="display:flex; gap:0.45rem; flex-wrap:wrap; margin-top:0.65rem;">' +
                                 jumpLinks +
-                                '<button class="btn btn-primary btn-sm" onclick="Admin.retryPendingPublication(' + row.id + ')">补偿重试</button>' +
-                                '<button class="btn btn-ghost btn-sm" style="color:var(--accent-red);" onclick="Admin.deletePendingPublication(' + row.id + ')">删除记录</button>' +
+                                '<button class="btn btn-primary btn-sm" type="button" data-admin-action="retry-pending" data-pending-id="' + row.id + '">补偿重试</button>' +
+                                '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="delete-pending" data-pending-id="' + row.id + '" style="color:var(--accent-red);">删除记录</button>' +
                             '</div>' +
                         '</div>';
                     }).join('');
@@ -422,9 +472,9 @@
                             '<div style="display:flex; align-items:center; justify-content:space-between; gap:0.7rem; margin-bottom:0.6rem; flex-wrap:wrap;">' +
                                 '<div style="font-weight:700;">最近事件</div>' +
                                 '<div style="display:flex; gap:0.45rem; flex-wrap:wrap;">' +
-                                    '<button class="btn btn-ghost btn-sm" onclick="Admin.loadFlowEvents(\'\')">全部</button>' +
-                                    '<button class="btn btn-ghost btn-sm" onclick="Admin.loadFlowEvents(\'error\')">仅错误</button>' +
-                                    '<button class="btn btn-ghost btn-sm" onclick="Admin.loadFlowEvents(\'warn\')">仅警告</button>' +
+                                    '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="filter-flow-events" data-severity="">全部</button>' +
+                                    '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="filter-flow-events" data-severity="error">仅错误</button>' +
+                                    '<button class="btn btn-ghost btn-sm" type="button" data-admin-action="filter-flow-events" data-severity="warn">仅警告</button>' +
                                 '</div>' +
                             '</div>' +
                             '<div id="adminFlowEventsList">' +
@@ -501,5 +551,8 @@
                 }
             }
         };
+
+        bindDelegatedActions(Admin);
+        return Admin;
     };
 })();

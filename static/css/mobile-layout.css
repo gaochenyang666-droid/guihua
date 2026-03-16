@@ -465,11 +465,19 @@
 .sidebar-card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
-    border-radius: 14px;
+    border-radius: var(--radius-card);
     padding: 0.75rem;
     margin: 0 0 0.7rem 0;
     display: block;
 }
+.utility-tier .sidebar-card {
+    border-radius: var(--radius-card-sm);
+    box-shadow: var(--shadow-card-subtle);
+    opacity: 0.96;
+}
+.utility-tier .sidebar-card .utility-card-title { font-size: 0.88rem; color: var(--text-secondary); }
+.utility-tier .sidebar-card .checkin-subtitle,
+.utility-tier .sidebar-card .utility-card-meta { color: var(--text-muted); font-size: 0.8rem; }
 .nav-sort-card {
     display: flex;
     align-items: center;

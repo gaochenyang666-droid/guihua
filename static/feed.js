@@ -410,14 +410,14 @@
                             postGridEl.innerHTML = '';
                             if (data.posts.length === 0) {
                                 var emptyMsg = '这里一片荒芜，什么也没有...';
-                                var emptyBtn = this.currentQuery ? '<button class="btn btn-ghost" onclick="Post.load()" style="margin-top:1rem;">返回全部</button>' : '';
+                                var emptyBtn = this.currentQuery ? '<button class="btn btn-ghost" type="button" data-action="post-reload" style="margin-top:1rem;">返回全部</button>' : '';
                                 if (this.currentSort === 'bookmarks') {
                                     if (!(window.authState && window.authState.hasSessionHint && window.authState.hasSessionHint())) {
                                         emptyMsg = '请先登录后查看收藏';
-                                        emptyBtn = '<button class="btn btn-primary" onclick="Modal.open(\'loginModal\')" style="margin-top:1rem;">去登录</button>';
+                                        emptyBtn = '<button class="btn btn-primary" type="button" data-action="open-login-modal" style="margin-top:1rem;">去登录</button>';
                                     } else {
                                         emptyMsg = '暂无收藏，去首页逛逛吧';
-                                        emptyBtn = '<button class="btn btn-ghost" onclick="UI.handleNav(document.querySelector(\'[data-sort=new]\'), \'new\')" style="margin-top:1rem;">看最新</button>';
+                                        emptyBtn = '<button class="btn btn-ghost" type="button" data-action="nav-sort" data-sort="new" style="margin-top:1rem;">看最新</button>';
                                     }
                                 }
                                 postGridEl.innerHTML =
@@ -438,7 +438,7 @@
                 } catch (e) {
                     if (this.currentPage === 1 && loadingEl) {
                         var errMsg = (e && e.message) || '网络异常或服务暂时不可用';
-                        loadingEl.innerHTML = '<div style="color:var(--text-muted); padding:1.5rem;">' + errMsg + '</div><button class="btn btn-ghost" onclick="Post.load()" style="margin-top:0.5rem;">重试</button>';
+                        loadingEl.innerHTML = '<div style="color:var(--text-muted); padding:1.5rem;">' + errMsg + '</div><button class="btn btn-ghost" type="button" data-action="post-retry" style="margin-top:0.5rem;">重试</button>';
                     }
                 } finally {
                     this.isLoading = false;

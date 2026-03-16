@@ -254,7 +254,7 @@
         modal.id = 'identityBadgeModal';
         modal.className = 'modal-overlay';
         modal.innerHTML = '' +
-            '<div class="modal glass identity-badge-modal" onclick="event.stopPropagation()">' +
+            '<div class="modal glass identity-badge-modal">' +
                 '<div class="modal-header">' +
                     '<h3>身份铭牌</h3>' +
                     '<button class="modal-close" type="button" id="identityBadgeCloseBtn">&times;</button>' +
@@ -265,6 +265,12 @@
             modal.classList.remove('active');
         });
         document.body.appendChild(modal);
+        var modalCard = modal.querySelector('.identity-badge-modal');
+        if (modalCard) {
+            modalCard.addEventListener('click', function (e) {
+                e.stopPropagation();
+            });
+        }
         var closeBtn = document.getElementById('identityBadgeCloseBtn');
         if (closeBtn) {
             closeBtn.addEventListener('click', function () {

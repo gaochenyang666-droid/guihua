@@ -22,7 +22,10 @@
     --radius-md: 16px;
     --radius-lg: 24px;
     --radius-full: 9999px;
+    --radius-card: 16px;
+    --radius-card-sm: 10px;
     --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --shadow-card-subtle: 0 4px 16px rgba(0, 0, 0, 0.25);
     --font-base: 15px; /* Mobile base font */
     --nav-height: 60px; /* Mobile nav height */
     --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
@@ -76,6 +79,7 @@ body.page-motion.page-leaving {
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border-color);
+    border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
 }
 
@@ -96,6 +100,8 @@ body.page-motion.page-leaving {
 }
 .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); }
 .btn-primary { background: var(--accent-purple); color: white; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3); }
+.btn-danger { background: transparent; color: var(--accent-red); border: 1px solid var(--accent-red); }
+.btn-danger:hover { background: rgba(239, 68, 68, 0.15); color: var(--accent-red); }
 .btn-sm { padding: 0.4rem 0.8rem; font-size: 0.85rem; min-height: 32px; }
 .btn-ghost:hover {
     border-color: rgba(255, 255, 255, 0.2);

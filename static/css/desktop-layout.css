@@ -176,7 +176,12 @@
     .sidebar-card {
         background: var(--bg-card); border: 1px solid var(--border-color);
         padding: 0.9rem; display: block; margin-bottom: 0.65rem;
-        border-radius: var(--radius-md);
+        border-radius: var(--radius-card);
+    }
+    .utility-tier .sidebar-card {
+        border-radius: var(--radius-card-sm);
+        box-shadow: var(--shadow-card-subtle);
+        opacity: 0.96;
     }
     .nav-sort-card {
         display: block;

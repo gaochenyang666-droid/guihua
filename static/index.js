@@ -411,9 +411,81 @@
             debounce
         });
 
+        document.addEventListener('click', function (e) {
+            var target = e.target;
+            var dismiss = target.closest && target.closest('[data-dismiss]');
+            if (dismiss) {
+                var id = dismiss.getAttribute('data-dismiss');
+                if (id && dismiss.classList && dismiss.classList.contains('modal-overlay') && target.closest && target.closest('.modal') && !target.closest('.modal-close')) return;
+                if (id && window.Modal && typeof Modal.close === 'function') {
+                    e.preventDefault();
+                    Modal.close(id);
+                }
+                return;
+            }
+            var actionEl = target.closest && target.closest('[data-action]');
+            if (actionEl) {
+                var action = actionEl.getAttribute('data-action');
+                if (action === 'auth-toggle') {
+                    var mode = actionEl.getAttribute('data-mode') || 'login';
+                    if (window.Auth && typeof Auth.toggleForm === 'function') { e.preventDefault(); Auth.toggleForm(mode); }
+                } else if (action === 'auth-open-wallet') {
+                    if (window.Auth && typeof Auth.openWalletSelector === 'function') { e.preventDefault(); Auth.openWalletSelector(); }
+                } else if (action === 'auth-register') {
+                    if (window.Auth && typeof Auth.register === 'function') { e.preventDefault(); Auth.register(); }
+                } else if (action === 'auth-change-password') {
+                    if (window.Auth && typeof Auth.changePassword === 'function') { e.preventDefault(); Auth.changePassword(); }
+                } else if (action === 'onboarding-dismiss') {
+                    if (window.Onboarding && typeof Onboarding.dismiss === 'function') { e.preventDefault(); Onboarding.dismiss(); }
+                } else if (action === 'checkin-sign') {
+                    if (window.Checkin && typeof Checkin.sign === 'function') { e.preventDefault(); Checkin.sign(); }
+                } else if (action === 'donate-copy-address') {
+                    var donateAddressEl = document.getElementById('donateAddress');
+                    var donateAddress = donateAddressEl ? String(donateAddressEl.textContent || '').trim() : '';
+                    if (!donateAddress || donateAddress === '—') {
+                        Toast.error('请等待地址加载');
+                    } else if (typeof copyTextWithFallback === 'function') {
+                        e.preventDefault();
+                        copyTextWithFallback(donateAddress, '已复制');
+                    }
+                } else if (action === 'donate-send-preset') {
+                    var presetAmount = parseFloat(actionEl.getAttribute('data-amount') || '0');
+                    if (window.Donate && typeof Donate.send === 'function') { e.preventDefault(); Donate.send(presetAmount); }
+                } else if (action === 'donate-send-custom') {
+                    var customDonateInput = document.getElementById('donateCustomAmount');
+                    var customDonateAmount = parseFloat(((customDonateInput && customDonateInput.value) || '0').trim());
+                    if (window.Donate && typeof Donate.send === 'function') { e.preventDefault(); Donate.send(customDonateAmount || 0); }
+                } else if (action === 'tip-author-copy') {
+                    if (window.TipAuthor && typeof TipAuthor.copyAddress === 'function') { e.preventDefault(); TipAuthor.copyAddress(); }
+                } else if (action === 'tip-amount-preset') {
+                    var tipInput = document.getElementById('tipAmountInput');
+                    if (tipInput) {
+                        e.preventDefault();
+                        tipInput.value = actionEl.getAttribute('data-amount') || '1';
+                    }
+                } else if (action === 'tip-author-send') {
+                    if (window.TipAuthor && typeof TipAuthor.send === 'function') { e.preventDefault(); TipAuthor.send(); }
+                } else if (action === 'post-reload' || action === 'post-retry') {
+                    if (Post && typeof Post.load === 'function') { e.preventDefault(); Post.load(); }
+                } else if (action === 'open-login-modal') {
+                    if (window.Modal && typeof Modal.open === 'function') { e.preventDefault(); Modal.open('loginModal'); }
+                } else if (action === 'nav-sort') {
+                    var sortKey = actionEl.getAttribute('data-sort') || 'new';
+                    if (UI && typeof UI.handleNav === 'function') {
+                        e.preventDefault();
+                        UI.handleNav(document.querySelector('[data-sort="' + sortKey + '"]'), sortKey);
+                    }
+                }
+            }
+        }, true);
+
         window.addEventListener('load', () => {
             try {
-            homeShell.init();
+                homeShell.init();
+                var createAnnBtn = document.getElementById('adminCreateAnnouncementBtn');
+                if (createAnnBtn && typeof Admin !== 'undefined' && typeof Admin.createAnnouncement === 'function') {
+                    createAnnBtn.addEventListener('click', function () { Admin.createAnnouncement(); });
+                }
             } catch (err) {
                 console.error('[诡话] 首页初始化错误:', err);
             }
