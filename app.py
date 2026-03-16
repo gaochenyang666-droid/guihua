@@ -161,6 +161,7 @@ db.init_app(app)
 
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
 from models import (User, Post, Vote, Comment, Like, CommentLike, Bookmark, Notification, UsedTransaction,
+    PendingPublication,
     UserVote, Tip, Report, Announcement, AdminAuditLog, CheckinLog, AppSetting, Series, SeriesPost,
     build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
     calc_level_info, checkin_exp_by_streak)
@@ -203,6 +204,11 @@ from services.site_settings import (
     set_setting_value as _svc_set_setting_value,
     get_group_link_urls as _svc_get_group_link_urls,
     validate_group_link_urls as _svc_validate_group_link_urls,
+)
+from services.publish_recovery import (
+    upsert_pending_publication as _svc_upsert_pending_publication,
+    clear_pending_publication as _svc_clear_pending_publication,
+    get_latest_pending_publication as _svc_get_latest_pending_publication,
 )
 from services.runtime_state import (
     prune_pending_wallet_nonces as _svc_prune_pending_wallet_nonces,
@@ -412,7 +418,6 @@ def get_nonce():
         return jsonify({'error': '钱包地址格式无效'}), 400
 
     user = User.query.filter_by(address=address).first()
-    created_user = user is None
     if user:
         # 已有用户：使用数据库 nonce
         user.refresh_nonce()
@@ -448,6 +453,7 @@ def verify_signature():
     from eth_account import Account
     
     user = User.query.filter_by(address=address).first()
+    created_user = user is None
     nonce_value = None
     nonce_created_at = None
     if user:
@@ -1135,6 +1141,36 @@ def check_tx_status():
             'post_title': post.title
         })
 
+    pending_row = PendingPublication.query.filter_by(tx_hash=tx_hash).first()
+    if pending_row:
+        if pending_row.status == 'awaiting_retry':
+            return jsonify({
+                'status': 'pending',
+                'stage': 'awaiting_retry',
+                'message': pending_row.last_error or '支付已确认，但永存写入失败，可直接继续发布重试',
+                'confirmations': int(getattr(pending_row, 'confirmations', 0) or 0),
+                'confirmations_needed': TX_CONFIRMATIONS_NEEDED,
+                'pending_publication': pending_row.to_dict(),
+            })
+        if pending_row.status == 'storage_ready':
+            return jsonify({
+                'status': 'pending',
+                'stage': 'storage_ready',
+                'message': '永存档案已写入，正在创建帖子记录',
+                'confirmations': int(getattr(pending_row, 'confirmations', 0) or 0),
+                'confirmations_needed': TX_CONFIRMATIONS_NEEDED,
+                'pending_publication': pending_row.to_dict(),
+            })
+        if pending_row.status in ('payment_verified', 'initiated'):
+            return jsonify({
+                'status': 'pending',
+                'stage': pending_row.status,
+                'message': '支付已记录，正在继续处理发布',
+                'confirmations': int(getattr(pending_row, 'confirmations', 0) or 0),
+                'confirmations_needed': TX_CONFIRMATIONS_NEEDED,
+                'pending_publication': pending_row.to_dict(),
+            })
+
     inspect = _svc_inspect_transaction_status(tx_hash, tx_confirmations=TX_CONFIRMATIONS_NEEDED)
     if inspect.get('stage') == 'confirmed':
         return jsonify({
@@ -1159,6 +1195,32 @@ def check_tx_status():
         'confirmations': inspect.get('confirmations', 0),
         'confirmations_needed': inspect.get('confirmations_needed', TX_CONFIRMATIONS_NEEDED),
     })
+
+
+@app.route('/api/posts/pending/latest', methods=['GET'])
+@token_required
+def get_latest_pending_post():
+    row = _svc_get_latest_pending_publication(PendingPublication, g.current_user.id)
+    if not row:
+        return jsonify({'pending': None})
+    return jsonify({'pending': row.to_dict()})
+
+
+@app.route('/api/posts/pending/clear', methods=['POST'])
+@token_required
+def clear_pending_post():
+    data = request.get_json(silent=True) or {}
+    tx_hash = (data.get('tx_hash') or '').strip()
+    row = None
+    if tx_hash:
+        row = PendingPublication.query.filter_by(tx_hash=tx_hash, user_id=g.current_user.id).first()
+    else:
+        row = _svc_get_latest_pending_publication(PendingPublication, g.current_user.id)
+    if row:
+        db.session.delete(row)
+        db.session.commit()
+        _log_flow_event('pending_publication_cleared', tx_hash=row.tx_hash, user_id=g.current_user.id)
+    return jsonify({'message': '待恢复记录已清除'})
 
 @app.route('/api/admin/stats', methods=['GET'])
 @token_required
@@ -1629,6 +1691,15 @@ def create_post():
         return jsonify({'error': f'地区不合法，可选范围：{", ".join(valid_regions)}'}), 400
     _log_flow_event('post_publish_started', tx_hash=tx_hash, region=region, is_admin=bool(g.current_user.is_admin), series_id=getattr(target_series, 'id', None))
 
+    pending_payload = {
+        'title': data.get('title'),
+        'content': data.get('content'),
+        'tags': normalized_tags,
+        'region': region,
+        'series_id': getattr(target_series, 'id', None),
+        'is_special_announcement': bool(data.get('is_special_announcement')) if g.current_user.is_admin else False,
+    }
+
     # 3. Logic Branching（is_paid 仅由后端校验结果决定，绝不信任客户端传入）
     is_paid = False
     is_on_chain = False
@@ -1642,14 +1713,29 @@ def create_post():
         if not tx_hash:
             _log_flow_event('post_payment_missing', reason='tx_hash_required')
             return jsonify({'error': '缺少交易哈希'}), 400
+        _svc_upsert_pending_publication(
+            PendingPublication, db.session, g.current_user.id, tx_hash,
+            payload=pending_payload, status='initiated'
+        )
+        db.session.commit()
         is_valid, error_msg = verify_transaction(tx_hash, g.current_user.address, min_amount=get_post_fee_usdt_raw(), payment_type='usdt')
         if not is_valid:
             _log_flow_event('post_payment_verify_failed', tx_hash=tx_hash, reason=error_msg)
+            _svc_upsert_pending_publication(
+                PendingPublication, db.session, g.current_user.id, tx_hash,
+                payload=pending_payload, status='awaiting_retry', last_error=_humanize_verify_error(error_msg)
+            )
+            db.session.commit()
             return jsonify({'error': _humanize_verify_error(error_msg)}), 400
             
         is_paid = True
         is_on_chain = True
         _log_flow_event('post_payment_verified', tx_hash=tx_hash, user_address=g.current_user.address)
+        _svc_upsert_pending_publication(
+            PendingPublication, db.session, g.current_user.id, tx_hash,
+            payload=pending_payload, status='payment_verified'
+        )
+        db.session.commit()
         
         # 永存档案：支付后必须立即写入 Arweave，否则不发帖；放行 img 的 src/alt/style/class 以保留正文内图片
         clean_content = _bleach_clean_post_content(data.get('content', ''))
@@ -1667,12 +1753,23 @@ def create_post():
         if not storage_id:
             print(f"[create_post] 永存档案写入失败: {last_error}")
             _log_flow_event('post_storage_failed', tx_hash=tx_hash, reason=last_error)
+            _svc_upsert_pending_publication(
+                PendingPublication, db.session, g.current_user.id, tx_hash,
+                payload=pending_payload, status='awaiting_retry',
+                last_error='支付已确认，但永存档案写入失败。可直接继续发布重试，无需再次支付。'
+            )
+            db.session.commit()
             err_msg = '永存档案写入失败。您的支付已确认，无需再次支付，请稍后点击「重试发布」再试。'
             if last_error:
                 err_msg += f' 原因: {last_error}'
             return jsonify({'error': err_msg, 'code': 'ARWEAVE_FAIL'}), 503
         ipfs_cid = storage_id
         _log_flow_event('post_storage_ready', tx_hash=tx_hash, ipfs_cid=ipfs_cid)
+        _svc_upsert_pending_publication(
+            PendingPublication, db.session, g.current_user.id, tx_hash,
+            payload=pending_payload, status='storage_ready', ipfs_cid=ipfs_cid
+        )
+        db.session.commit()
 
     # 防重复：保存前再次确认该交易哈希未被任何帖子使用（与 verify_transaction + unique 约束三重保险，防并发）
     if tx_hash:
@@ -1747,6 +1844,9 @@ def create_post():
             ))
             
         db.session.commit()
+        if tx_hash and not g.current_user.is_admin:
+            _svc_clear_pending_publication(PendingPublication, db.session, tx_hash=tx_hash)
+            db.session.commit()
         _log_flow_event(
             'post_publish_success',
             post_id=post.id,
@@ -1761,6 +1861,16 @@ def create_post():
         db.session.rollback()
         err_str = str(e).lower()
         _log_flow_event('post_publish_failed', tx_hash=tx_hash, reason=str(e)[:180])
+        if tx_hash and not g.current_user.is_admin:
+            try:
+                _svc_upsert_pending_publication(
+                    PendingPublication, db.session, g.current_user.id, tx_hash,
+                    payload=pending_payload, status='awaiting_retry',
+                    last_error='支付已确认，但发布流程未完成。可直接继续发布重试。', ipfs_cid=ipfs_cid
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
         if 'unique' in err_str and 'tx_hash' in err_str:
             return jsonify({'error': '该交易已被使用'}), 400
         # 管理员发帖常见：数据库 tx_hash/ipfs_cid 为 NOT NULL 时插 None 会报错
@@ -2754,6 +2864,11 @@ def _ensure_app_settings_table():
     """启动时确保站点配置表存在。"""
     return _svc_ensure_table(AppSetting.__table__, db.engine, 'app_settings table')
 
+
+def _ensure_pending_publications_table():
+    """启动时确保待恢复发布表存在。"""
+    return _svc_ensure_table(PendingPublication.__table__, db.engine, 'pending_publications table')
+
 def _ensure_posts_tx_nullable():
     """启动时确保 posts.tx_hash、ipfs_cid 允许 NULL。仅在实际变更时打日志。"""
     return _svc_ensure_posts_tx_nullable(db.session, db.engine.dialect.name)
@@ -2818,6 +2933,7 @@ def _run_startup_tasks():
     _ensure_reports_columns()
     _ensure_announcements_columns()
     _ensure_series_tables()
+    _ensure_pending_publications_table()
     if _should_run_init_db():
         init_db_data()
     _check_receive_address()

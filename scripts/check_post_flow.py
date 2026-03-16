@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
 from app import app, db, _new_user  # noqa: E402
-from models import User, Post  # noqa: E402
+from models import User, Post, PendingPublication  # noqa: E402
 
 
 ADMIN_USERNAME = "qa_post_admin"
@@ -83,11 +83,20 @@ def cleanup_post(post_id):
             db.session.commit()
 
 
+def cleanup_pending(tx_hash):
+    with app.app_context():
+        row = PendingPublication.query.filter_by(tx_hash=tx_hash).first()
+        if row:
+            db.session.delete(row)
+            db.session.commit()
+
+
 def main():
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
     ensure_admin()
     created_post_id = None
     synthetic_post_id = None
+    pending_tx_hash = "0x" + ("cd" * 32)
     try:
         token = login(base)
         payload = {"title": f"QA 发布链路 {int(time.time())}", "content": "<p>Smoke post body.</p>"}
@@ -126,6 +135,28 @@ def main():
         if data.get("stage") not in (None, "", "published"):
             raise AssertionError(f"unexpected published stage: {data}")
         print("post_check_tx_ok=1")
+
+        with app.app_context():
+            row = PendingPublication(
+                user_id=User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar(),
+                tx_hash=pending_tx_hash,
+                title="QA Pending Publish",
+                content="<p>pending</p>",
+                tags='["qa"]',
+                status='awaiting_retry',
+                last_error='支付已确认，但永存写入失败，可直接继续发布重试',
+            )
+            db.session.add(row)
+            db.session.commit()
+        status, data = http_json(base + "/api/posts/pending/latest", token=token)
+        assert_ok(status, data, "pending latest")
+        pending = data.get("pending") or {}
+        if pending.get("tx_hash") != pending_tx_hash:
+            raise AssertionError(f"pending latest mismatch: {data}")
+        print("post_pending_latest_ok=1")
+        status, data = http_json(base + "/api/posts/pending/clear", method="POST", token=token, payload={"tx_hash": pending_tx_hash})
+        assert_ok(status, data, "pending clear")
+        print("post_pending_clear_ok=1")
         print("post_flow_ok=1")
         return 0
     except Exception as exc:
@@ -136,6 +167,7 @@ def main():
             cleanup_post(created_post_id)
         if synthetic_post_id:
             cleanup_post(synthetic_post_id)
+        cleanup_pending(pending_tx_hash)
 
 
 if __name__ == "__main__":

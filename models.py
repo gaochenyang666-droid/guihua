@@ -415,6 +415,53 @@ class UsedTransaction(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class PendingPublication(db.Model):
+    __tablename__ = 'pending_publications'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False, index=True)
+    tx_hash = db.Column(db.String(66), unique=True, nullable=False, index=True)
+    title = db.Column(db.String(120), nullable=True)
+    content = db.Column(db.Text, nullable=True)
+    tags = db.Column(db.Text, nullable=True)
+    region = db.Column(db.String(20), default='其他')
+    series_id = db.Column(db.Integer, db.ForeignKey('series.id'), nullable=True)
+    is_special_announcement = db.Column(db.Boolean, default=False)
+    status = db.Column(db.String(30), default='initiated', index=True)
+    last_error = db.Column(db.String(500), nullable=True)
+    ipfs_cid = db.Column(db.String(100), nullable=True)
+    confirmations = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+    series = db.relationship('Series', foreign_keys=[series_id])
+
+    def to_dict(self):
+        try:
+            tags_list = json.loads(self.tags) if self.tags else []
+        except (TypeError, ValueError):
+            tags_list = []
+        if not isinstance(tags_list, list):
+            tags_list = []
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'tx_hash': self.tx_hash,
+            'title': self.title,
+            'content': self.content,
+            'tags': tags_list,
+            'region': self.region,
+            'series_id': self.series_id,
+            'is_special_announcement': bool(self.is_special_announcement),
+            'status': self.status,
+            'last_error': self.last_error,
+            'ipfs_cid': self.ipfs_cid,
+            'confirmations': int(self.confirmations or 0),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class UserVote(db.Model):
     __tablename__ = 'user_votes'
     id = db.Column(db.Integer, primary_key=True)

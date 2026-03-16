@@ -388,23 +388,62 @@
             clearPendingPost() {
                 try { localStorage.removeItem(PENDING_POST_KEY); } catch(e) {}
             },
-            clearPendingState(notify) {
+            async clearPendingState(notify) {
+                const txHash = this.pendingTxHash;
+                if (txHash) {
+                    try {
+                        await apiJson(`${API_BASE}/posts/pending/clear`, {
+                            method: 'POST',
+                            body: { tx_hash: txHash },
+                            fallback: {}
+                        });
+                    } catch (e) {}
+                }
                 this.pendingTxHash = null;
                 this.clearPendingPost();
                 this.checkWalletEnv();
                 this.updateResumePanel('', '');
                 if (notify) Toast.info('已清除待恢复记录');
             },
+            async loadServerPendingPost() {
+                if (!currentUser) return false;
+                try {
+                    const result = await apiJson(`${API_BASE}/posts/pending/latest`, { fallback: {} });
+                    const pending = result.data && result.data.pending;
+                    if (!pending || !pending.tx_hash) return false;
+                    this.pendingTxHash = pending.tx_hash;
+                    if (pending.title) document.getElementById('studioPostTitle').value = pending.title;
+                    if (pending.content && studioQuill) studioQuill.clipboard.dangerouslyPasteHTML(pending.content);
+                    if (Array.isArray(pending.tags)) {
+                        const tagsInput = document.getElementById('studioPostTags');
+                        if (tagsInput) tagsInput.value = pending.tags.join(', ');
+                    }
+                    const seriesVal = (pending.series_id == null ? '' : String(pending.series_id));
+                    this.loadSeriesOptions(seriesVal);
+                    const specialBox = document.getElementById('adminSpecialPostCheckbox');
+                    if (specialBox) specialBox.checked = !!pending.is_special_announcement;
+                    this.checkWalletEnv();
+                    this.updateResumePanel(
+                        pending.last_error || '检测到服务端待恢复发布记录，可直接继续，无需再次支付。',
+                        pending.status === 'awaiting_retry' ? 'warn' : ''
+                    );
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            },
             loadPendingPost() {
                 try {
                     const raw = localStorage.getItem(PENDING_POST_KEY);
                     if (!raw) {
                         this.updateResumePanel('', '');
+                        this.loadServerPendingPost();
                         return;
                     }
                     const p = JSON.parse(raw);
                     if (!p.tx_hash || !p.time || (Date.now() - p.time > 24*60*60*1000)) {
                         this.clearPendingState(false);
+                        this.loadServerPendingPost();
                         return;
                     }
                     this.pendingTxHash = p.tx_hash;
