@@ -1,0 +1,68 @@
+<!-- Payment Progress Drawer (Bottom Sheet) -->
+<div class="bottom-sheet" id="paymentDrawer">
+    <div class="sheet-handle"></div>
+
+    <!-- State 1: Preview -->
+    <div id="drawerPreviewMode">
+        <div class="sheet-header">
+            <h3 style="margin-bottom:0.5rem; color:var(--text-primary);">💰 支付预览</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted);">请确认上链信息</p>
+        </div>
+
+        <div style="background: rgba(255,255,255,0.05); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+            <p style="font-size:0.8rem; color:var(--accent-green); margin-bottom:0.8rem;">您仅需支付 USDT（BSC），永存档案由平台负责。</p>
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem;">
+                <span style="color:var(--text-secondary);">支付网络</span>
+                <span style="display:flex; align-items:center; gap:0.4rem;">
+                    <i class="fab fa-ethereum" style="color:var(--accent-gold);"></i> BSC Mainnet 主网
+                </span>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:0.8rem;">
+                <span style="color:var(--text-secondary);">平台收款地址</span>
+            </div>
+            <div style="font-size:0.7rem; word-break:break-all; color:var(--accent-gold); margin-bottom:0.8rem; padding:0.4rem; background:rgba(0,0,0,0.2); border-radius:6px;" id="previewReceiveAddress">—</div>
+            <div style="width:100%; height:1px; background:var(--border-color); margin:0.8rem 0;"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:var(--text-secondary);">您需支付</span>
+                <div style="text-align:right;">
+                    <div style="font-size:1.2rem; font-weight:bold; color:var(--accent-gold);" id="previewAmount">Loading...</div>
+                    <div style="font-size:0.75rem; color:var(--text-muted);">USDT 转至平台，永存由平台承担</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="drawerActionArea">
+            <button class="btn btn-primary" style="width:100%; padding:1rem; font-size:1rem;" onclick="Studio.confirmPayment()">
+                🚀 确认并支付
+            </button>
+        </div>
+        <button class="btn btn-ghost" style="width:100%; margin-top:0.8rem; border:none;" onclick="Studio.closeDrawer()">取消</button>
+    </div>
+
+    <!-- State 2: Progress -->
+    <div id="drawerProgressMode" style="display:none;">
+        <div class="sheet-header">
+            <h3 style="margin-bottom:0.5rem; color:var(--accent-purple-light);">⛓️ 上链进程</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted);">正在将怪谈永久刻入区块链</p>
+        </div>
+
+        <div class="terminal-log glass" style="width: 100%; height: 150px; overflow-y: auto; margin-bottom: 1rem; font-family: monospace; font-size: 0.8rem; color: var(--accent-green); text-align: left; padding: 0.8rem; border: 1px solid var(--border-color); background: rgba(0,0,0,0.5);">
+            <div id="loadingLogs"></div>
+        </div>
+
+        <div id="txHashDisplay" style="display:none; margin-bottom:1rem; background:rgba(255,255,255,0.05); padding:0.8rem; border-radius:8px;">
+            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.3rem;">BSC USDT 支付交易哈希（您的付款凭证）:</div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+                <code id="realTxHash" style="color:var(--accent-gold); font-size:0.8rem; word-break:break-all;">Loading...</code>
+                <button class="btn btn-ghost btn-sm" onclick="Studio.copyHash()">📋</button>
+            </div>
+        </div>
+
+        <p style="color:var(--text-secondary); font-size:0.85rem; text-align: center; margin-bottom:1rem;">
+            请在钱包中确认交易...<br>
+            <span style="font-size:0.8rem; color:var(--accent-red);">后台处理中，请勿关闭页面</span>
+        </p>
+
+        <button class="btn btn-ghost btn-sm" style="width:100%; display:none;" id="forceCloseLoading" onclick="Studio.closeDrawer()">强制关闭</button>
+    </div>
+</div>

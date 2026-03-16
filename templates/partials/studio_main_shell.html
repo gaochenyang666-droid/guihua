@@ -1,0 +1,105 @@
+<!-- Main Content -->
+<div class="studio-container" id="studioView">
+    <aside class="studio-sidebar">
+        <div class="sidebar-card glass" style="padding: 1rem;">
+            <div class="step-progress">
+                <div class="step-item active" id="stepIndicator1">
+                    <div style="font-weight:bold;">1. 撰写</div>
+                    <div style="font-size:0.8rem; opacity:0.7;">创作你的故事</div>
+                </div>
+                <div class="step-item" id="stepIndicator3">
+                    <div style="font-weight:bold;">2. 永存</div>
+                    <div style="font-size:0.8rem; opacity:0.7;">上链并发布</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main style="max-width: 100%;">
+        <div class="glass" style="padding: 2rem; border-radius: var(--radius-lg); min-height: 600px;">
+
+            <!-- Step 1: Content -->
+            <div class="step-content active" id="step1">
+                <h2 style="margin-bottom: 1.5rem;">发布新怪谈</h2>
+                <div class="form-group">
+                    <label class="form-label">标题</label>
+                    <input type="text" class="form-input" id="studioPostTitle" placeholder="请输入引人入胜的标题...">
+                </div>
+                <div class="form-group" style="display:grid; gap:0.8rem;">
+                    <div>
+                        <label class="form-label">标签（可选）</label>
+                        <input type="text" class="form-input" id="studioPostTags" placeholder="示例：灵异, 都市传说, 夜谈">
+                        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:0.3rem;">多个标签请用英文逗号分隔，最多 8 个。</div>
+                    </div>
+                    <div>
+                        <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                            <span>加入系列（可选）</span>
+                            <button type="button" class="btn btn-ghost btn-sm" id="createSeriesBtn" onclick="Studio.quickCreateSeries()">+ 新建系列</button>
+                        </label>
+                        <select id="studioSeriesSelect" class="form-input">
+                            <option value="">不加入系列</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="display:flex; justify-content:space-between;">
+                        <span>正文内容</span>
+                        <span style="font-size:0.8rem; color:var(--text-muted);" id="draftStatus"></span>
+                    </label>
+                    <div id="quillEditorWrap" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); min-height: 260px;">
+                        <div id="studioPostContent" style="min-height: 200px;"></div>
+                    </div>
+                </div>
+                <button class="btn btn-primary" style="width: 100%; margin-top: 1rem;" onclick="Studio.nextStep(3)">下一步: 永存确认</button>
+            </div>
+
+            <!-- Step 3: Payment Preview -->
+            <div class="step-content" id="step3">
+                <h2 style="margin-bottom: 1.5rem; text-align: center;">Web3 永存确认</h2>
+                <p style="font-size:0.85rem; color:var(--text-muted); text-align:center; margin-bottom:1rem;">您仅需支付 USDT（BSC），永存档案由平台负责。</p>
+                <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 16px; margin-bottom: 2rem; border: 1px solid var(--border-color);">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                        <span style="color: var(--text-secondary);">支付网络</span>
+                        <span>BSC Mainnet 主网 (ID: 56)</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                        <span style="color: var(--text-secondary);">永存档案</span>
+                        <span style="font-size:0.9rem;">由平台负责</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: var(--text-secondary);">您需支付</span>
+                        <span id="studioFeeDisplay" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-gold);">—</span>
+                    </div>
+                </div>
+
+                <div id="walletActionArea">
+                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;" onclick="Studio.publish()">
+                        ⚡ 确认支付并发布
+                    </button>
+                </div>
+                <div id="adminSpecialArea" style="display:none; margin-top: 0.9rem; padding: 0.8rem 1rem; border: 1px dashed var(--accent-orange); border-radius: 10px;">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                        <input type="checkbox" id="adminSpecialPostCheckbox">
+                        <span style="font-size:0.88rem; color:var(--text-primary);">发布为特殊帖子（始终优先出现在第一页）</span>
+                    </label>
+                </div>
+                <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">已支付但未完成发帖？输入交易哈希继续（无需再付）</div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" id="resumeTxHashInput" class="form-input" placeholder="0x..." style="flex: 1; font-family: monospace; font-size: 0.8rem;">
+                        <button type="button" class="btn btn-ghost" onclick="Studio.resumeWithTxHash()">用该哈希继续</button>
+                    </div>
+                </div>
+
+                <button class="btn btn-ghost" style="width: 100%; margin-top: 1rem;" onclick="Studio.prevStep(1)">返回修改</button>
+            </div>
+
+        </div>
+
+        <footer style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+            <p>
+                本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
+            </p>
+        </footer>
+    </main>
+</div>
