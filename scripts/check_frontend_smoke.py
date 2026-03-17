@@ -9,6 +9,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+# 可选：GUIHUA_SKIP_SSL_VERIFY=1 时跳过 SSL 校验（仅本地跑 suite 用）
+try:
+    from _ssl_skip import maybe_disable_ssl_verify
+except ImportError:
+    def maybe_disable_ssl_verify():
+        pass
+
 
 REQUIRED_HOME_SNIPPETS = [
     "/static/modal-interact.js",
@@ -40,6 +47,7 @@ def assert_contains(text: str, needle: str, label: str) -> None:
 
 
 def main() -> int:
+    maybe_disable_ssl_verify()
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
     try:
         home = fetch_text(base + "/")
@@ -67,6 +75,17 @@ def main() -> int:
         assert_contains(notifications, "/static/notifications.js", "notifications page")
         assert_contains(notifications, "list-page-shell", "notifications page")
         print("notifications_ok=1")
+
+        profile_page = fetch_text(base + "/profile")
+        assert_contains(profile_page, "/static/profile.js", "profile page")
+        assert_contains(profile_page, "profileArea", "profile page")
+        print("profile_ok=1")
+
+        studio_page = fetch_text(base + "/studio")
+        assert_contains(studio_page, "studioView", "studio page")
+        assert_contains(studio_page, "step1", "studio page")
+        print("studio_ok=1")
+
         print("smoke_ok=1")
         return 0
     except (AssertionError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:

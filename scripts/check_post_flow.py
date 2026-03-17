@@ -16,12 +16,28 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
+try:
+    from _ssl_skip import maybe_disable_ssl_verify
+except ImportError:
+    def maybe_disable_ssl_verify():
+        pass
+
 from app import app, db, _new_user  # noqa: E402
 from models import User, Post, PendingPublication  # noqa: E402
 
 
 ADMIN_USERNAME = "qa_post_admin"
 PASSWORD = "123456"
+
+
+def _is_remote_base(base: str) -> bool:
+    return "127.0.0.1" not in base and "localhost" not in base
+
+
+def _remote_admin_creds():
+    u = os.environ.get("GUIHUA_ADMIN_USERNAME", "").strip()
+    p = os.environ.get("GUIHUA_ADMIN_PASSWORD", "").strip()
+    return (u or None, p or None)
 
 
 def ensure_admin():
@@ -65,14 +81,21 @@ def assert_ok(status, data, label):
         raise AssertionError(f"{label}: status={status} data={data}")
 
 
-def login(base):
-    status, data = http_json(
-        base + "/api/auth/web2/login",
-        method="POST",
-        payload={"username": ADMIN_USERNAME, "password": PASSWORD},
-    )
-    assert_ok(status, data, "login")
-    return data["token"]
+def login(base, username=None, password=None):
+    u = username or ADMIN_USERNAME
+    p = password or PASSWORD
+    # release suite 内多个脚本会短时间频繁登录，可能触发限流；这里做轻量重试以提升稳定性。
+    for attempt in range(4):
+        status, data = http_json(
+            base + "/api/auth/web2/login",
+            method="POST",
+            payload={"username": u, "password": p},
+        )
+        if status != 429:
+            assert_ok(status, data, "login")
+            return data["token"]
+        time.sleep(0.8 * (attempt + 1))
+    raise AssertionError(f"login: status=429 data={data}")
 
 
 def cleanup_post(post_id):
@@ -92,13 +115,25 @@ def cleanup_pending(tx_hash):
 
 
 def main():
+    maybe_disable_ssl_verify()
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
-    ensure_admin()
+    is_remote = _is_remote_base(base)
+    admin_username, admin_password = ADMIN_USERNAME, PASSWORD
+    if is_remote:
+        creds = _remote_admin_creds()
+        if not creds[0] or not creds[1]:
+            print("post_flow_error=远程环境请设置 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
+            return 1
+        admin_username, admin_password = creds
+
     created_post_id = None
     synthetic_post_id = None
     pending_tx_hash = "qa_pending_retry_hash"
+    token = None
     try:
-        token = login(base)
+        if not is_remote:
+            ensure_admin()
+        token = login(base, admin_username, admin_password)
         payload = {"title": f"QA 发布链路 {int(time.time())}", "content": "<p>Smoke post body.</p>"}
         status, data = http_json(base + "/api/posts/precheck", method="POST", token=token, payload=payload)
         assert_ok(status, data, "precheck")
@@ -113,78 +148,85 @@ def main():
             raise AssertionError("create post missing id")
         print("post_create_ok=1")
 
-        with app.app_context():
-            row = Post(
-                title="QA Chain Published",
-                content="<p>published</p>",
-                author_id=User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar(),
-                tx_hash="0x" + ("ab" * 32),
-                ipfs_cid="qa-chain-cid",
-                is_paid=True,
-                is_on_chain=True,
-                post_type=1,
-            )
-            db.session.add(row)
-            db.session.commit()
-            synthetic_post_id = row.id
+        if not is_remote:
+            with app.app_context():
+                row = Post(
+                    title="QA Chain Published",
+                    content="<p>published</p>",
+                    author_id=User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar(),
+                    tx_hash="0x" + ("ab" * 32),
+                    ipfs_cid="qa-chain-cid",
+                    is_paid=True,
+                    is_on_chain=True,
+                    post_type=1,
+                )
+                db.session.add(row)
+                db.session.commit()
+                synthetic_post_id = row.id
 
-        status, data = http_json(base + "/api/posts/check_tx?tx_hash=" + ("0x" + ("ab" * 32)))
-        assert_ok(status, data, "check tx")
-        if data.get("status") != "success":
-            raise AssertionError(f"unexpected check_tx status: {data}")
-        if data.get("stage") not in (None, "", "published"):
-            raise AssertionError(f"unexpected published stage: {data}")
-        print("post_check_tx_ok=1")
+            status, data = http_json(base + "/api/posts/check_tx?tx_hash=" + ("0x" + ("ab" * 32)))
+            assert_ok(status, data, "check tx")
+            if data.get("status") != "success":
+                raise AssertionError(f"unexpected check_tx status: {data}")
+            if data.get("stage") not in (None, "", "published"):
+                raise AssertionError(f"unexpected published stage: {data}")
+            print("post_check_tx_ok=1")
 
-        with app.app_context():
-            row = PendingPublication(
-                user_id=User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar(),
-                tx_hash=pending_tx_hash,
-                title="QA Pending Publish",
-                content="<p>pending</p>",
-                tags='["qa"]',
-                status='awaiting_retry',
-                last_error='支付已确认，但永存写入失败，可直接继续发布重试',
+            with app.app_context():
+                row = PendingPublication(
+                    user_id=User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar(),
+                    tx_hash=pending_tx_hash,
+                    title="QA Pending Publish",
+                    content="<p>pending</p>",
+                    tags='["qa"]',
+                    status='awaiting_retry',
+                    last_error='支付已确认，但永存写入失败，可直接继续发布重试',
+                )
+                db.session.add(row)
+                db.session.commit()
+            status, data = http_json(base + "/api/posts/pending/latest", token=token)
+            assert_ok(status, data, "pending latest")
+            pending = data.get("pending") or {}
+            if pending.get("tx_hash") != pending_tx_hash:
+                raise AssertionError(f"pending latest mismatch: {data}")
+            print("post_pending_latest_ok=1")
+            status, data = http_json(
+                base + "/api/posts/pending/retry",
+                method="POST",
+                token=token,
+                payload={
+                    "tx_hash": pending_tx_hash,
+                    "title": "QA Pending Publish",
+                    "content": "<p>pending</p>",
+                    "tags": ["qa"],
+                },
             )
-            db.session.add(row)
-            db.session.commit()
-        status, data = http_json(base + "/api/posts/pending/latest", token=token)
-        assert_ok(status, data, "pending latest")
-        pending = data.get("pending") or {}
-        if pending.get("tx_hash") != pending_tx_hash:
-            raise AssertionError(f"pending latest mismatch: {data}")
-        print("post_pending_latest_ok=1")
-        status, data = http_json(
-            base + "/api/posts/pending/retry",
-            method="POST",
-            token=token,
-            payload={
-                "tx_hash": pending_tx_hash,
-                "title": "QA Pending Publish",
-                "content": "<p>pending</p>",
-                "tags": ["qa"],
-            },
-        )
-        if status != 503:
-            raise AssertionError(f"pending retry should be 503 while hash is fake: status={status} data={data}")
-        retry_pending = data.get("pending") or {}
-        if retry_pending.get("tx_hash") != pending_tx_hash:
-            raise AssertionError(f"pending retry missing row: {data}")
-        print("post_pending_retry_ok=1")
-        status, data = http_json(base + "/api/posts/pending/clear", method="POST", token=token, payload={"tx_hash": pending_tx_hash})
-        assert_ok(status, data, "pending clear")
-        print("post_pending_clear_ok=1")
+            if status != 503:
+                raise AssertionError(f"pending retry should be 503 while hash is fake: status={status} data={data}")
+            retry_pending = data.get("pending") or {}
+            if retry_pending.get("tx_hash") != pending_tx_hash:
+                raise AssertionError(f"pending retry missing row: {data}")
+            print("post_pending_retry_ok=1")
+            status, data = http_json(base + "/api/posts/pending/clear", method="POST", token=token, payload={"tx_hash": pending_tx_hash})
+            assert_ok(status, data, "pending clear")
+            print("post_pending_clear_ok=1")
+        else:
+            print("post_check_tx_skipped=1")
+            print("post_pending_skipped=1")
         print("post_flow_ok=1")
         return 0
     except Exception as exc:
         print(f"post_flow_error={exc}", file=sys.stderr)
         return 1
     finally:
-        if created_post_id:
-            cleanup_post(created_post_id)
-        if synthetic_post_id:
-            cleanup_post(synthetic_post_id)
-        cleanup_pending(pending_tx_hash)
+        if not is_remote:
+            if created_post_id:
+                cleanup_post(created_post_id)
+            if synthetic_post_id:
+                cleanup_post(synthetic_post_id)
+            cleanup_pending(pending_tx_hash)
+        elif created_post_id and token:
+            http_json(base + f"/api/posts/{created_post_id}", method="DELETE", token=token)
 
 
 if __name__ == "__main__":

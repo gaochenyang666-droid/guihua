@@ -37,7 +37,10 @@
 ```bash
 ENABLE_PUBLISH_COMPENSATION_WORKER=true
 PUBLISH_COMPENSATION_INTERVAL_SEC=180
+PUBLISH_COMPENSATION_MIN_AGE_SEC=60
 ```
+
+- `PUBLISH_COMPENSATION_MIN_AGE_SEC`：待发布记录需等待至少该秒数后才参与补偿（默认 60），避免刚写入即重试。
 
 说明：
 - 单进程部署可直接开启。
@@ -115,3 +118,5 @@ python3 scripts/check_release_suite.py http://127.0.0.1:5012
 - 发帖 smoke
 - 系列/举报 smoke
 - ops smoke
+
+线上部署后验收与远程模式说明见 `docs/release_suite.md`（包含远程账号环境变量、remote-safe skip 规则与验收 checklist）。

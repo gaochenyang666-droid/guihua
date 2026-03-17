@@ -16,6 +16,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
+try:
+    from _ssl_skip import maybe_disable_ssl_verify
+except ImportError:
+    def maybe_disable_ssl_verify():
+        pass
+
 from app import app, db, _new_user  # noqa: E402
 from models import User, Post, Series, Report, Notification  # noqa: E402
 
@@ -23,6 +29,18 @@ from models import User, Post, Series, Report, Notification  # noqa: E402
 ADMIN_USERNAME = "qa_sr_admin"
 USER_USERNAME = "qa_sr_user"
 PASSWORD = "123456"
+
+
+def _is_remote_base(base: str) -> bool:
+    return "127.0.0.1" not in base and "localhost" not in base
+
+
+def _remote_credentials():
+    admin_user = os.environ.get("GUIHUA_ADMIN_USERNAME", "").strip()
+    admin_pass = os.environ.get("GUIHUA_ADMIN_PASSWORD", "").strip()
+    user_user = os.environ.get("GUIHUA_USER_USERNAME", "").strip() or admin_user
+    user_pass = os.environ.get("GUIHUA_USER_PASSWORD", "").strip() or admin_pass
+    return (admin_user or None, admin_pass or None, user_user or None, user_pass or None)
 
 
 def ensure_users():
@@ -70,11 +88,12 @@ def assert_ok(status, data, label):
         raise AssertionError(f"{label}: status={status} data={data}")
 
 
-def login(base, username):
+def login(base, username, password=None):
+    pwd = password if password is not None else PASSWORD
     status, data = http_json(
         base + "/api/auth/web2/login",
         method="POST",
-        payload={"username": username, "password": PASSWORD},
+        payload={"username": username, "password": pwd},
     )
     assert_ok(status, data, f"login:{username}")
     return data["token"]
@@ -102,12 +121,26 @@ def cleanup(ids):
 
 
 def main():
+    maybe_disable_ssl_verify()
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
-    ensure_users()
+    is_remote = _is_remote_base(base)
+    admin_username, user_username = ADMIN_USERNAME, USER_USERNAME
+    admin_password = user_password = PASSWORD
+    if is_remote:
+        creds = _remote_credentials()
+        if not creds[0] or not creds[1]:
+            print("series_report_flow_error=远程环境请设置 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
+            return 1
+        admin_username, admin_password = creds[0], creds[1]
+        user_username = creds[2] or admin_username
+        user_password = creds[3] or admin_password
+
+    if not is_remote:
+        ensure_users()
     ids = {}
     try:
-        admin_token = login(base, ADMIN_USERNAME)
-        user_token = login(base, USER_USERNAME)
+        admin_token = login(base, admin_username, admin_password)
+        user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
 
         status, data = http_json(
             base + "/api/posts",
@@ -182,7 +215,8 @@ def main():
         print(f"series_report_flow_error={exc}", file=sys.stderr)
         return 1
     finally:
-        cleanup(ids)
+        if not is_remote:
+            cleanup(ids)
 
 
 if __name__ == "__main__":

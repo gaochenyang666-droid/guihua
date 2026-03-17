@@ -16,6 +16,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
+try:
+    from _ssl_skip import maybe_disable_ssl_verify
+except ImportError:
+    def maybe_disable_ssl_verify():
+        pass
+
 from app import app, db, _new_user  # noqa: E402
 from models import User, Post, Comment, Like, Bookmark, PendingPublication  # noqa: E402
 
@@ -23,6 +29,19 @@ from models import User, Post, Comment, Like, Bookmark, PendingPublication  # no
 ADMIN_USERNAME = "qa_admin_smoke"
 USER_USERNAME = "qa_user_smoke"
 PASSWORD = "123456"
+
+
+def _is_remote_base(base: str) -> bool:
+    return "127.0.0.1" not in base and "localhost" not in base
+
+
+def _remote_credentials():
+    """当对远程跑时使用环境变量；未设置则返回 None，调用方应报错或跳过。"""
+    admin_user = os.environ.get("GUIHUA_ADMIN_USERNAME", "").strip()
+    admin_pass = os.environ.get("GUIHUA_ADMIN_PASSWORD", "").strip()
+    user_user = os.environ.get("GUIHUA_USER_USERNAME", "").strip() or admin_user
+    user_pass = os.environ.get("GUIHUA_USER_PASSWORD", "").strip() or admin_pass
+    return (admin_user or None, admin_pass or None, user_user or None, user_pass or None)
 
 
 def ensure_users_and_post():
@@ -110,11 +129,12 @@ def assert_ok(status, data, label):
         raise AssertionError(f"{label}: status={status} data={data}")
 
 
-def login(base, username):
+def login(base, username, password=None):
+    pwd = password if password is not None else PASSWORD
     status, data = http_json(
         base + "/api/auth/web2/login",
         method="POST",
-        payload={"username": username, "password": PASSWORD},
+        payload={"username": username, "password": pwd},
     )
     assert_ok(status, data, f"login:{username}")
     token = data.get("token") or ""
@@ -124,13 +144,42 @@ def login(base, username):
 
 
 def main():
+    maybe_disable_ssl_verify()
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
+    is_remote = _is_remote_base(base)
+    admin_username = ADMIN_USERNAME
+    admin_password = PASSWORD
+    user_username = USER_USERNAME
+    user_password = PASSWORD
+    if is_remote:
+        creds = _remote_credentials()
+        if not creds[0] or not creds[1]:
+            print("admin_flow_error=远程环境请设置 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
+            return 1
+        admin_username, admin_password = creds[0], creds[1]
+        user_username = creds[2] or admin_username
+        user_password = creds[3] or admin_password
+
     post_id = None
     pending_tx_hash = "0x" + ("ef" * 32)
     try:
-        post_id = ensure_users_and_post()
-        admin_token = login(base, ADMIN_USERNAME)
-        user_token = login(base, USER_USERNAME)
+        if not is_remote:
+            post_id = ensure_users_and_post()
+            admin_token = login(base, admin_username, admin_password)
+            user_token = login(base, user_username, user_password)
+        else:
+            admin_token = login(base, admin_username, admin_password)
+            status, data = http_json(
+                base + "/api/posts",
+                method="POST",
+                token=admin_token,
+                payload={"title": f"QA Smoke Post {int(time.time())}", "content": "<p>Smoke content for admin flow.</p>"},
+            )
+            assert_ok(status, data, "create post (remote)")
+            post_id = (data.get("post") or {}).get("id")
+            if not post_id:
+                raise AssertionError(f"create post missing id: {data}")
+            user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
 
         status, data = http_json(f"{base}/api/posts/{post_id}/like", method="POST", token=user_token)
         assert_ok(status, data, "user like")
@@ -170,55 +219,60 @@ def main():
         post_id = None
         print("admin_delete_ok=1")
 
-        with app.app_context():
-            admin_id = User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar()
-            row = PendingPublication(
-                user_id=admin_id,
-                tx_hash=pending_tx_hash,
-                title="QA Admin Pending",
-                content="<p>pending</p>",
-                tags='["qa"]',
-                status='awaiting_retry',
-                last_error='待管理员处理',
-            )
-            db.session.add(row)
-            db.session.commit()
+        if not is_remote:
+            with app.app_context():
+                admin_id = User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar()
+                row = PendingPublication(
+                    user_id=admin_id,
+                    tx_hash=pending_tx_hash,
+                    title="QA Admin Pending",
+                    content="<p>pending</p>",
+                    tags='["qa"]',
+                    status='awaiting_retry',
+                    last_error='待管理员处理',
+                )
+                db.session.add(row)
+                db.session.commit()
 
-        status, data = http_json(f"{base}/api/admin/pending-publications", token=admin_token)
-        assert_ok(status, data, "admin pending list")
-        items = data.get("items") or []
-        if not any((row.get("tx_hash") == pending_tx_hash) for row in items):
-            raise AssertionError(f"pending publication not found in admin list: {data}")
-        print("admin_pending_list_ok=1")
+            status, data = http_json(f"{base}/api/admin/pending-publications", token=admin_token)
+            assert_ok(status, data, "admin pending list")
+            items = data.get("items") or []
+            if not any((row.get("tx_hash") == pending_tx_hash) for row in items):
+                raise AssertionError(f"pending publication not found in admin list: {data}")
+            print("admin_pending_list_ok=1")
 
-        status, data = http_json(f"{base}/api/admin/pending-publications?status=awaiting_retry&q=QA%20Admin%20Pending", token=admin_token)
-        assert_ok(status, data, "admin pending filtered list")
-        filtered = data.get("items") or []
-        if not any((row.get("tx_hash") == pending_tx_hash) for row in filtered):
-            raise AssertionError(f"pending publication not found in filtered list: {data}")
-        print("admin_pending_filter_ok=1")
+            status, data = http_json(f"{base}/api/admin/pending-publications?status=awaiting_retry&q=QA%20Admin%20Pending", token=admin_token)
+            assert_ok(status, data, "admin pending filtered list")
+            filtered = data.get("items") or []
+            if not any((row.get("tx_hash") == pending_tx_hash) for row in filtered):
+                raise AssertionError(f"pending publication not found in filtered list: {data}")
+            print("admin_pending_filter_ok=1")
 
-        pending_id = next((row.get("id") for row in items if row.get("tx_hash") == pending_tx_hash), None)
-        if not pending_id:
-            raise AssertionError(f"pending publication id missing: {data}")
-        status, data = http_json(f"{base}/api/admin/pending-publications/{pending_id}", method="DELETE", token=admin_token)
-        assert_ok(status, data, "admin pending delete")
-        print("admin_pending_delete_ok=1")
+            pending_id = next((row.get("id") for row in items if row.get("tx_hash") == pending_tx_hash), None)
+            if not pending_id:
+                raise AssertionError(f"pending publication id missing: {data}")
+            status, data = http_json(f"{base}/api/admin/pending-publications/{pending_id}", method="DELETE", token=admin_token)
+            assert_ok(status, data, "admin pending delete")
+            print("admin_pending_delete_ok=1")
+        else:
+            print("admin_pending_skipped=1")
+
         print("admin_flow_ok=1")
         return 0
     except Exception as exc:
         print(f"admin_flow_error={exc}", file=sys.stderr)
         return 1
     finally:
-        if post_id is not None:
+        if not is_remote and post_id is not None:
             try:
                 cleanup_post(post_id)
             except Exception:
                 pass
-        try:
-            cleanup_pending(pending_tx_hash)
-        except Exception:
-            pass
+        if not is_remote:
+            try:
+                cleanup_pending(pending_tx_hash)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":
