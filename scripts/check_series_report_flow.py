@@ -25,6 +25,23 @@ except ImportError:
 from app import app, db, _new_user  # noqa: E402
 from models import User, Post, Series, Report, Notification  # noqa: E402
 
+try:
+    from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token, get_user_token as _get_accept_user_token
+except ImportError:
+    try:
+        from _acceptance_auth import get_admin_token as _get_accept_admin_token, get_user_token as _get_accept_user_token  # type: ignore
+    except ImportError:
+        _get_accept_admin_token = None  # type: ignore
+        _get_accept_user_token = None  # type: ignore
+
+try:
+    from scripts._contract import require_keys as _require_keys
+except ImportError:
+    try:
+        from _contract import require_keys as _require_keys  # type: ignore
+    except ImportError:
+        _require_keys = None  # type: ignore
+
 
 ADMIN_USERNAME = "qa_sr_admin"
 USER_USERNAME = "qa_sr_user"
@@ -127,20 +144,27 @@ def main():
     admin_username, user_username = ADMIN_USERNAME, USER_USERNAME
     admin_password = user_password = PASSWORD
     if is_remote:
-        creds = _remote_credentials()
-        if not creds[0] or not creds[1]:
-            print("series_report_flow_error=远程环境请设置 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
-            return 1
-        admin_username, admin_password = creds[0], creds[1]
-        user_username = creds[2] or admin_username
-        user_password = creds[3] or admin_password
+        if _get_accept_admin_token and _get_accept_user_token:
+            admin_token = _get_accept_admin_token(base)
+            user_token = _get_accept_user_token(base, allow_fallback_to_admin=True)
+        else:
+            creds = _remote_credentials()
+            if not creds[0] or not creds[1]:
+                print("series_report_flow_error=远程环境请设置 GUIHUA_ADMIN_TOKEN（推荐）或 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
+                return 1
+            admin_username, admin_password = creds[0], creds[1]
+            user_username = creds[2] or admin_username
+            user_password = creds[3] or admin_password
+            admin_token = login(base, admin_username, admin_password)
+            user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
 
     if not is_remote:
         ensure_users()
     ids = {}
     try:
-        admin_token = login(base, admin_username, admin_password)
-        user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
+        if not is_remote:
+            admin_token = login(base, admin_username, admin_password)
+            user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
 
         status, data = http_json(
             base + "/api/posts",
@@ -190,7 +214,15 @@ def main():
 
         status, data = http_json(base + "/api/admin/reports", token=admin_token)
         assert_ok(status, data, "list reports")
-        if not any(int(r.get("id", 0)) == int(ids["report_id"]) for r in data):
+        # 兼容返回结构：可能是 list，也可能是 {items:[...]}
+        reports = data
+        if isinstance(data, dict) and "items" in data:
+            reports = data.get("items") or []
+        if not isinstance(reports, list):
+            raise AssertionError(f"list reports: unexpected shape: {type(reports).__name__}")
+        if _require_keys and reports:
+            _require_keys("report item", reports[0], ["id"])
+        if not any(int((r.get("id", 0) if isinstance(r, dict) else 0) or 0) == int(ids["report_id"]) for r in reports):
             raise AssertionError("report missing in admin list")
         status, data = http_json(
             base + f"/api/admin/reports/{ids['report_id']}",

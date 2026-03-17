@@ -25,6 +25,22 @@ except ImportError:
 from app import app, db, _new_user, _log_flow_event  # noqa: E402
 from models import User, PendingPublication  # noqa: E402
 
+try:
+    from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token
+except ImportError:
+    try:
+        from _acceptance_auth import get_admin_token as _get_accept_admin_token  # type: ignore
+    except ImportError:
+        _get_accept_admin_token = None  # type: ignore
+
+try:
+    from scripts._contract import require_keys as _require_keys
+except ImportError:
+    try:
+        from _contract import require_keys as _require_keys  # type: ignore
+    except ImportError:
+        _require_keys = None  # type: ignore
+
 
 ADMIN_USERNAME = "qa_ops_admin"
 PASSWORD = "123456"
@@ -107,12 +123,6 @@ def main():
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
     is_remote = _is_remote_base(base)
     admin_username, admin_password = ADMIN_USERNAME, PASSWORD
-    if is_remote:
-        creds = _remote_admin_creds()
-        if not creds[0] or not creds[1]:
-            print("ops_flow_error=远程环境请设置 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
-            return 1
-        admin_username, admin_password = creds
 
     pending_tx_hash = "ops_pending_retry_hash"
     try:
@@ -132,12 +142,24 @@ def main():
                 db.session.commit()
                 _log_flow_event('ops_smoke_seeded', severity='warn', tx_hash=pending_tx_hash)
 
-        token = login(base, admin_username, admin_password)
+        if is_remote and _get_accept_admin_token:
+            token = _get_accept_admin_token(base)
+        else:
+            if is_remote:
+                creds = _remote_admin_creds()
+                if not creds[0] or not creds[1]:
+                    print("ops_flow_error=远程环境请设置 GUIHUA_ADMIN_TOKEN（推荐）或 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
+                    return 1
+                admin_username, admin_password = creds
+            token = login(base, admin_username, admin_password)
         status, data = http_json(base + "/api/admin/stats", token=token)
         assert_ok(status, data, "admin stats")
         # 兼容旧版：admin/stats 可能不包含 redis 字段（redis 状态可在 ops/summary 中验证）。
-        if "users" not in data or "posts" not in data or "revenue" not in data:
-            raise AssertionError(f"admin stats missing keys: {list(data.keys())}")
+        if _require_keys:
+            _require_keys("admin stats", data, ["users", "posts", "revenue"])
+        else:
+            if "users" not in data or "posts" not in data or "revenue" not in data:
+                raise AssertionError(f"admin stats missing keys: {list(data.keys())}")
         if "redis" in data:
             redis_status = (data.get("redis") or {}).get("status")
             if redis_status not in ("ok", "fallback"):

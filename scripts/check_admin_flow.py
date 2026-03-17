@@ -25,6 +25,15 @@ except ImportError:
 from app import app, db, _new_user  # noqa: E402
 from models import User, Post, Comment, Like, Bookmark, PendingPublication  # noqa: E402
 
+try:
+    from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token, get_user_token as _get_accept_user_token
+except ImportError:
+    try:
+        from _acceptance_auth import get_admin_token as _get_accept_admin_token, get_user_token as _get_accept_user_token  # type: ignore
+    except ImportError:
+        _get_accept_admin_token = None  # type: ignore
+        _get_accept_user_token = None  # type: ignore
+
 
 ADMIN_USERNAME = "qa_admin_smoke"
 USER_USERNAME = "qa_user_smoke"
@@ -151,14 +160,6 @@ def main():
     admin_password = PASSWORD
     user_username = USER_USERNAME
     user_password = PASSWORD
-    if is_remote:
-        creds = _remote_credentials()
-        if not creds[0] or not creds[1]:
-            print("admin_flow_error=远程环境请设置 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
-            return 1
-        admin_username, admin_password = creds[0], creds[1]
-        user_username = creds[2] or admin_username
-        user_password = creds[3] or admin_password
 
     post_id = None
     pending_tx_hash = "0x" + ("ef" * 32)
@@ -168,7 +169,19 @@ def main():
             admin_token = login(base, admin_username, admin_password)
             user_token = login(base, user_username, user_password)
         else:
-            admin_token = login(base, admin_username, admin_password)
+            if _get_accept_admin_token and _get_accept_user_token:
+                admin_token = _get_accept_admin_token(base)
+                user_token = _get_accept_user_token(base, allow_fallback_to_admin=True)
+            else:
+                creds = _remote_credentials()
+                if not creds[0] or not creds[1]:
+                    print("admin_flow_error=远程环境请设置 GUIHUA_ADMIN_TOKEN（推荐）或 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
+                    return 1
+                admin_username, admin_password = creds[0], creds[1]
+                user_username = creds[2] or admin_username
+                user_password = creds[3] or admin_password
+                admin_token = login(base, admin_username, admin_password)
+                user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
             status, data = http_json(
                 base + "/api/posts",
                 method="POST",
@@ -179,7 +192,6 @@ def main():
             post_id = (data.get("post") or {}).get("id")
             if not post_id:
                 raise AssertionError(f"create post missing id: {data}")
-            user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
 
         status, data = http_json(f"{base}/api/posts/{post_id}/like", method="POST", token=user_token)
         assert_ok(status, data, "user like")

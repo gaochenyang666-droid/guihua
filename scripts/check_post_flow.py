@@ -25,6 +25,14 @@ except ImportError:
 from app import app, db, _new_user  # noqa: E402
 from models import User, Post, PendingPublication  # noqa: E402
 
+try:
+    from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token
+except ImportError:
+    try:
+        from _acceptance_auth import get_admin_token as _get_accept_admin_token  # type: ignore
+    except ImportError:
+        _get_accept_admin_token = None  # type: ignore
+
 
 ADMIN_USERNAME = "qa_post_admin"
 PASSWORD = "123456"
@@ -120,11 +128,14 @@ def main():
     is_remote = _is_remote_base(base)
     admin_username, admin_password = ADMIN_USERNAME, PASSWORD
     if is_remote:
-        creds = _remote_admin_creds()
-        if not creds[0] or not creds[1]:
-            print("post_flow_error=远程环境请设置 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
-            return 1
-        admin_username, admin_password = creds
+        if _get_accept_admin_token:
+            admin_password = ""  # unused
+        else:
+            creds = _remote_admin_creds()
+            if not creds[0] or not creds[1]:
+                print("post_flow_error=远程环境请设置 GUIHUA_ADMIN_TOKEN（推荐）或 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
+                return 1
+            admin_username, admin_password = creds
 
     created_post_id = None
     synthetic_post_id = None
@@ -133,7 +144,10 @@ def main():
     try:
         if not is_remote:
             ensure_admin()
-        token = login(base, admin_username, admin_password)
+        if is_remote and _get_accept_admin_token:
+            token = _get_accept_admin_token(base)
+        else:
+            token = login(base, admin_username, admin_password)
         payload = {"title": f"QA 发布链路 {int(time.time())}", "content": "<p>Smoke post body.</p>"}
         status, data = http_json(base + "/api/posts/precheck", method="POST", token=token, payload=payload)
         assert_ok(status, data, "precheck")

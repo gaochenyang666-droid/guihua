@@ -120,3 +120,5 @@ python3 scripts/check_release_suite.py http://127.0.0.1:5012
 - ops smoke
 
 线上部署后验收与远程模式说明见 `docs/release_suite.md`（包含远程账号环境变量、remote-safe skip 规则与验收 checklist）。
+
+补充：推荐在 GitHub Actions 中配置远程验收 workflow（见 `docs/release_suite.md` 的 CI / 门禁章节），用于部署后的自动验收与日志归档。

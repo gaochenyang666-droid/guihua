@@ -19,14 +19,21 @@ python3 scripts/check_release_suite.py http://127.0.0.1:5012
 
 ```bash
 GUIHUA_SKIP_SSL_VERIFY=1 \
-GUIHUA_ADMIN_USERNAME=你的管理员用户名 \
-GUIHUA_ADMIN_PASSWORD=你的密码 \
+GUIHUA_ADMIN_TOKEN=你的管理员token \
 python3 scripts/check_release_suite.py https://guihua.fun
 ```
 
 ### 可选：普通用户（举报/通知等链路更贴近真实）
 
 ```bash
+GUIHUA_USER_TOKEN=普通用户token
+```
+
+### 兼容旧方式（不推荐，可能触发登录限流 429）
+
+```bash
+GUIHUA_ADMIN_USERNAME=你的管理员用户名
+GUIHUA_ADMIN_PASSWORD=你的密码
 GUIHUA_USER_USERNAME=普通用户名
 GUIHUA_USER_PASSWORD=密码
 ```
@@ -38,6 +45,21 @@ GUIHUA_USER_PASSWORD=密码
 - **远程 suite 不直接写数据库**：不使用本地 DB 造数据去“假装”远程已有；只走真实 API。
 
 > 远程模式主要用于**上线后验收**，不是全链路压测/容量验证的替代品。
+
+## CI / 门禁（GitHub Actions）
+
+仓库提供 workflow：`.github/workflows/release-suite-remote.yml`，用于远程验收与日志归档。
+
+建议配置仓库 Secrets：
+
+- `GUIHUA_ADMIN_TOKEN`（必填，推荐）
+- `GUIHUA_USER_TOKEN`（可选）
+- `GUIHUA_SKIP_SSL_VERIFY`（可选，设为 `1` 时跳过 SSL 校验）
+
+使用方式：
+
+- 手动触发 `release-suite-remote`，输入 `base_url`（例如 `https://guihua.fun`）。
+- 运行结果的 stdout/stderr 会作为 artifact `release-suite-logs` 保存，便于留痕与排障。
 
 ## Suite 输出与判定
 
