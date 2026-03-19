@@ -12,7 +12,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, g, render_template
+from flask import Flask, request, jsonify, g, render_template, redirect
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
@@ -210,8 +210,10 @@ def _delete_pending_wallet_nonce(address):
         address,
     )
 
+from flask_migrate import Migrate
 from extensions import db
 db.init_app(app)
+migrate = Migrate(app, db)
 
 # 区块链与存储逻辑已拆至 services/blockchain.py、services/storage.py
 from models import (User, Post, Vote, Comment, Like, CommentLike, Bookmark, Notification, UsedTransaction,
@@ -442,6 +444,11 @@ def login_page():
 
 @app.route('/profile')
 def profile():
+    user_param = request.args.get('user')
+    if not user_param:
+        payload = _get_optional_jwt_payload()
+        if not payload or not payload.get('user_id'):
+            return redirect('/login?next=%2Fprofile')
     return render_template('profile.html')
 
 
@@ -1180,10 +1187,18 @@ def search_posts():
         Post.pinned_at.desc(),
         Post.created_at.desc()
     )
+    from sqlalchemy.orm import joinedload as _jl
+    query = query.options(_jl(Post.author), _jl(Post.votes))
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     posts = pagination.items
+    s_post_ids = [p.id for p in posts]
+    s_like_counts = {}
+    s_comment_counts = {}
+    if s_post_ids:
+        s_like_counts = {r[0]: int(r[1] or 0) for r in db.session.query(Like.post_id, func.count(Like.id)).filter(Like.post_id.in_(s_post_ids)).group_by(Like.post_id).all()}
+        s_comment_counts = {r[0]: int(r[1] or 0) for r in db.session.query(Comment.post_id, func.count(Comment.id)).filter(Comment.post_id.in_(s_post_ids)).group_by(Comment.post_id).all()}
     return jsonify({
-        'posts': [p.to_dict() for p in posts],
+        'posts': [p.to_dict(likes_count=s_like_counts.get(p.id, 0), comments_count=s_comment_counts.get(p.id, 0), is_liked=False, is_bookmarked=False) for p in posts],
         'total': pagination.total,
         'pages': pagination.pages,
         'current_page': page
@@ -1643,10 +1658,10 @@ def get_user_profile(username):
         p_dict = p.to_dict(
             current_user_id,
             likes_count=like_counts.get(p.id, 0),
-            comments_count=comment_counts.get(p.id, 0)
+            comments_count=comment_counts.get(p.id, 0),
+            is_liked=p.id in user_likes,
+            is_bookmarked=p.id in user_bookmarks,
         )
-        p_dict['is_liked'] = p.id in user_likes
-        p_dict['is_bookmarked'] = p.id in user_bookmarks
         posts_data.append(p_dict)
 
     series_rows = Series.query.filter_by(author_id=user.id).order_by(Series.updated_at.desc()).limit(50).all()
@@ -1735,19 +1750,43 @@ def get_series_detail(series_id):
     viewer = User.query.get(payload.get('user_id')) if payload and payload.get('user_id') else None
     if not _series_can_view(row, viewer):
         return jsonify({'error': '该系列不可见'}), 403
-    links = SeriesPost.query.filter_by(series_id=series_id).order_by(SeriesPost.order_index.asc(), SeriesPost.id.asc()).all()
-    posts = []
+    from sqlalchemy.orm import joinedload as _jl
+    links = SeriesPost.query.filter_by(series_id=series_id).options(
+        _jl(SeriesPost.post).joinedload(Post.author),
+    ).order_by(SeriesPost.order_index.asc(), SeriesPost.id.asc()).all()
+    visible_posts = []
     for link in links:
         p = link.post
         if not p:
             continue
         if p.is_hidden and not (viewer and (viewer.is_admin or viewer.id == p.author_id)):
             continue
-        posts.append({
+        visible_posts.append((link, p))
+    s_post_ids = [p.id for _, p in visible_posts]
+    s_viewer_id = payload.get('user_id') if payload else None
+    s_like_counts = {}
+    s_comment_counts = {}
+    s_user_likes = set()
+    s_user_bookmarks = set()
+    if s_post_ids:
+        s_like_counts = {r[0]: int(r[1] or 0) for r in db.session.query(Like.post_id, func.count(Like.id)).filter(Like.post_id.in_(s_post_ids)).group_by(Like.post_id).all()}
+        s_comment_counts = {r[0]: int(r[1] or 0) for r in db.session.query(Comment.post_id, func.count(Comment.id)).filter(Comment.post_id.in_(s_post_ids)).group_by(Comment.post_id).all()}
+        if s_viewer_id:
+            s_user_likes = {l.post_id for l in Like.query.filter(Like.user_id == s_viewer_id, Like.post_id.in_(s_post_ids)).all()}
+            s_user_bookmarks = {b.post_id for b in Bookmark.query.filter(Bookmark.user_id == s_viewer_id, Bookmark.post_id.in_(s_post_ids)).all()}
+    items = []
+    for link, p in visible_posts:
+        items.append({
             'order_index': link.order_index,
-            'post': p.to_dict(payload.get('user_id') if payload else None)
+            'post': p.to_dict(
+                s_viewer_id,
+                likes_count=s_like_counts.get(p.id, 0),
+                comments_count=s_comment_counts.get(p.id, 0),
+                is_liked=p.id in s_user_likes,
+                is_bookmarked=p.id in s_user_bookmarks,
+            )
         })
-    return jsonify({'series': row.to_dict(), 'items': posts})
+    return jsonify({'series': row.to_dict(), 'items': items})
 
 
 @app.route('/api/series/<int:series_id>', methods=['PATCH'])
@@ -1875,15 +1914,20 @@ def reorder_series_posts(series_id):
 @app.route('/api/notifications', methods=['GET'])
 @token_required
 def get_notifications():
+    from sqlalchemy.orm import joinedload
     page = request.args.get('page', 1, type=int)
     per_page = 20
-    
+
     pagination = Notification.query.filter_by(user_id=g.current_user.id)\
+        .options(
+            joinedload(Notification.sender),
+            joinedload(Notification.post),
+        )\
         .order_by(Notification.created_at.desc())\
         .paginate(page=page, per_page=per_page, error_out=False)
-        
+
     notifs = pagination.items
-    
+
     return jsonify({
         'notifications': [n.to_dict() for n in notifs],
         'total': pagination.total,
@@ -2253,13 +2297,16 @@ def _allow_view_count_increment(post_id, ip):
 @app.route('/api/posts/<int:post_id>', methods=['GET'])
 def get_post_detail(post_id):
     try:
-        post = Post.query.get_or_404(post_id)
+        from sqlalchemy.orm import joinedload, subqueryload
+        post = Post.query.options(
+            joinedload(Post.author),
+            subqueryload(Post.votes),
+        ).get_or_404(post_id)
         payload = _get_optional_jwt_payload()
         current_user_id = payload.get('user_id') if payload else None
         viewer = User.query.get(current_user_id) if current_user_id else None
         if post.is_hidden and not (viewer and (viewer.is_admin or viewer.id == post.author_id)):
             return jsonify({'error': '帖子不存在'}), 404
-        # 浏览量 +1（同 IP 60 秒内仅计一次）
         try:
             ip = (request.remote_addr or 'unknown').strip()
             if _allow_view_count_increment(post_id, ip):
@@ -2268,13 +2315,13 @@ def get_post_detail(post_id):
                 db.session.commit()
         except Exception:
             db.session.rollback()
-            
-        post_data = post.to_dict(current_user_id)
 
-        from sqlalchemy.orm import joinedload
+        likes_count = Like.query.filter_by(post_id=post_id).count()
         all_comments = Comment.query.filter_by(post_id=post_id).options(
             joinedload(Comment.author)
         ).order_by(Comment.created_at.asc()).all()
+        post_data = post.to_dict(current_user_id, likes_count=likes_count, comments_count=len(all_comments))
+
         comment_like_counts = {}
         liked_comment_ids = set()
         comment_ids = [c.id for c in all_comments]
@@ -2300,30 +2347,40 @@ def get_post_detail(post_id):
         post_data['comments_count'] = len(all_comments)
 
         series_items = []
-        link_rows = SeriesPost.query.filter_by(post_id=post_id).order_by(SeriesPost.order_index.asc()).all()
-        for link in link_rows:
-            s = link.series
-            if not s:
-                continue
-            if not _series_can_view(s, viewer):
-                continue
-            prev_row = SeriesPost.query.filter(
-                SeriesPost.series_id == s.id,
-                SeriesPost.order_index < link.order_index
-            ).order_by(SeriesPost.order_index.desc()).first()
-            next_row = SeriesPost.query.filter(
-                SeriesPost.series_id == s.id,
-                SeriesPost.order_index > link.order_index
-            ).order_by(SeriesPost.order_index.asc()).first()
-            series_items.append({
-                'series_id': s.id,
-                'title': s.title,
-                'order_index': link.order_index,
-                'prev_post_id': prev_row.post_id if prev_row else None,
-                'next_post_id': next_row.post_id if next_row else None
-            })
+        link_rows = SeriesPost.query.filter_by(post_id=post_id).options(
+            joinedload(SeriesPost.series)
+        ).order_by(SeriesPost.order_index.asc()).all()
+        if link_rows:
+            series_ids = [lk.series_id for lk in link_rows]
+            all_series_posts = SeriesPost.query.filter(
+                SeriesPost.series_id.in_(series_ids)
+            ).order_by(SeriesPost.series_id, SeriesPost.order_index).all()
+            sp_by_series: dict[int, list] = {}
+            for sp in all_series_posts:
+                sp_by_series.setdefault(sp.series_id, []).append(sp)
+            for link in link_rows:
+                s = link.series
+                if not s or not _series_can_view(s, viewer):
+                    continue
+                siblings = sp_by_series.get(s.id, [])
+                prev_post_id = None
+                next_post_id = None
+                for i, sp in enumerate(siblings):
+                    if sp.post_id == post_id:
+                        if i > 0:
+                            prev_post_id = siblings[i - 1].post_id
+                        if i < len(siblings) - 1:
+                            next_post_id = siblings[i + 1].post_id
+                        break
+                series_items.append({
+                    'series_id': s.id,
+                    'title': s.title,
+                    'order_index': link.order_index,
+                    'prev_post_id': prev_post_id,
+                    'next_post_id': next_post_id,
+                })
         post_data['series'] = series_items
-            
+
         return jsonify(post_data)
     except Exception as e:
         print(f"Post Detail Error: {e}")

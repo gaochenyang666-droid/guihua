@@ -209,7 +209,8 @@ class Post(db.Model):
     votes = db.relationship('Vote', backref='post', lazy='dynamic')
     original_post = db.relationship('Post', remote_side=[id], backref='reposts')
 
-    def to_dict(self, current_user_id=None, likes_count=None, comments_count=None):
+    def to_dict(self, current_user_id=None, likes_count=None, comments_count=None,
+                is_liked=None, is_bookmarked=None):
         try:
             images_list = json.loads(self.images) if self.images else []
         except (TypeError, ValueError):
@@ -220,11 +221,15 @@ class Post(db.Model):
             tags_list = []
         if not isinstance(tags_list, list):
             tags_list = []
-        is_liked = False
-        is_bookmarked = False
-        if current_user_id:
-            is_liked = Like.query.filter_by(user_id=current_user_id, post_id=self.id).first() is not None
-            is_bookmarked = Bookmark.query.filter_by(user_id=current_user_id, post_id=self.id).first() is not None
+
+        if is_liked is None or is_bookmarked is None:
+            if current_user_id:
+                if is_liked is None:
+                    is_liked = Like.query.filter_by(user_id=current_user_id, post_id=self.id).first() is not None
+                if is_bookmarked is None:
+                    is_bookmarked = Bookmark.query.filter_by(user_id=current_user_id, post_id=self.id).first() is not None
+        is_liked = bool(is_liked)
+        is_bookmarked = bool(is_bookmarked)
 
         original_post_data = None
         if self.original_post:
@@ -243,7 +248,7 @@ class Post(db.Model):
             'id': self.id,
             'title': self.title,
             'content': self.content,
-            'cover_image': None,  # 帖子封面系统已下线，字段仅保留兼容
+            'cover_image': None,
             'images': images_list,
             'tags': tags_list,
             'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻', 'honor_title': '新魂'},
@@ -276,7 +281,7 @@ class Post(db.Model):
 class Vote(db.Model):
     __tablename__ = 'votes'
     id = db.Column(db.Integer, primary_key=True)
-    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), index=True)
     option_text = db.Column(db.String(100))
     vote_count = db.Column(db.Integer, default=0)
 
@@ -288,8 +293,8 @@ class Comment(db.Model):
     __tablename__ = 'comments'
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text)
-    author_id = db.Column(db.BigInteger, db.ForeignKey('users.id'))
-    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'))
+    author_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), index=True)
+    post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), index=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -379,8 +384,8 @@ class Bookmark(db.Model):
 class Notification(db.Model):
     __tablename__ = 'notifications'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'))
-    sender_id = db.Column(db.BigInteger, db.ForeignKey('users.id'))
+    user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), index=True)
+    sender_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), index=True)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
     type = db.Column(db.String(20))

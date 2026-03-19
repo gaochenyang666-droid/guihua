@@ -121,6 +121,9 @@ def get_posts_fallback(page, per_page, current_user_id):
     user_likes = set()
     user_bookmarks = set()
     top_comments = {}
+    like_counts = {}
+    comment_counts = {}
+    votes_map: dict[int, list] = {}
     if current_user_id and post_ids:
         try:
             user_likes = {l.post_id for l in Like.query.filter(Like.user_id == current_user_id, Like.post_id.in_(post_ids)).all()}
@@ -129,6 +132,22 @@ def get_posts_fallback(page, per_page, current_user_id):
             pass
     if post_ids:
         top_comments = _build_top_comments(post_ids)
+        try:
+            like_rows = db.session.query(Like.post_id, func.count(Like.id)).filter(Like.post_id.in_(post_ids)).group_by(Like.post_id).all()
+            like_counts = {r[0]: int(r[1] or 0) for r in like_rows}
+        except Exception:
+            pass
+        try:
+            comment_rows = db.session.query(Comment.post_id, func.count(Comment.id)).filter(Comment.post_id.in_(post_ids)).group_by(Comment.post_id).all()
+            comment_counts = {r[0]: int(r[1] or 0) for r in comment_rows}
+        except Exception:
+            pass
+        try:
+            all_votes = Vote.query.filter(Vote.post_id.in_(post_ids)).all()
+            for v in all_votes:
+                votes_map.setdefault(v.post_id, []).append({'id': v.id, 'option_text': getattr(v, 'option_text', ''), 'vote_count': getattr(v, 'vote_count', 0)})
+        except Exception:
+            pass
 
     posts_data = []
     for p in posts:
@@ -195,16 +214,9 @@ def get_posts_fallback(page, per_page, current_user_id):
             if not isinstance(tags_list, list):
                 tags_list = []
             is_permanent = bool(tx_hash or ipfs_cid or is_on_chain or post_type == 1)
-            likes_count = 0
-            comments_count = 0
-            votes_list = []
-            try:
-                likes_count = Like.query.filter_by(post_id=pid).count()
-                comments_count = Comment.query.filter_by(post_id=pid).count()
-                for v in Vote.query.filter_by(post_id=pid).all():
-                    votes_list.append({'id': v.id, 'option_text': getattr(v, 'option_text', ''), 'vote_count': getattr(v, 'vote_count', 0)})
-            except Exception:
-                pass
+            p_likes_count = like_counts.get(pid, 0)
+            p_comments_count = comment_counts.get(pid, 0)
+            votes_list = votes_map.get(pid, [])
 
             if cover_image and str(cover_image).strip() == '/static/images/hua_cover.jpg':
                 cover_image = None
@@ -217,8 +229,8 @@ def get_posts_fallback(page, per_page, current_user_id):
                 'tags': tags_list,
                 'author': authors_map.get(author_id, {'id': author_id, 'nickname': '用户', 'avatar': '👻', 'honor_title': '新魂'}),
                 'view_count': view_count,
-                'likes_count': likes_count,
-                'comments_count': comments_count,
+                'likes_count': p_likes_count,
+                'comments_count': p_comments_count,
                 'top_comment': top_comments.get(pid),
                 'votes': votes_list,
                 'is_liked': pid in user_likes,
@@ -289,10 +301,10 @@ def build_posts_payload(sort_by, page, per_page, region, current_user_id):
                 p_dict = p.to_dict(
                     current_user_id,
                     likes_count=like_counts.get(p.id, 0),
-                    comments_count=comment_counts.get(p.id, 0)
+                    comments_count=comment_counts.get(p.id, 0),
+                    is_liked=p.id in user_likes,
+                    is_bookmarked=p.id in user_bookmarks,
                 )
-                p_dict['is_liked'] = p.id in user_likes
-                p_dict['is_bookmarked'] = p.id in user_bookmarks
                 p_dict['top_comment'] = top_comments.get(p.id)
                 posts_data.append(p_dict)
             except Exception as e:
