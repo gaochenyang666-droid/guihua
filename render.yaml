@@ -3,7 +3,7 @@ services:
     name: guihua-web
     runtime: python
     plan: starter
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && flask db upgrade
     startCommand: gunicorn -b 0.0.0.0:$PORT app:app --workers 1 --timeout 120
     healthCheckPath: /
     autoDeploy: true
