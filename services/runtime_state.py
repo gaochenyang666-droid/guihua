@@ -1,10 +1,10 @@
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def prune_pending_wallet_nonces(store, ttl_minutes, now=None):
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     expired_keys = [
         key for key, value in store.items()
         if not value or not value.get('created_at') or now - value['created_at'] > timedelta(minutes=ttl_minutes)
@@ -18,7 +18,7 @@ def pending_wallet_nonce_redis_key(prefix, address):
 
 
 def set_pending_wallet_nonce(store, redis_conn, redis_key, ttl_minutes, address, nonce, created_at=None):
-    created_at = created_at or datetime.utcnow()
+    created_at = created_at or datetime.now(timezone.utc)
     payload = {
         'nonce': str(nonce or ''),
         'created_at': created_at.isoformat(),

@@ -5,7 +5,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt && flask db upgrade
     startCommand: gunicorn -b 0.0.0.0:$PORT app:app --workers 1 --timeout 120
-    healthCheckPath: /
+    healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION

@@ -1,8 +1,8 @@
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
-from flask import current_app
+from flask import current_app, request, g
 from extensions import db
 
 
@@ -107,9 +107,18 @@ def log_event(event, **fields):
             'event': str(event or ''),
             'severity': severity,
             'payload_json': json.dumps(payload, ensure_ascii=False, sort_keys=True),
-            'created_at': datetime.utcnow(),
+            'created_at': datetime.now(timezone.utc),
         }
         with db.engine.begin() as conn:
             conn.execute(FlowEvent.__table__.insert().values(**row))
     except Exception:
         logger.debug('flow event persistence skipped', exc_info=True)
+
+
+def log_flow_event(event, **fields):
+    extra = dict(fields or {})
+    extra.setdefault('path', request.path if request else None)
+    extra.setdefault('method', request.method if request else None)
+    extra.setdefault('user_id', getattr(getattr(g, 'current_user', None), 'id', None))
+    extra.setdefault('ip', request.headers.get('X-Forwarded-For', request.remote_addr) if request else None)
+    log_event(event, **extra)

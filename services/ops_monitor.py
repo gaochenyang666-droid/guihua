@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, case
 
 
 def build_ops_summary(flow_event_model, pending_model, admin_audit_model, now=None):
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     one_hour_ago = now - timedelta(hours=1)
     one_day_ago = now - timedelta(days=1)
 

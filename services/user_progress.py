@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def china_today(now=None):
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     return (now + timedelta(hours=8)).date()
 
 
@@ -43,7 +43,7 @@ def build_group_links_for_user(user, co_url, core_url, calc_level_info):
 
 
 def build_legacy_achievements(user, definitions, post_count, is_admin=False, now=None):
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     years = 0
     if getattr(user, 'created_at', None):
         years = max(0, int((now - user.created_at).days // 365))

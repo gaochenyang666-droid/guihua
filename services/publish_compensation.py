@@ -1,7 +1,7 @@
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from extensions import db
 
@@ -33,7 +33,7 @@ def should_start_compensation_worker():
 
 
 def list_retry_candidate_ids(pending_model, now=None, limit=10, min_age_seconds=60):
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=max(0, int(min_age_seconds or 0)))
     rows = pending_model.query.filter(
         pending_model.status.in_(('initiated', 'payment_verified', 'storage_ready', 'awaiting_retry')),

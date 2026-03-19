@@ -1,5 +1,5 @@
 # 数据模型层：所有 SQLAlchemy 模型与评论树构建，便于迁移与维护
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import secrets
 import random
@@ -56,7 +56,7 @@ class User(db.Model):
     id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
     address = db.Column(db.String(42), unique=True, nullable=True, index=True)
     nonce = db.Column(db.String(32), default=lambda: secrets.token_hex(16))
-    nonce_created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    nonce_created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     username = db.Column(db.String(50), unique=True, nullable=True, index=True)
     password_hash = db.Column(db.String(255), nullable=True)
     nickname = db.Column(db.String(50))
@@ -71,7 +71,7 @@ class User(db.Model):
     last_checkin_date = db.Column(db.Date, nullable=True, index=True)
     equipped_achievement_key = db.Column(db.String(64), nullable=True)
     show_tip_thanks = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     posts = db.relationship('Post', backref='author', lazy='dynamic', foreign_keys='Post.author_id')
 
@@ -92,11 +92,11 @@ class User(db.Model):
 
     def refresh_nonce(self):
         self.nonce = secrets.token_hex(16)
-        self.nonce_created_at = datetime.utcnow()
+        self.nonce_created_at = datetime.now(timezone.utc)
 
     def get_honor_title(self):
         """称号系统：按管理员 > 发帖数 > 注册年限 > 账号类型优先级返回单称号。"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         post_count = None
         try:
             post_count = int(getattr(self, '_cached_post_count'))
@@ -202,11 +202,12 @@ class Post(db.Model):
     is_repost = db.Column(db.Boolean, default=False)
     original_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     repost_comment = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
-    comments = db.relationship('Comment', backref='post', lazy='dynamic')
-    likes = db.relationship('Like', backref='post', lazy='dynamic')
-    votes = db.relationship('Vote', backref='post', lazy='dynamic')
+    comments = db.relationship('Comment', backref='post', lazy='dynamic', cascade='all, delete-orphan')
+    likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')
+    votes = db.relationship('Vote', backref='post', lazy='dynamic', cascade='all, delete-orphan')
+    bookmarks = db.relationship('Bookmark', backref='post', lazy='dynamic', cascade='all, delete-orphan')
     original_post = db.relationship('Post', remote_side=[id], backref='reposts')
 
     def to_dict(self, current_user_id=None, likes_count=None, comments_count=None,
@@ -296,10 +297,11 @@ class Comment(db.Model):
     author_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), index=True)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), index=True)
     parent_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     author = db.relationship('User', backref='comments')
-    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic', cascade='all, delete-orphan')
+    comment_likes = db.relationship('CommentLike', backref='comment', lazy='dynamic', cascade='all, delete-orphan')
 
     def to_dict(self, recursive=False, likes_count=0, is_liked=False):
         author_data = self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'avatar': '👻'}
@@ -369,7 +371,7 @@ class CommentLike(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'))
     comment_id = db.Column(db.Integer, db.ForeignKey('comments.id'))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     __table_args__ = (db.UniqueConstraint('user_id', 'comment_id', name='unique_user_comment_like'),)
 
 
@@ -392,7 +394,7 @@ class Notification(db.Model):
     content = db.Column(db.String(500), nullable=True)
     link = db.Column(db.String(500), nullable=True)
     is_read = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     recipient = db.relationship('User', foreign_keys=[user_id], backref='notifications')
     sender = db.relationship('User', foreign_keys=[sender_id])
@@ -417,7 +419,7 @@ class UsedTransaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tx_hash = db.Column(db.String(66), unique=True, nullable=False, index=True)
     user_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class PendingPublication(db.Model):
@@ -435,8 +437,8 @@ class PendingPublication(db.Model):
     last_error = db.Column(db.String(500), nullable=True)
     ipfs_cid = db.Column(db.String(100), nullable=True)
     confirmations = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), index=True)
 
     user = db.relationship('User', foreign_keys=[user_id])
     series = db.relationship('Series', foreign_keys=[series_id])
@@ -473,7 +475,7 @@ class FlowEvent(db.Model):
     event = db.Column(db.String(80), nullable=False, index=True)
     severity = db.Column(db.String(16), nullable=False, default='info', index=True)
     payload_json = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self):
         try:
@@ -508,7 +510,7 @@ class Tip(db.Model):
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     amount = db.Column(db.String(50))
     token_symbol = db.Column(db.String(10), default='USDT')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     sender = db.relationship('User', foreign_keys=[from_user_id])
     recipient = db.relationship('User', foreign_keys=[to_user_id])
@@ -522,7 +524,7 @@ class CheckinLog(db.Model):
     checkin_date = db.Column(db.Date, nullable=False, index=True)
     gained_exp = db.Column(db.Integer, nullable=False, default=0)
     streak_after = db.Column(db.Integer, nullable=False, default=1)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     user = db.relationship('User', foreign_keys=[user_id])
     __table_args__ = (db.UniqueConstraint('user_id', 'checkin_date', name='uniq_user_checkin_date'),)
 
@@ -532,7 +534,7 @@ class AppSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     setting_key = db.Column(db.String(80), unique=True, nullable=False, index=True)
     setting_value = db.Column(db.String(2000), nullable=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 class Report(db.Model):
@@ -548,7 +550,7 @@ class Report(db.Model):
     admin_note = db.Column(db.String(500), nullable=True)
     admin_notes = db.Column(db.String(500), nullable=True)
     result_notified_at = db.Column(db.DateTime, nullable=True, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     reporter = db.relationship('User', foreign_keys=[reporter_id])
     reported_user = db.relationship('User', foreign_keys=[reported_user_id])
     post = db.relationship('Post')
@@ -587,7 +589,7 @@ class Announcement(db.Model):
     starts_at = db.Column(db.DateTime, nullable=True, index=True)
     expires_at = db.Column(db.DateTime, nullable=True, index=True)
     created_by = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     creator = db.relationship('User', foreign_keys=[created_by])
 
@@ -614,8 +616,8 @@ class Series(db.Model):
     cover_image = db.Column(db.String(500), nullable=True)
     author_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False, index=True)
     is_public = db.Column(db.Boolean, default=True, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), index=True)
 
     author = db.relationship('User', foreign_keys=[author_id])
 
@@ -642,7 +644,7 @@ class SeriesPost(db.Model):
     series_id = db.Column(db.Integer, db.ForeignKey('series.id'), nullable=False, index=True)
     post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=False, index=True)
     order_index = db.Column(db.Integer, nullable=False, default=1, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     series = db.relationship('Series', backref=db.backref('series_posts', lazy='dynamic', cascade='all, delete-orphan'))
     post = db.relationship('Post', backref=db.backref('series_links', lazy='dynamic', cascade='all, delete-orphan'))
@@ -673,7 +675,7 @@ class AdminAuditLog(db.Model):
     target_type = db.Column(db.String(30), nullable=True, index=True)
     target_id = db.Column(db.String(64), nullable=True, index=True)
     details = db.Column(db.String(1000), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     admin = db.relationship('User', foreign_keys=[admin_id])
 

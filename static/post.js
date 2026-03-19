@@ -192,7 +192,7 @@
         body.innerHTML = '' +
             '<h2 style="margin-bottom:0.5rem;">' + escapeHtml(p.title || '') + '</h2>' +
             '<div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap;">' + meta + '</div>' +
-            '<article class="post-detail-content">' + ((p.content == null) ? '' : String(p.content)) + '</article>' +
+            '<article class="post-detail-content">' + (typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize((p.content == null) ? '' : String(p.content)) : ((p.content == null) ? '' : String(p.content))) + '</article>' +
             (p.ipfs_cid ? (
                 '<section class="post-arweave-footer glass">' +
                     '<div class="post-arweave-footer-head">' +
