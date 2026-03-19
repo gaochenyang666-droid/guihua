@@ -134,7 +134,8 @@ def verify_signature():
             _log_flow_event('wallet_verify_failed', address=address, reason='nonce_missing')
             return jsonify({'error': '签名挑战已失效，请重新获取'}), 401
 
-    if not nonce_created_at or datetime.now(timezone.utc) - nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
+    _nca = nonce_created_at if (nonce_created_at and nonce_created_at.tzinfo) else (nonce_created_at.replace(tzinfo=timezone.utc) if nonce_created_at else None)
+    if not _nca or datetime.now(timezone.utc) - _nca > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
         _delete_pending_wallet_nonce(address)
         _log_flow_event('wallet_verify_failed', address=address, reason='nonce_expired')
         return jsonify({'error': '签名挑战已过期，请重新签名'}), 401

@@ -391,7 +391,10 @@ def bind_wallet():
         _log_flow_event('wallet_bind_failed', address=address, reason='already_bound')
         return jsonify({'error': '该钱包已绑定到其他账号'}), 400
 
-    if not g.current_user.nonce_created_at or datetime.now(timezone.utc) - g.current_user.nonce_created_at > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
+    _nca = g.current_user.nonce_created_at
+    if _nca and not _nca.tzinfo:
+        _nca = _nca.replace(tzinfo=timezone.utc)
+    if not _nca or datetime.now(timezone.utc) - _nca > timedelta(minutes=WALLET_NONCE_TTL_MINUTES):
         _log_flow_event('wallet_bind_failed', address=address, reason='nonce_expired')
         return jsonify({'error': '绑定挑战已过期，请重新获取'}), 401
     msg_stripped = (message or '').strip()

@@ -46,7 +46,8 @@ def build_legacy_achievements(user, definitions, post_count, is_admin=False, now
     now = now or datetime.now(timezone.utc)
     years = 0
     if getattr(user, 'created_at', None):
-        years = max(0, int((now - user.created_at).days // 365))
+        ca = user.created_at if user.created_at.tzinfo else user.created_at.replace(tzinfo=timezone.utc)
+        years = max(0, int((now - ca).days // 365))
     has_wallet = bool(getattr(user, 'address', None))
     has_web2 = bool(getattr(user, 'username', None))
     onboarding_completed = has_wallet and has_web2 and post_count > 0

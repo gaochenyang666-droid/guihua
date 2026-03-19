@@ -7,7 +7,7 @@ def prune_pending_wallet_nonces(store, ttl_minutes, now=None):
     now = now or datetime.now(timezone.utc)
     expired_keys = [
         key for key, value in store.items()
-        if not value or not value.get('created_at') or now - value['created_at'] > timedelta(minutes=ttl_minutes)
+        if not value or not value.get('created_at') or now - (value['created_at'] if getattr(value['created_at'], 'tzinfo', None) else value['created_at'].replace(tzinfo=timezone.utc)) > timedelta(minutes=ttl_minutes)
     ]
     for key in expired_keys:
         store.pop(key, None)

@@ -17,7 +17,8 @@ def build_ops_summary(flow_event_model, pending_model, admin_audit_model, now=No
         status_counts[key] = int(status_counts.get(key, 0)) + 1
         updated_at = getattr(row, 'updated_at', None) or getattr(row, 'created_at', None)
         if updated_at:
-            oldest_age_minutes = max(oldest_age_minutes, int(max(0, (now - updated_at).total_seconds()) // 60))
+            _ua = updated_at if updated_at.tzinfo else updated_at.replace(tzinfo=timezone.utc)
+            oldest_age_minutes = max(oldest_age_minutes, int(max(0, (now - _ua).total_seconds()) // 60))
 
     recent_events = flow_event_model.query.order_by(flow_event_model.created_at.desc(), flow_event_model.id.desc()).limit(20).all()
     last_hour = flow_event_model.query.with_entities(

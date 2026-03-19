@@ -107,7 +107,8 @@ class User(db.Model):
                 post_count = 0
         years = 0
         if self.created_at:
-            years = max(0, int((now - self.created_at).days // 365))
+            ca = self.created_at if self.created_at.tzinfo else self.created_at.replace(tzinfo=timezone.utc)
+            years = max(0, int((now - ca).days // 365))
         has_wallet = bool(self.address)
         has_web2 = bool(self.username)
         onboarding_completed = has_wallet and has_web2 and post_count > 0
