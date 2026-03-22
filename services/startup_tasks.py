@@ -98,9 +98,57 @@ def warn_if_redis_missing(redis_url, flask_debug=False):
     print('  - rate limiting becomes process-local')
     print('  - pending wallet nonce storage becomes process-local fallback')
     print('  - view count anti-refresh protection becomes process-local fallback')
+    print('  This is acceptable for local development, but should be treated as a production readiness gap.')
     print('  Recommendation: configure REDIS_URL in production.')
     print('=' * 60)
 
 
 def should_run_init_db():
     return os.environ.get('ALLOW_INIT_DB', '').strip().lower() in ('true', '1', 'yes')
+
+
+def init_default_data(ensure_bootstrap_admin, admin_id_lookup, seed_default_article):
+    try:
+        admin = ensure_bootstrap_admin()
+        admin_id = getattr(admin, 'id', None) if admin else None
+        if not admin_id:
+            admin_id = admin_id_lookup()
+        seed_default_article(admin_id)
+    except Exception as exc:
+        print(f"Init Data Error: {exc}")
+
+
+def run_startup_sequence(
+    *,
+    create_all,
+    ensure_steps,
+    should_run_init_db,
+    init_db_data,
+    check_receive_address,
+    redis_url,
+    flask_debug,
+    warn_if_redis_missing_fn,
+    start_compensation_worker_fn,
+    app,
+    pending_model,
+    resume_pending_publication_row,
+    logger,
+    limit=8,
+    min_age_seconds=90,
+):
+    create_all()
+    for step in ensure_steps:
+        step()
+    if should_run_init_db():
+        init_db_data()
+    check_receive_address()
+    warn_if_redis_missing_fn(redis_url, flask_debug=flask_debug)
+    started, interval = start_compensation_worker_fn(
+        app,
+        pending_model,
+        resume_pending_publication_row,
+        logger,
+        limit=limit,
+        min_age_seconds=min_age_seconds,
+    )
+    return started, interval

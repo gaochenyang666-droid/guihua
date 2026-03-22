@@ -1,0 +1,71 @@
+name: release-suite-remote
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to verify (e.g. https://guihua.fun)"
+        required: true
+        type: string
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-suite-remote-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run remote release suite
+        env:
+          GUIHUA_SKIP_SSL_VERIFY: ${{ secrets.GUIHUA_SKIP_SSL_VERIFY }}
+          GUIHUA_ADMIN_TOKEN: ${{ secrets.GUIHUA_ADMIN_TOKEN }}
+          GUIHUA_USER_TOKEN: ${{ secrets.GUIHUA_USER_TOKEN }}
+          GUIHUA_ADMIN_USERNAME: ${{ secrets.GUIHUA_ADMIN_USERNAME }}
+          GUIHUA_ADMIN_PASSWORD: ${{ secrets.GUIHUA_ADMIN_PASSWORD }}
+          GUIHUA_USER_USERNAME: ${{ secrets.GUIHUA_USER_USERNAME }}
+          GUIHUA_USER_PASSWORD: ${{ secrets.GUIHUA_USER_PASSWORD }}
+          BASE_URL: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_URL:-}" ]; then
+            echo "BASE_URL is required. Set workflow input base_url or repository secret GUIHUA_BASE_URL." >&2
+            exit 1
+          fi
+          echo "base_url=${BASE_URL}"
+          python3 scripts/check_release_suite.py "${BASE_URL}" > release-suite.out.txt 2> release-suite.err.txt || true
+          cat release-suite.out.txt
+          if [ -s release-suite.err.txt ]; then
+            echo "---- stderr ----" >&2
+            cat release-suite.err.txt >&2
+          fi
+          python3 -c "import sys; import pathlib; sys.exit(1 if 'release_suite_ok=1' not in pathlib.Path('release-suite.out.txt').read_text(errors='ignore') else 0)"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-suite-logs
+          path: |
+            release-suite.out.txt
+            release-suite.err.txt

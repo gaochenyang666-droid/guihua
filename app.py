@@ -163,52 +163,6 @@ def _apply_security_headers(response):
     response.headers.setdefault('Content-Security-Policy', _build_csp_header())
     return response
 
-# 未注册地址的临时签名挑战（地址 -> {nonce, created_at}）
-_pending_wallet_nonces = {}
-_pending_wallet_nonce_redis_prefix = 'auth:pending_wallet_nonce:'
-
-
-def _prune_pending_wallet_nonces(now=None):
-    _svc_prune_pending_wallet_nonces(_pending_wallet_nonces, WALLET_NONCE_TTL_MINUTES, now=now)
-
-
-def _pending_wallet_nonce_redis_key(address):
-    return _svc_pending_wallet_nonce_redis_key(_pending_wallet_nonce_redis_prefix, address)
-
-
-def _set_pending_wallet_nonce(address, nonce, created_at=None):
-    redis_conn = _get_redis_client()
-    return _svc_set_pending_wallet_nonce(
-        _pending_wallet_nonces,
-        redis_conn,
-        _pending_wallet_nonce_redis_key(address),
-        WALLET_NONCE_TTL_MINUTES,
-        address,
-        nonce,
-        created_at=created_at,
-    )
-
-
-def _get_pending_wallet_nonce(address):
-    redis_conn = _get_redis_client()
-    return _svc_get_pending_wallet_nonce(
-        _pending_wallet_nonces,
-        redis_conn,
-        _pending_wallet_nonce_redis_key(address),
-        address,
-        _svc_parse_iso_datetime,
-    )
-
-
-def _delete_pending_wallet_nonce(address):
-    redis_conn = _get_redis_client()
-    return _svc_delete_pending_wallet_nonce(
-        _pending_wallet_nonces,
-        redis_conn,
-        _pending_wallet_nonce_redis_key(address),
-        address,
-    )
-
 from flask_migrate import Migrate
 from extensions import db
 db.init_app(app)
@@ -221,7 +175,7 @@ from models import (User, Post, Vote, Comment, Like, CommentLike, Bookmark, Noti
     build_comment_tree, _comment_to_dict_node, get_random_avatar, ALLOWED_AVATARS,
     calc_level_info, checkin_exp_by_streak)
 from utils.security import (_rate_limit, _bearer_token, _get_optional_jwt_payload,
-    token_required, admin_required, _get_redis_client, set_auth_cookie,
+    token_required, admin_required, set_auth_cookie,
     clear_auth_cookie, issue_auth_token, bleach_clean_post_content as _bleach_clean_post_content)
 from services.storage import (upload_to_imgbb, upload_to_arweave_native, upload_to_arweave_with_retry)
 from services.blockchain import (get_post_fee_usdt_raw, verify_transaction, inspect_transaction_status as _svc_inspect_transaction_status)
@@ -247,7 +201,6 @@ from services.posts_logic import (
     series_can_edit as _svc_series_can_edit,
 )
 from services.app_support import (
-    parse_iso_datetime as _svc_parse_iso_datetime,
     humanize_verify_error as _svc_humanize_verify_error,
     is_post_permanent as _svc_is_post_permanent,
     tip_amount_to_usdt_str as _svc_tip_amount_to_usdt_str,
@@ -256,7 +209,6 @@ from services.app_support import (
 )
 from services.site_settings import (
     get_setting_value as _svc_get_setting_value,
-    set_setting_value as _svc_set_setting_value,
     get_group_link_urls as _svc_get_group_link_urls,
     validate_group_link_urls as _svc_validate_group_link_urls,
 )
@@ -265,14 +217,7 @@ from services.publish_recovery import (
     clear_pending_publication as _svc_clear_pending_publication,
     get_latest_pending_publication as _svc_get_latest_pending_publication,
 )
-from services.runtime_state import (
-    prune_pending_wallet_nonces as _svc_prune_pending_wallet_nonces,
-    pending_wallet_nonce_redis_key as _svc_pending_wallet_nonce_redis_key,
-    set_pending_wallet_nonce as _svc_set_pending_wallet_nonce,
-    get_pending_wallet_nonce as _svc_get_pending_wallet_nonce,
-    delete_pending_wallet_nonce as _svc_delete_pending_wallet_nonce,
-    allow_view_count_increment as _svc_allow_view_count_increment,
-)
+from services.runtime_state import allow_view_count_increment as _svc_allow_view_count_increment
 from services.startup_tasks import (
     ensure_bootstrap_admin as _svc_ensure_bootstrap_admin,
     seed_default_article as _svc_seed_default_article,
@@ -280,6 +225,8 @@ from services.startup_tasks import (
     check_receive_address as _svc_check_receive_address,
     warn_if_redis_missing as _svc_warn_if_redis_missing,
     should_run_init_db as _svc_should_run_init_db,
+    init_default_data as _svc_init_default_data,
+    run_startup_sequence as _svc_run_startup_sequence,
 )
 from services.schema_compat import (
     ensure_users_wallet_address as _svc_ensure_users_wallet_address,
@@ -289,6 +236,8 @@ from services.schema_compat import (
     ensure_posts_pin_columns as _svc_ensure_posts_pin_columns,
     ensure_posts_special_column as _svc_ensure_posts_special_column,
     ensure_posts_tags_column as _svc_ensure_posts_tags_column,
+    ensure_posts_seo_columns as _svc_ensure_posts_seo_columns,
+    backfill_posts_seo_fields as _svc_backfill_posts_seo_fields,
     ensure_notifications_columns as _svc_ensure_notifications_columns,
     ensure_reports_columns as _svc_ensure_reports_columns,
     ensure_announcements_columns as _svc_ensure_announcements_columns,
@@ -381,10 +330,6 @@ def _get_setting_value(setting_key, default_value=''):
     return _svc_get_setting_value(AppSetting, setting_key, default_value)
 
 
-def _set_setting_value(setting_key, setting_value):
-    return _svc_set_setting_value(db.session, AppSetting, setting_key, setting_value)
-
-
 def _build_group_links_for_user(user):
     co_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['co_create'], '')
     core_url = _get_setting_value(TELEGRAM_GROUP_SETTING_KEYS['core'], '')
@@ -467,14 +412,11 @@ def _seed_default_article(admin_id):
 
 def init_db_data():
     """Auto-initialize basic data on startup"""
-    try:
-        admin = _ensure_bootstrap_admin()
-        admin_id = getattr(admin, 'id', None) if admin else None
-        if not admin_id:
-            admin_id = User.query.filter(User.is_admin == True).with_entities(User.id).scalar()
-        _seed_default_article(admin_id)
-    except Exception as e:
-        print(f"Init Data Error: {e}")
+    return _svc_init_default_data(
+        _ensure_bootstrap_admin,
+        lambda: User.query.filter(User.is_admin == True).with_entities(User.id).scalar(),
+        _seed_default_article,
+    )
 
 # 生产环境已移除：/api/debug/reset_db、/api/debug/seed（防止误开导致清库/刷数据）
 # 数据库变更请使用 Flask-Migrate (alembic)，勿用 drop_all
@@ -533,6 +475,16 @@ def _ensure_posts_tags_column():
     return _svc_ensure_posts_tags_column(db.session, db.engine.dialect.name)
 
 
+def _ensure_posts_seo_columns():
+    """启动时确保 posts.slug/excerpt/seo/updated_at 列存在。"""
+    return _svc_ensure_posts_seo_columns(db.session, db.engine.dialect.name)
+
+
+def _backfill_posts_seo_fields():
+    """启动时为历史帖子补齐 slug / excerpt。"""
+    return _svc_backfill_posts_seo_fields(db.session, Post)
+
+
 def _ensure_notifications_columns():
     """启动时确保 notifications.content/link 列存在。"""
     return _svc_ensure_notifications_columns(db.session, db.engine.dialect.name)
@@ -563,34 +515,38 @@ def _should_run_init_db():
 
 
 def _run_startup_tasks():
-    db.create_all()
-    _ensure_users_wallet_address()
-    _ensure_users_withdrawable_balance()
-    _ensure_users_checkin_columns()
-    _ensure_checkin_logs_table()
-    _ensure_app_settings_table()
-    _ensure_posts_tx_nullable()
-    _ensure_posts_pin_columns()
-    _ensure_posts_special_column()
-    _ensure_posts_tags_column()
-    _ensure_notifications_columns()
-    _ensure_reports_columns()
-    _ensure_announcements_columns()
-    _ensure_series_tables()
-    _ensure_pending_publications_table()
-    _ensure_flow_events_table()
-    if _should_run_init_db():
-        init_db_data()
-    _check_receive_address()
-    _svc_warn_if_redis_missing(
-        os.environ.get('REDIS_URL'),
-        flask_debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
-    )
-    started, interval = _svc_start_compensation_worker(
-        app,
-        PendingPublication,
-        _resume_pending_publication_row,
-        app.logger,
+    started, interval = _svc_run_startup_sequence(
+        create_all=db.create_all,
+        ensure_steps=[
+            _ensure_users_wallet_address,
+            _ensure_users_withdrawable_balance,
+            _ensure_users_checkin_columns,
+            _ensure_checkin_logs_table,
+            _ensure_app_settings_table,
+            _ensure_posts_tx_nullable,
+            _ensure_posts_pin_columns,
+            _ensure_posts_special_column,
+            _ensure_posts_tags_column,
+            _ensure_posts_seo_columns,
+            _ensure_notifications_columns,
+            _ensure_reports_columns,
+            _ensure_announcements_columns,
+            _ensure_series_tables,
+            _ensure_pending_publications_table,
+            _ensure_flow_events_table,
+            _backfill_posts_seo_fields,
+        ],
+        should_run_init_db=_should_run_init_db,
+        init_db_data=init_db_data,
+        check_receive_address=_check_receive_address,
+        redis_url=os.environ.get('REDIS_URL'),
+        flask_debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true',
+        warn_if_redis_missing_fn=_svc_warn_if_redis_missing,
+        start_compensation_worker_fn=_svc_start_compensation_worker,
+        app=app,
+        pending_model=PendingPublication,
+        resume_pending_publication_row=_resume_pending_publication_row,
+        logger=app.logger,
         limit=8,
         min_age_seconds=90,
     )

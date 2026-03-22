@@ -46,6 +46,23 @@ def _get_redis_client():
         return None
 
 
+def get_redis_status():
+    redis_conn = _get_redis_client()
+    if redis_conn:
+        return {
+            'status': 'ok',
+            'message': 'Redis 已连接，限流与状态存储为共享模式',
+            'required_in_production': True,
+            'degraded': False,
+        }
+    return {
+        'status': 'fallback',
+        'message': 'Redis 未配置或不可用，当前退化为进程内 fallback',
+        'required_in_production': True,
+        'degraded': True,
+    }
+
+
 def _rate_limit(key_prefix, max_per_minute=5):
     ip = (request.remote_addr or 'unknown').strip()
     key = f"{key_prefix}:{ip}"

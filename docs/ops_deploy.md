@@ -23,6 +23,7 @@
 - 直接使用 `render.yaml` 创建资源
 - Web Service 上保持 `ENABLE_PUBLISH_COMPENSATION_WORKER=false`
 - 由 Cron Job 负责补偿，避免多实例重复扫队列
+- `REDIS_URL` 视为正式运行依赖配置项：未配置时系统仍能 fallback，但限流、钱包 nonce、浏览量防刷都会退化为进程内模式
 
 ## 2. 待发布自动补偿
 
@@ -122,3 +123,7 @@ python3 scripts/check_release_suite.py http://127.0.0.1:5012
 线上部署后验收与远程模式说明见 `docs/release_suite.md`（包含远程账号环境变量、remote-safe skip 规则与验收 checklist）。
 
 补充：推荐在 GitHub Actions 中配置远程验收 workflow（见 `docs/release_suite.md` 的 CI / 门禁章节），用于部署后的自动验收与日志归档。
+
+如果 workflow 文件尚未真正推上 GitHub：
+- 代码和文档已经准备到“只差权限即可启用”的状态
+- 需要使用带 `workflow` scope 的 PAT 或等效 GitHub 权限来推送 `.github/workflows/` 下的文件

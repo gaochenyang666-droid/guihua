@@ -52,6 +52,7 @@ GUIHUA_USER_PASSWORD=密码
 
 建议配置仓库 Secrets：
 
+- `GUIHUA_BASE_URL`（推荐，push 到 `main` 时自动验收用）
 - `GUIHUA_ADMIN_TOKEN`（必填，推荐）
 - `GUIHUA_USER_TOKEN`（可选）
 - `GUIHUA_SKIP_SSL_VERIFY`（可选，设为 `1` 时跳过 SSL 校验）
@@ -59,7 +60,12 @@ GUIHUA_USER_PASSWORD=密码
 使用方式：
 
 - 手动触发 `release-suite-remote`，输入 `base_url`（例如 `https://guihua.fun`）。
+- 或者在仓库 Secrets 中配置 `GUIHUA_BASE_URL`，让 `push -> main` 自动跑远程验收。
 - 运行结果的 stdout/stderr 会作为 artifact `release-suite-logs` 保存，便于留痕与排障。
+
+注意：
+- 当前仓库若要把 `.github/workflows/release-suite-remote.yml` 真正 push 到 GitHub，所使用的 PAT / 账号需要具备 `workflow` 权限。
+- 代码侧和文档侧已经准备完成；如果远端还没有跑起来，通常只差这项 GitHub 权限或对应 secrets 未配置。
 
 ## Suite 输出与判定
 
