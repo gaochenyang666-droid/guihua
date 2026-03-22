@@ -22,6 +22,8 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +38,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Preflight inputs and secrets
+        env:
+          GUIHUA_ADMIN_TOKEN: ${{ secrets.GUIHUA_ADMIN_TOKEN }}
+          GUIHUA_ADMIN_USERNAME: ${{ secrets.GUIHUA_ADMIN_USERNAME }}
+          GUIHUA_ADMIN_PASSWORD: ${{ secrets.GUIHUA_ADMIN_PASSWORD }}
+          BASE_URL: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_URL:-}" ]; then
+            echo "BASE_URL is required. Set workflow input base_url or repository secret GUIHUA_BASE_URL." >&2
+            exit 1
+          fi
+          if [ -z "${GUIHUA_ADMIN_TOKEN:-}" ] && { [ -z "${GUIHUA_ADMIN_USERNAME:-}" ] || [ -z "${GUIHUA_ADMIN_PASSWORD:-}" ]; }; then
+            echo "Admin auth is required. Set GUIHUA_ADMIN_TOKEN or both GUIHUA_ADMIN_USERNAME and GUIHUA_ADMIN_PASSWORD." >&2
+            exit 1
+          fi
+          echo "base_url=${BASE_URL}"
+          if [ -n "${GUIHUA_ADMIN_TOKEN:-}" ]; then
+            echo "auth_mode=admin_token"
+          else
+            echo "auth_mode=admin_username_password"
+          fi
+          {
+            echo "## Release Suite Preflight"
+            echo ""
+            echo "- base_url: \`${BASE_URL}\`"
+            if [ -n "${GUIHUA_ADMIN_TOKEN:-}" ]; then
+              echo "- admin auth: token"
+            else
+              echo "- admin auth: username/password"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run remote release suite
         env:
           GUIHUA_SKIP_SSL_VERIFY: ${{ secrets.GUIHUA_SKIP_SSL_VERIFY }}
@@ -48,18 +83,40 @@ jobs:
           BASE_URL: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
         run: |
           set -euo pipefail
-          if [ -z "${BASE_URL:-}" ]; then
-            echo "BASE_URL is required. Set workflow input base_url or repository secret GUIHUA_BASE_URL." >&2
-            exit 1
-          fi
-          echo "base_url=${BASE_URL}"
-          python3 scripts/check_release_suite.py "${BASE_URL}" > release-suite.out.txt 2> release-suite.err.txt || true
+          set +e
+          python3 scripts/check_release_suite.py "${BASE_URL}" > release-suite.out.txt 2> release-suite.err.txt
+          rc=$?
+          set -e
           cat release-suite.out.txt
           if [ -s release-suite.err.txt ]; then
             echo "---- stderr ----" >&2
             cat release-suite.err.txt >&2
           fi
-          python3 -c "import sys; import pathlib; sys.exit(1 if 'release_suite_ok=1' not in pathlib.Path('release-suite.out.txt').read_text(errors='ignore') else 0)"
+          python3 - <<'PY'
+          import pathlib
+          out = pathlib.Path('release-suite.out.txt').read_text(errors='ignore')
+          err = pathlib.Path('release-suite.err.txt').read_text(errors='ignore')
+          summary_lines = [
+              "## Release Suite Result",
+              "",
+          ]
+          if 'release_suite_ok=1' in out:
+              summary_lines.append("- status: success")
+          else:
+              summary_lines.append("- status: failed")
+          if 'release_suite_summary=' in out:
+              for line in out.splitlines():
+                  if line.startswith('release_suite_summary=') or line.startswith('release_suite_ok='):
+                      summary_lines.append(f"- {line}")
+          if err.strip():
+              summary_lines.extend(["", "### stderr tail", "", "```text", *err.splitlines()[-20:], "```"])
+          pathlib.Path('.release_suite_summary.md').write_text("\n".join(summary_lines) + "\n", encoding='utf-8')
+          PY
+          cat .release_suite_summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ $rc -ne 0 ]; then
+            echo "release suite exited with code $rc" >&2
+          fi
+          python3 -c "import sys, pathlib; out=pathlib.Path('release-suite.out.txt').read_text(errors='ignore'); sys.exit(0 if 'release_suite_ok=1' in out else 1)"
 
       - name: Upload artifacts
         if: always()
@@ -69,3 +126,4 @@ jobs:
           path: |
             release-suite.out.txt
             release-suite.err.txt
+            .release_suite_summary.md

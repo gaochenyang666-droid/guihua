@@ -56,12 +56,19 @@ GUIHUA_USER_PASSWORD=密码
 - `GUIHUA_ADMIN_TOKEN`（必填，推荐）
 - `GUIHUA_USER_TOKEN`（可选）
 - `GUIHUA_SKIP_SSL_VERIFY`（可选，设为 `1` 时跳过 SSL 校验）
+- 或者不用 `GUIHUA_ADMIN_TOKEN`，改配：
+  - `GUIHUA_ADMIN_USERNAME`
+  - `GUIHUA_ADMIN_PASSWORD`
 
 使用方式：
 
 - 手动触发 `release-suite-remote`，输入 `base_url`（例如 `https://guihua.fun`）。
 - 或者在仓库 Secrets 中配置 `GUIHUA_BASE_URL`，让 `push -> main` 自动跑远程验收。
 - 运行结果的 stdout/stderr 会作为 artifact `release-suite-logs` 保存，便于留痕与排障。
+- workflow 会在正式跑 suite 前做 preflight：
+  - 检查 `BASE_URL`
+  - 检查管理员认证是否已配置
+  - 在 step summary 中显示当前使用的是 token 还是 username/password 模式
 
 注意：
 - 当前仓库若要把 `.github/workflows/release-suite-remote.yml` 真正 push 到 GitHub，所使用的 PAT / 账号需要具备 `workflow` 权限。
