@@ -18,19 +18,6 @@
     </nav>
 
     <main class="post-page-shell story-x-shell" data-post-id="{{ post.id }}">
-        <nav class="seo-breadcrumbs story-breadcrumbs" aria-label="面包屑">
-            {% for item in breadcrumbs %}
-            {% if not loop.first %}
-            <span class="seo-breadcrumb-sep">/</span>
-            {% endif %}
-            {% if loop.last %}
-            <span>{{ item.name }}</span>
-            {% else %}
-            <a class="seo-breadcrumb-link" href="{{ item.url }}">{{ item.name }}</a>
-            {% endif %}
-            {% endfor %}
-        </nav>
-
         <article class="post-page-main post-page-body is-ready glass seo-story-article story-x-article">
             <header class="story-x-header">
                 <div class="story-x-author-row">

@@ -1325,12 +1325,12 @@
     .story-x-shell {
         width: calc(100% - 12px);
         grid-template-columns: 1fr;
-        gap: 0.55rem;
+        gap: 0.5rem;
         margin: 0.4rem auto 0.85rem;
     }
 
     .story-x-article {
-        padding: 0.9rem 0.88rem 0.95rem;
+        padding: 0.9rem 0.9rem 0.92rem;
     }
 
     .story-x-title {
@@ -1351,11 +1351,6 @@
     .story-x-content {
         font-size: 0.99rem;
         line-height: 1.82;
-    }
-
-    .story-breadcrumbs {
-        gap: 0.35rem;
-        font-size: 0.76rem;
     }
 
     .story-x-meta-bar {
@@ -1397,7 +1392,7 @@
 
     .story-comments-panel,
     .story-x-aside {
-        padding: 0.88rem 0.88rem 0.92rem;
+        padding: 0.9rem 0.9rem 0.92rem;
     }
 
     .story-comments-head {

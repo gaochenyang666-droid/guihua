@@ -735,7 +735,7 @@ body.page-motion.page-leaving {
     width: min(860px, calc(100vw - 24px));
     margin: 0.55rem auto 1rem;
     grid-template-columns: minmax(0, 1fr);
-    gap: 0.8rem;
+    gap: 0.72rem;
 }
 
 .seo-story-page-shell .seo-story-article {
@@ -753,7 +753,7 @@ body.page-motion.page-leaving {
 }
 
 .story-x-article {
-    padding: 1.1rem 1.15rem 1.2rem;
+    padding: 1.05rem 1.1rem 1.1rem;
 }
 
 .story-x-header {
@@ -810,21 +810,6 @@ body.page-motion.page-leaving {
     font-size: clamp(2rem, 4vw, 2.7rem);
     line-height: 1.08;
     letter-spacing: -0.02em;
-}
-
-.story-breadcrumbs {
-    width: 100%;
-    color: var(--text-muted);
-    font-size: 0.84rem;
-    margin: 0.15rem 0 0.1rem;
-}
-
-.story-breadcrumbs .seo-breadcrumb-link {
-    color: var(--text-secondary);
-}
-
-.story-breadcrumbs .seo-breadcrumb-link:hover {
-    color: var(--text-primary);
 }
 
 .story-x-meta-bar {
@@ -936,7 +921,7 @@ body.page-motion.page-leaving {
 
 .story-comments-panel,
 .story-x-aside {
-    padding: 1rem 1.05rem 1.08rem;
+    padding: 1.05rem 1.1rem 1.1rem;
 }
 
 .story-x-aside {
