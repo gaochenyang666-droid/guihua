@@ -850,13 +850,32 @@ body.page-motion.page-leaving {
     margin-top: 1.1rem;
 }
 
-.story-tag-panel-title {
-    margin: 0 0 0.5rem;
+.story-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.55rem;
+}
+
+.story-section-heading {
+    min-width: 0;
+}
+
+.story-section-kicker {
+    margin-bottom: 0.22rem;
     color: var(--text-muted);
-    font-size: 0.8rem;
+    font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
+}
+
+.story-tag-panel-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 800;
 }
 
 .story-engagement-bar {
@@ -929,8 +948,23 @@ body.page-motion.page-leaving {
 }
 
 .story-x-aside h2 {
-    margin: 0 0 0.8rem;
+    margin: 0;
     font-size: 1.02rem;
+}
+
+.story-related-head {
+    margin-bottom: 0.8rem;
+}
+
+.story-related-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.story-related-link:hover {
+    color: var(--text-primary);
 }
 
 .story-x-aside .seo-story-link-list {

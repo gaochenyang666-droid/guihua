@@ -1369,8 +1369,16 @@
     }
 
     .story-tag-panel-title {
-        margin-bottom: 0.42rem;
-        font-size: 0.74rem;
+        font-size: 0.94rem;
+    }
+
+    .story-section-head,
+    .story-comments-head {
+        gap: 0.5rem;
+    }
+
+    .story-section-kicker {
+        font-size: 0.68rem;
     }
 
     .story-engagement-bar {
@@ -1396,7 +1404,6 @@
     }
 
     .story-comments-head {
-        gap: 0.55rem;
         margin-bottom: 0.7rem;
         align-items: center;
     }
@@ -1454,6 +1461,10 @@
     .story-comments-section .comment-body-text {
         font-size: 0.93rem;
         line-height: 1.66;
+    }
+
+    .story-related-link {
+        font-size: 0.8rem;
     }
 
     .story-comments-section .comment-actions-row {

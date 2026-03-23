@@ -51,7 +51,12 @@
 
             {% if category.name or post_view.tags %}
             <section class="seo-story-taxonomy story-x-taxonomy">
-                <div class="story-tag-panel-title">标签</div>
+                <div class="story-section-head">
+                    <div class="story-section-heading">
+                        <div class="story-section-kicker">Story</div>
+                        <div class="story-tag-panel-title">标签</div>
+                    </div>
+                </div>
                 <div class="seo-tag-list">
                     {% if category.name %}
                     <span class="tag timeline-tag">{{ category.name }}</span>
@@ -75,7 +80,8 @@
         <section class="post-page-main glass story-comments-panel">
             <section class="comments-section story-comments-section">
                 <div class="story-comments-head">
-                    <div class="story-comments-heading">
+                    <div class="story-comments-heading story-section-heading">
+                        <div class="story-section-kicker">Discussion</div>
                         <h2 class="story-comments-title">评论</h2>
                         <p class="story-comments-subtitle">参与讨论，理性交流</p>
                     </div>
@@ -100,7 +106,13 @@
 
         <aside class="post-page-main glass seo-story-aside story-x-aside">
             <section>
-                <h2>相关推荐</h2>
+                <div class="story-section-head story-related-head">
+                    <div class="story-section-heading">
+                        <div class="story-section-kicker">More</div>
+                        <h2>相关推荐</h2>
+                    </div>
+                    <a class="story-related-link" href="/stories">更多故事</a>
+                </div>
                 <div class="seo-story-link-list">
                     {% for item in related_posts %}
                     <article class="seo-story-link-card">
