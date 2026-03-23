@@ -47,6 +47,15 @@ def _http_json(url: str, method: str = "GET", token: str | None = None, payload:
         return exc.code, data
 
 
+
+
+def _is_token_valid(base: str, token: str) -> bool:
+    token = (token or '').strip()
+    if not token:
+        return False
+    status, _ = _http_json(base.rstrip('/') + '/api/user/me', token=token, timeout=10)
+    return 200 <= status < 300
+
 def _login_with_password(base: str, username: str, password: str) -> str:
     # 多脚本串行跑时容易遇到 login rate limit，做轻量重试提升稳定性。
     last = None
@@ -72,18 +81,20 @@ def _login_with_password(base: str, username: str, password: str) -> str:
 
 def get_admin_token(base: str) -> str:
     token = _env("GUIHUA_ADMIN_TOKEN")
-    if token:
+    if token and _is_token_valid(base, token):
         return token
     username = _env("GUIHUA_ADMIN_USERNAME")
     password = _env("GUIHUA_ADMIN_PASSWORD")
     if username and password:
         return _login_with_password(base, username, password)
+    if token:
+        raise AssertionError("GUIHUA_ADMIN_TOKEN 已配置但无效；请更新 token，或同时设置 GUIHUA_ADMIN_USERNAME + GUIHUA_ADMIN_PASSWORD 作为回退")
     raise AssertionError("远程验收需要 GUIHUA_ADMIN_TOKEN，或 GUIHUA_ADMIN_USERNAME + GUIHUA_ADMIN_PASSWORD")
 
 
 def get_user_token(base: str, *, allow_fallback_to_admin: bool = True) -> str:
     token = _env("GUIHUA_USER_TOKEN")
-    if token:
+    if token and _is_token_valid(base, token):
         return token
     username = _env("GUIHUA_USER_USERNAME")
     password = _env("GUIHUA_USER_PASSWORD")
@@ -91,5 +102,7 @@ def get_user_token(base: str, *, allow_fallback_to_admin: bool = True) -> str:
         return _login_with_password(base, username, password)
     if allow_fallback_to_admin:
         return get_admin_token(base)
+    if token:
+        raise AssertionError("GUIHUA_USER_TOKEN 已配置但无效；请更新 token，或设置 GUIHUA_USER_USERNAME + GUIHUA_USER_PASSWORD")
     raise AssertionError("需要 GUIHUA_USER_TOKEN，或 GUIHUA_USER_USERNAME + GUIHUA_USER_PASSWORD")
 
