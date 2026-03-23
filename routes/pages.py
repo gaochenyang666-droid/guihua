@@ -1,3 +1,4 @@
+import json
 import urllib.parse
 
 from flask import Blueprint, render_template, request, redirect, abort
@@ -5,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 
 from extensions import db
-from models import Post, User
+from models import Comment, CommentLike, Post, User, build_comment_tree
 from utils.security import _get_optional_jwt_payload
 from services.seo import (
     SITE_TITLE,
@@ -140,6 +141,39 @@ def _prev_next_posts(post):
     )
 
 
+def _build_story_comments_seed(post):
+    payload = _get_optional_jwt_payload()
+    current_user_id = payload.get('user_id') if payload else None
+    all_comments = Comment.query.filter_by(post_id=post.id).options(joinedload(Comment.author)).order_by(Comment.created_at.asc()).all()
+    comment_like_counts = {}
+    liked_comment_ids = set()
+    comment_ids = [c.id for c in all_comments]
+    if comment_ids:
+        like_rows = db.session.query(
+            CommentLike.comment_id, db.func.count(CommentLike.id)
+        ).filter(
+            CommentLike.comment_id.in_(comment_ids)
+        ).group_by(CommentLike.comment_id).all()
+        comment_like_counts = {row[0]: int(row[1] or 0) for row in like_rows}
+        if current_user_id:
+            liked_comment_ids = {
+                row.comment_id for row in CommentLike.query.filter(
+                    CommentLike.user_id == current_user_id,
+                    CommentLike.comment_id.in_(comment_ids)
+                ).all()
+            }
+    return {
+        'id': post.id,
+        'allow_comments': bool(post.allow_comments),
+        'author': post.author.to_dict() if post.author else {'id': post.author_id, 'nickname': '匿名投稿', 'avatar': '👻'},
+        'comments': build_comment_tree(
+            all_comments,
+            like_counts=comment_like_counts,
+            liked_comment_ids=liked_comment_ids,
+        ),
+    }
+
+
 @pages_bp.route('/')
 def index():
     latest_rows = _visible_posts_query().order_by(Post.created_at.desc()).limit(8).all()
@@ -227,6 +261,7 @@ def story_page(slug):
         seo=seo,
         post=row,
         post_view=_story_list_item(row),
+        story_comments_seed=json.dumps(_build_story_comments_seed(row), ensure_ascii=False),
         breadcrumbs=breadcrumbs,
         related_posts=_find_related_posts(row, limit=8),
         prev_post=prev_post,

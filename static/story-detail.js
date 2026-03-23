@@ -67,20 +67,39 @@
 
     function renderPostComments(post) {
         currentPost = post || {};
+        var commentInput = document.getElementById('commentInput');
+        var commentSendBtn = document.getElementById('commentSendBtn');
+        var canComment = !!currentPost.allow_comments;
+        if (commentInput) {
+            commentInput.disabled = !canComment;
+            commentInput.placeholder = canComment ? '写下你的评论...' : '评论区已关闭';
+        }
+        if (commentSendBtn) commentSendBtn.disabled = !canComment;
         comments.resetVisibility(state, currentPost);
         comments.scheduleRender(state, currentPost, { bindEvents: bindCommentListEvents });
     }
 
-    window.apiJson('/api/posts/' + postId, { method: 'GET' })
-        .then(function (result) {
-            if (!result || !result.res || !result.res.ok) {
-                throw new Error((result && result.data && (result.data.error || result.data.message)) || '加载评论失败');
-            }
-            renderPostComments(result.data || {});
+    try {
+        var seedEl = document.getElementById('storyCommentsSeed');
+        var seedText = seedEl ? (seedEl.textContent || '').trim() : '';
+        if (seedText) {
+            renderPostComments(JSON.parse(seedText));
             bindStaticControls();
-        })
-        .catch(function (err) {
-            var host = document.getElementById('postCommentsList');
-            if (host) host.innerHTML = '<div class="state-error profile-inline-state">' + window.escapeHtml(err && err.message ? err.message : '加载评论失败') + '</div>';
-        });
+        } else {
+            throw new Error('缺少评论种子数据');
+        }
+    } catch (_) {
+        window.apiJson('/api/posts/' + postId, { method: 'GET' })
+            .then(function (result) {
+                if (!result || !result.res || !result.res.ok) {
+                    throw new Error((result && result.data && (result.data.error || result.data.message)) || '加载评论失败');
+                }
+                renderPostComments(result.data || {});
+                bindStaticControls();
+            })
+            .catch(function (err) {
+                var host = document.getElementById('postCommentsList');
+                if (host) host.innerHTML = '<div class="state-error profile-inline-state">' + window.escapeHtml(err && err.message ? err.message : '加载评论失败') + '</div>';
+            });
+    }
 })();

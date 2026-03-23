@@ -11,10 +11,10 @@
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body class="story-article-page">
-    <nav class="navbar glass story-topbar">
+    <nav class="glass story-topbar">
         <a href="javascript:history.back()" class="story-topbar-back" data-no-transition="1" aria-label="返回">←</a>
         <div class="story-topbar-title">帖子</div>
-        <a href="/stories" class="story-topbar-link" data-no-transition="1" aria-label="故事列表">故事列表</a>
+        <div class="story-topbar-spacer" aria-hidden="true"></div>
     </nav>
 
     <main class="post-page-shell story-x-shell" data-post-id="{{ post.id }}">
@@ -61,6 +61,7 @@
                 </section>
                 {% endif %}
 
+                {% if prev_post or next_post %}
                 <section class="post-detail-actions story-x-actions">
                     {% if prev_post %}
                     <a class="btn btn-ghost seo-story-nav-link" href="{{ prev_post.url }}">⬅ 上一篇</a>
@@ -68,8 +69,8 @@
                     {% if next_post %}
                     <a class="btn btn-ghost seo-story-nav-link" href="{{ next_post.url }}">下一篇 ➡</a>
                     {% endif %}
-                    <a class="btn btn-ghost" href="/stories">更多故事</a>
                 </section>
+                {% endif %}
 
                 <section class="comments-section story-comments-section">
                     <h2 class="story-comments-title">评论</h2>
@@ -106,6 +107,7 @@
         </aside>
     </main>
 
+    <script id="storyCommentsSeed" type="application/json">{{ story_comments_seed|safe }}</script>
     <script src="/static/common.js?v={{ asset_version }}"></script>
     <script src="/static/post-comments.js?v={{ asset_version }}"></script>
     <script src="/static/story-detail.js?v={{ asset_version }}"></script>
