@@ -47,7 +47,6 @@
                 <h1 class="post-detail-title story-x-title">{{ post.title }}</h1>
                 <div class="story-x-meta-bar">
                     <span class="story-x-meta-pill">作者 {{ post_view.author_name }}</span>
-                    <span class="story-x-meta-pill">{{ category.name }}</span>
                     <span class="story-x-meta-pill">发布于 {{ post.created_at.strftime('%Y-%m-%d') if post.created_at else '' }}</span>
                     <span class="story-x-meta-pill">更新于 {{ post_view.updated_at.strftime('%Y-%m-%d') if post_view.updated_at else (post.created_at.strftime('%Y-%m-%d') if post.created_at else '') }}</span>
                     <span class="story-x-meta-pill">{{ post_view.view_count }} 浏览</span>
@@ -63,9 +62,13 @@
                 {{ post.content|safe }}
             </section>
 
-            {% if post_view.tags %}
+            {% if category.name or post_view.tags %}
             <section class="seo-story-taxonomy story-x-taxonomy">
+                <div class="story-tag-panel-title">标签</div>
                 <div class="seo-tag-list">
+                    {% if category.name %}
+                    <span class="tag timeline-tag">{{ category.name }}</span>
+                    {% endif %}
                     {% for tag in post_view.tags %}
                     <span class="tag timeline-tag">{{ tag }}</span>
                     {% endfor %}
@@ -80,24 +83,6 @@
                 <button class="btn btn-ghost story-engagement-btn" type="button" data-action="report">🚩 举报</button>
             </section>
 
-            {% if prev_post or next_post %}
-            <section class="story-nav-grid">
-                {% if prev_post %}
-                <a class="story-nav-card story-nav-card-prev" href="{{ prev_post.url }}">
-                    <span class="story-nav-label">上一篇</span>
-                    <strong>{{ prev_post.title }}</strong>
-                    <span>{{ prev_post.excerpt }}</span>
-                </a>
-                {% endif %}
-                {% if next_post %}
-                <a class="story-nav-card story-nav-card-next" href="{{ next_post.url }}">
-                    <span class="story-nav-label">下一篇</span>
-                    <strong>{{ next_post.title }}</strong>
-                    <span>{{ next_post.excerpt }}</span>
-                </a>
-                {% endif %}
-            </section>
-            {% endif %}
         </article>
 
         <section class="post-page-main glass story-comments-panel">

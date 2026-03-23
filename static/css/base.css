@@ -865,6 +865,15 @@ body.page-motion.page-leaving {
     margin-top: 1.1rem;
 }
 
+.story-tag-panel-title {
+    margin: 0 0 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
 .story-engagement-bar {
     display: flex;
     gap: 0.55rem;
@@ -878,51 +887,6 @@ body.page-motion.page-leaving {
     min-height: 40px;
     padding: 0.5rem 0.86rem;
     border-radius: 999px;
-}
-
-.story-nav-grid {
-    display: grid;
-    gap: 0.8rem;
-    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-    margin-top: 1rem;
-}
-
-.story-nav-card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    min-height: 116px;
-    padding: 0.95rem 1rem;
-    border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.035);
-    text-decoration: none;
-    color: var(--text-primary);
-    transition: transform var(--dur-fast) var(--ease-enter), border-color var(--dur-fast) var(--ease-enter), background-color var(--dur-fast) var(--ease-enter);
-}
-
-.story-nav-card:hover {
-    transform: translateY(-1px);
-    border-color: rgba(124, 58, 237, 0.32);
-    background: rgba(124, 58, 237, 0.08);
-}
-
-.story-nav-label {
-    color: var(--text-muted);
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.story-nav-card strong {
-    font-size: 1rem;
-    line-height: 1.35;
-}
-
-.story-nav-card span:last-child {
-    color: var(--text-secondary);
-    font-size: 0.88rem;
-    line-height: 1.5;
 }
 
 .story-comments-section {
