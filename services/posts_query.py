@@ -1,11 +1,19 @@
 import json
 import traceback
 
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import joinedload
 
 from extensions import db
 from models import Bookmark, Comment, CommentLike, Like, Post, User, Vote
+
+
+SMOKE_POST_FILTERS = (
+    Post.title.ilike('QA 系列帖 %'),
+    Post.title.ilike('QA Smoke Post %'),
+    Post.content.ilike('%series smoke%'),
+    Post.content.ilike('%Smoke content for admin flow.%'),
+)
 
 
 def _build_top_comments(post_ids):
@@ -64,6 +72,10 @@ def apply_default_post_order(query):
     )
 
 
+def exclude_smoke_posts(query):
+    return query.filter(~or_(*SMOKE_POST_FILTERS))
+
+
 def get_posts_fallback(page, per_page, current_user_id):
     """兜底：仅查 posts 表，不 join users，避免缺列导致 500。返回 (posts_data, total, pages)。"""
 
@@ -71,7 +83,7 @@ def get_posts_fallback(page, per_page, current_user_id):
         return "ORDER BY is_special_announcement DESC, is_pinned DESC, pinned_at DESC, created_at DESC"
 
     try:
-        query = Post.query.filter_by(is_hidden=False).order_by(
+        query = exclude_smoke_posts(Post.query.filter_by(is_hidden=False)).order_by(
             Post.is_special_announcement.desc(),
             Post.is_pinned.desc(),
             Post.pinned_at.desc(),
@@ -88,10 +100,22 @@ def get_posts_fallback(page, per_page, current_user_id):
             rows = db.session.execute(text("""
                 SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
                        tx_hash, ipfs_cid, is_paid, region, is_on_chain, post_type, is_hidden, allow_comments,
-                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment, tags
+                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment, tags,
+                       slug, excerpt, seo_title, seo_description, updated_at
                 FROM posts WHERE is_hidden = false
+                  AND title NOT ILIKE 'QA 系列帖 %'
+                  AND title NOT ILIKE 'QA Smoke Post %'
+                  AND content NOT ILIKE '%series smoke%'
+                  AND content NOT ILIKE '%Smoke content for admin flow.%'
             """ + _order_sql() + " LIMIT :lim OFFSET :off"), {'lim': per_page, 'off': off}).fetchall()
-            total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
+            total = db.session.execute(text("""
+                SELECT COUNT(*) FROM posts
+                WHERE is_hidden = false
+                  AND title NOT ILIKE 'QA 系列帖 %'
+                  AND title NOT ILIKE 'QA Smoke Post %'
+                  AND content NOT ILIKE '%series smoke%'
+                  AND content NOT ILIKE '%Smoke content for admin flow.%'
+            """)).scalar() or 0
             pages = max(1, (total + per_page - 1) // per_page)
             posts = rows
         except Exception as e2:
@@ -99,9 +123,22 @@ def get_posts_fallback(page, per_page, current_user_id):
             try:
                 rows = db.session.execute(text("""
                     SELECT id, title, content, author_id, created_at, cover_image, view_count
-                    FROM posts WHERE is_hidden = false ORDER BY created_at DESC LIMIT :lim OFFSET :off
+                    FROM posts
+                    WHERE is_hidden = false
+                      AND title NOT ILIKE 'QA 系列帖 %'
+                      AND title NOT ILIKE 'QA Smoke Post %'
+                      AND content NOT ILIKE '%series smoke%'
+                      AND content NOT ILIKE '%Smoke content for admin flow.%'
+                    ORDER BY created_at DESC LIMIT :lim OFFSET :off
                 """), {'lim': per_page, 'off': (page - 1) * per_page}).fetchall()
-                total = db.session.execute(text("SELECT COUNT(*) FROM posts WHERE is_hidden = false")).scalar() or 0
+                total = db.session.execute(text("""
+                    SELECT COUNT(*) FROM posts
+                    WHERE is_hidden = false
+                      AND title NOT ILIKE 'QA 系列帖 %'
+                      AND title NOT ILIKE 'QA Smoke Post %'
+                      AND content NOT ILIKE '%series smoke%'
+                      AND content NOT ILIKE '%Smoke content for admin flow.%'
+                """)).scalar() or 0
                 pages = max(1, (total + per_page - 1) // per_page)
                 posts = rows
             except Exception as e3:
@@ -161,6 +198,11 @@ def get_posts_fallback(page, per_page, current_user_id):
                 tx_hash = getattr(p, 'tx_hash', None)
                 ipfs_cid = getattr(p, 'ipfs_cid', None)
                 tags_raw = getattr(p, 'tags', None)
+                slug = getattr(p, 'slug', None)
+                excerpt = getattr(p, 'excerpt', None)
+                seo_title = getattr(p, 'seo_title', None)
+                seo_description = getattr(p, 'seo_description', None)
+                updated_at = getattr(p, 'updated_at', None)
                 post_type = getattr(p, 'post_type', 0)
                 is_repost = getattr(p, 'is_repost', False)
                 original_post_id = getattr(p, 'original_post_id', None)
@@ -198,6 +240,11 @@ def get_posts_fallback(page, per_page, current_user_id):
                 original_post_id = r[21] if len(r) > 21 else None
                 repost_comment = r[22] if len(r) > 22 else None
                 tags_raw = r[23] if len(r) > 23 else None
+                slug = r[24] if len(r) > 24 else None
+                excerpt = r[25] if len(r) > 25 else None
+                seo_title = r[26] if len(r) > 26 else None
+                seo_description = r[27] if len(r) > 27 else None
+                updated_at = r[28] if len(r) > 28 else None
 
             images_list = []
             if images_raw:
@@ -223,6 +270,11 @@ def get_posts_fallback(page, per_page, current_user_id):
             posts_data.append({
                 'id': pid,
                 'title': title,
+                'slug': slug,
+                'story_url': ('/story/' + slug) if slug else ('/post/' + str(pid)),
+                'excerpt': excerpt,
+                'seo_title': seo_title,
+                'seo_description': seo_description,
                 'content': content,
                 'cover_image': cover_image,
                 'images': images_list,
@@ -240,6 +292,7 @@ def get_posts_fallback(page, per_page, current_user_id):
                 'post_type': post_type,
                 'is_permanent': is_permanent,
                 'created_at': created_at,
+                'updated_at': updated_at.isoformat() if hasattr(updated_at, 'isoformat') and updated_at else None,
                 'is_repost': is_repost,
                 'original_post_id': original_post_id,
                 'original_post': None,
@@ -267,10 +320,12 @@ def build_posts_payload(sort_by, page, per_page, region, current_user_id):
                 query = query.join(Bookmark, Post.id == Bookmark.post_id).filter(
                     Bookmark.user_id == current_user_id
                 ).filter(Post.is_hidden == False)
+                query = exclude_smoke_posts(query)
                 query = apply_default_post_order(query)
             else:
                 return {'posts': [], 'total': 0, 'pages': 0, 'current_page': page}, 200
         else:
+            query = exclude_smoke_posts(query)
             query = apply_default_post_order(query)
         if region:
             query = query.filter_by(region=region)

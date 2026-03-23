@@ -32,13 +32,20 @@ HOME_INTRO = (
     '方便读者持续追更、检索与收藏。'
 )
 
+SMOKE_POST_FILTERS = (
+    Post.title.ilike('QA 系列帖 %'),
+    Post.title.ilike('QA Smoke Post %'),
+    Post.content.ilike('%series smoke%'),
+    Post.content.ilike('%Smoke content for admin flow.%'),
+)
+
 
 def _page_num():
     return max(1, request.args.get('page', 1, type=int))
 
 
 def _visible_posts_query():
-    return Post.query.options(joinedload(Post.author)).filter_by(is_hidden=False)
+    return Post.query.options(joinedload(Post.author)).filter_by(is_hidden=False).filter(~or_(*SMOKE_POST_FILTERS))
 
 
 def _story_list_item(post):

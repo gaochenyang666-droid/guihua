@@ -220,14 +220,17 @@
     }
     .timeline-item {
         border-radius: 18px;
-        padding: 0.82rem 0.92rem;
+        padding: 0.94rem 1.05rem;
+    }
+    .timeline-title {
+        font-size: 1.12rem;
     }
     .timeline-body {
-        font-size: 0.94rem;
+        font-size: 0.96rem;
     }
     .timeline-action-btn {
         min-height: 30px;
-        padding: 0.32rem 0.5rem;
+        padding: 0.36rem 0.58rem;
     }
     .timeline-action-btn span {
         font-size: 0.74rem;
