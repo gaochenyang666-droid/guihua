@@ -1330,20 +1330,16 @@
     }
 
     .story-x-article {
-        padding: 0.82rem 0.82rem 0.9rem;
-    }
-
-    .story-x-main {
-        border-radius: 18px;
+        padding: 0.9rem 0.88rem 0.95rem;
     }
 
     .story-x-title {
-        font-size: 1.38rem;
+        font-size: 1.62rem;
     }
 
     .story-x-author-row {
         gap: 0.65rem;
-        margin-bottom: 0.55rem;
+        margin-bottom: 0.7rem;
     }
 
     .story-x-avatar {
@@ -1353,27 +1349,62 @@
     }
 
     .story-x-content {
-        font-size: 0.97rem;
-        line-height: 1.74;
+        font-size: 0.99rem;
+        line-height: 1.82;
+    }
+
+    .story-breadcrumbs {
+        gap: 0.35rem;
+        font-size: 0.76rem;
+    }
+
+    .story-x-meta-bar {
+        gap: 0.38rem;
+        margin-top: 0.75rem;
+    }
+
+    .story-x-meta-pill {
+        min-height: 28px;
+        padding: 0.28rem 0.58rem;
+        font-size: 0.76rem;
     }
 
     .story-x-taxonomy {
         margin-top: 0.85rem;
     }
 
-    .story-x-actions {
+    .story-engagement-bar {
         gap: 0.4rem;
+        margin-top: 0.9rem;
+        padding-top: 0.9rem;
     }
 
-    .story-x-actions .btn {
+    .story-engagement-btn {
         min-height: 40px;
         padding: 0.42rem 0.78rem;
         font-size: 0.88rem;
     }
 
+    .story-nav-grid {
+        grid-template-columns: 1fr;
+        gap: 0.6rem;
+        margin-top: 0.9rem;
+    }
+
+    .story-nav-card {
+        min-height: 0;
+        padding: 0.82rem 0.88rem;
+        border-radius: 16px;
+    }
+
     .story-comments-section {
-        margin-top: 0.8rem;
-        padding-top: 0.8rem;
+        margin-top: 0;
+        padding-top: 0;
+    }
+
+    .story-comments-panel,
+    .story-x-aside {
+        padding: 0.88rem 0.88rem 0.92rem;
     }
 
     .story-comments-section .comments-toolbar {

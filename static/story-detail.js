@@ -18,6 +18,102 @@
     var state = comments.createState();
     var currentPost = null;
 
+    function toastError(msg) {
+        if (window.Toast && window.Toast.error) window.Toast.error(msg || '操作失败');
+    }
+
+    function toastSuccess(msg) {
+        if (window.Toast && window.Toast.success) window.Toast.success(msg || '操作成功');
+    }
+
+    function requestJson(url, opts) {
+        return window.apiJson(url, Object.assign({ fallback: {} }, opts || {}));
+    }
+
+    async function doPost(url, payload) {
+        return requestJson(url, { method: 'POST', body: payload });
+    }
+
+    function updateActionButtons() {
+        if (!currentPost) return;
+        Array.prototype.forEach.call(document.querySelectorAll('[data-action="like"]'), function (btn) {
+            btn.textContent = '😰 恐惧 (' + Number(currentPost.likes_count || 0) + ')';
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-action="bookmark"]'), function (btn) {
+            btn.textContent = '⭐ 收藏' + (currentPost.is_bookmarked ? '（已收）' : '');
+        });
+    }
+
+    async function likePost() {
+        var result = await doPost('/api/posts/' + postId + '/like');
+        var res = result.res;
+        var data = result.data;
+        if (!res.ok) {
+            toastError((data && (data.error || data.message)) || '操作失败');
+            return;
+        }
+        var isLiked = String((data && data.message) || '').toLowerCase().indexOf('unlike') === -1;
+        currentPost.likes_count = Math.max(0, Number(currentPost.likes_count || 0) + (isLiked ? 1 : -1));
+        updateActionButtons();
+    }
+
+    async function bookmarkPost() {
+        var result = await doPost('/api/posts/' + postId + '/bookmark');
+        var res = result.res;
+        var data = result.data;
+        if (!res.ok) {
+            toastError((data && (data.error || data.message)) || '操作失败');
+            return;
+        }
+        currentPost.is_bookmarked = String((data && data.message) || '').toLowerCase().indexOf('unbook') === -1;
+        updateActionButtons();
+    }
+
+    async function reportPost() {
+        var reason = window.prompt('请简要说明举报原因（违规内容、广告、抄袭等）：');
+        if (reason == null || !reason.trim()) return;
+        if (reason.length > 500) {
+            toastError('原因最多500字');
+            return;
+        }
+        var result = await doPost('/api/reports', { post_id: postId, reason: reason.trim() });
+        var res = result.res;
+        var data = result.data;
+        if (!res.ok) {
+            toastError((data && (data.error || data.message)) || '举报失败');
+            return;
+        }
+        toastSuccess((data && data.message) || '举报已提交');
+    }
+
+    async function sharePost() {
+        var url = window.location.href;
+        var title = (currentPost && currentPost.title) || document.title || '诡话';
+        if (navigator.share) {
+            try {
+                await navigator.share({ title: title, text: title, url: url });
+                return;
+            } catch (err) {
+                if (err && err.name === 'AbortError') return;
+            }
+        }
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(url);
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = url;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            toastSuccess('已复制帖子链接');
+        } catch (_) {
+            toastError('转发失败，请稍后重试');
+        }
+    }
+
     function bindCommentListEvents() {
         if (!currentPost) return;
         comments.bindListEvents(state, currentPost, {
@@ -35,6 +131,18 @@
         var sendBtn = document.getElementById('commentSendBtn');
         var input = document.getElementById('commentInput');
         var moreBtn = document.getElementById('commentsMoreBtn');
+        Array.prototype.forEach.call(document.querySelectorAll('[data-action="like"]'), function (btn) {
+            btn.addEventListener('click', likePost);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-action="bookmark"]'), function (btn) {
+            btn.addEventListener('click', bookmarkPost);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-action="share"]'), function (btn) {
+            btn.addEventListener('click', sharePost);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('[data-action="report"]'), function (btn) {
+            btn.addEventListener('click', reportPost);
+        });
         if (sendBtn) {
             sendBtn.addEventListener('click', function () {
                 if (!currentPost) return;
@@ -77,6 +185,7 @@
         if (commentSendBtn) commentSendBtn.disabled = !canComment;
         comments.resetVisibility(state, currentPost);
         comments.scheduleRender(state, currentPost, { bindEvents: bindCommentListEvents });
+        updateActionButtons();
     }
 
     try {

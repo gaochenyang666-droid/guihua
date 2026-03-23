@@ -145,6 +145,7 @@ def _build_story_comments_seed(post):
     payload = _get_optional_jwt_payload()
     current_user_id = payload.get('user_id') if payload else None
     all_comments = Comment.query.filter_by(post_id=post.id).options(joinedload(Comment.author)).order_by(Comment.created_at.asc()).all()
+    post_payload = post.to_dict(current_user_id=current_user_id, likes_count=post.likes.count(), comments_count=len(all_comments))
     comment_like_counts = {}
     liked_comment_ids = set()
     comment_ids = [c.id for c in all_comments]
@@ -165,7 +166,11 @@ def _build_story_comments_seed(post):
     return {
         'id': post.id,
         'allow_comments': bool(post.allow_comments),
-        'author': post.author.to_dict() if post.author else {'id': post.author_id, 'nickname': '匿名投稿', 'avatar': '👻'},
+        'title': post.title,
+        'story_url': post_payload.get('story_url'),
+        'likes_count': int(post_payload.get('likes_count') or 0),
+        'is_bookmarked': bool(post_payload.get('is_bookmarked')),
+        'author': post_payload.get('author') or (post.author.to_dict() if post.author else {'id': post.author_id, 'nickname': '匿名投稿', 'avatar': '👻'}),
         'comments': build_comment_tree(
             all_comments,
             like_counts=comment_like_counts,
@@ -256,12 +261,14 @@ def story_page(slug):
         db.session.commit()
     seo, breadcrumbs = _seo_story_context(row)
     prev_post, next_post = _prev_next_posts(row)
+    story_post_seed = _build_story_comments_seed(row)
     return render_template(
         'story.html',
         seo=seo,
         post=row,
         post_view=_story_list_item(row),
-        story_comments_seed=json.dumps(_build_story_comments_seed(row), ensure_ascii=False),
+        story_post_seed=story_post_seed,
+        story_comments_seed=json.dumps(story_post_seed, ensure_ascii=False),
         breadcrumbs=breadcrumbs,
         related_posts=_find_related_posts(row, limit=8),
         prev_post=prev_post,

@@ -18,78 +18,106 @@
     </nav>
 
     <main class="post-page-shell story-x-shell" data-post-id="{{ post.id }}">
-        <section class="post-page-main glass story-x-main">
-            <article class="post-page-body is-ready seo-story-article story-x-article">
-                <header class="story-x-header">
-                    <div class="story-x-author-row">
-                        <div class="story-x-avatar">{{ (post.author.avatar if post.author and post.author.avatar else '👻') }}</div>
-                        <div class="story-x-author-meta">
-                            <div class="story-x-author-line">
-                                <span class="story-x-author-name">{{ post_view.author_name }}</span>
-                                {% if post.author and post.author.username %}
-                                <span class="story-x-author-handle">@{{ post.author.username }}</span>
-                                {% endif %}
-                            </div>
-                            <div class="story-x-meta-line">
-                                <span>{{ category.name }}</span>
-                                <span>·</span>
-                                <span>{{ post.created_at.strftime('%Y-%m-%d') if post.created_at else '' }}</span>
-                                <span>·</span>
-                                <span>{{ post_view.view_count }} 浏览</span>
-                            </div>
+        <nav class="seo-breadcrumbs story-breadcrumbs" aria-label="面包屑">
+            {% for item in breadcrumbs %}
+            {% if not loop.first %}
+            <span class="seo-breadcrumb-sep">/</span>
+            {% endif %}
+            {% if loop.last %}
+            <span>{{ item.name }}</span>
+            {% else %}
+            <a class="seo-breadcrumb-link" href="{{ item.url }}">{{ item.name }}</a>
+            {% endif %}
+            {% endfor %}
+        </nav>
+
+        <article class="post-page-main post-page-body is-ready glass seo-story-article story-x-article">
+            <header class="story-x-header">
+                <div class="story-x-author-row">
+                    <div class="story-x-avatar">{{ (post.author.avatar if post.author and post.author.avatar else '👻') }}</div>
+                    <div class="story-x-author-meta">
+                        <div class="story-x-author-line">
+                            <span class="story-x-author-name">{{ post_view.author_name }}</span>
+                            {% if post.author and post.author.username %}
+                            <span class="story-x-author-handle">@{{ post.author.username }}</span>
+                            {% endif %}
                         </div>
                     </div>
-                    <h1 class="post-detail-title story-x-title">{{ post.title }}</h1>
-                    {% if post.cover_image %}
-                    <figure class="seo-story-cover story-x-cover">
-                        <img src="{{ post.cover_image }}" alt="{{ post.title }}" width="1200" height="675" loading="eager">
-                    </figure>
-                    {% endif %}
-                </header>
-
-                <section class="post-detail-content seo-story-content prose-content story-x-content">
-                    {{ post.content|safe }}
-                </section>
-
-                {% if post_view.tags %}
-                <section class="seo-story-taxonomy story-x-taxonomy">
-                    <div class="seo-tag-list">
-                        {% for tag in post_view.tags %}
-                        <span class="tag timeline-tag">{{ tag }}</span>
-                        {% endfor %}
-                    </div>
-                </section>
+                </div>
+                <h1 class="post-detail-title story-x-title">{{ post.title }}</h1>
+                <div class="story-x-meta-bar">
+                    <span class="story-x-meta-pill">作者 {{ post_view.author_name }}</span>
+                    <span class="story-x-meta-pill">{{ category.name }}</span>
+                    <span class="story-x-meta-pill">发布于 {{ post.created_at.strftime('%Y-%m-%d') if post.created_at else '' }}</span>
+                    <span class="story-x-meta-pill">更新于 {{ post_view.updated_at.strftime('%Y-%m-%d') if post_view.updated_at else (post.created_at.strftime('%Y-%m-%d') if post.created_at else '') }}</span>
+                    <span class="story-x-meta-pill">{{ post_view.view_count }} 浏览</span>
+                </div>
+                {% if post.cover_image %}
+                <figure class="seo-story-cover story-x-cover">
+                    <img src="{{ post.cover_image }}" alt="{{ post.title }}" width="1200" height="675" loading="eager">
+                </figure>
                 {% endif %}
+            </header>
 
-                {% if prev_post or next_post %}
-                <section class="post-detail-actions story-x-actions">
-                    {% if prev_post %}
-                    <a class="btn btn-ghost seo-story-nav-link" href="{{ prev_post.url }}">⬅ 上一篇</a>
-                    {% endif %}
-                    {% if next_post %}
-                    <a class="btn btn-ghost seo-story-nav-link" href="{{ next_post.url }}">下一篇 ➡</a>
-                    {% endif %}
-                </section>
+            <section class="post-detail-content seo-story-content prose-content story-x-content">
+                {{ post.content|safe }}
+            </section>
+
+            {% if post_view.tags %}
+            <section class="seo-story-taxonomy story-x-taxonomy">
+                <div class="seo-tag-list">
+                    {% for tag in post_view.tags %}
+                    <span class="tag timeline-tag">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            <section class="post-detail-actions story-engagement-bar">
+                <button class="btn btn-ghost story-engagement-btn" type="button" data-action="like">😰 恐惧 ({{ story_post_seed.likes_count if story_post_seed else 0 }})</button>
+                <button class="btn btn-ghost story-engagement-btn" type="button" data-action="bookmark">⭐ 收藏{% if story_post_seed and story_post_seed.is_bookmarked %}（已收）{% endif %}</button>
+                <button class="btn btn-ghost story-engagement-btn" type="button" data-action="share">🔗 转发</button>
+                <button class="btn btn-ghost story-engagement-btn" type="button" data-action="report">🚩 举报</button>
+            </section>
+
+            {% if prev_post or next_post %}
+            <section class="story-nav-grid">
+                {% if prev_post %}
+                <a class="story-nav-card story-nav-card-prev" href="{{ prev_post.url }}">
+                    <span class="story-nav-label">上一篇</span>
+                    <strong>{{ prev_post.title }}</strong>
+                    <span>{{ prev_post.excerpt }}</span>
+                </a>
                 {% endif %}
+                {% if next_post %}
+                <a class="story-nav-card story-nav-card-next" href="{{ next_post.url }}">
+                    <span class="story-nav-label">下一篇</span>
+                    <strong>{{ next_post.title }}</strong>
+                    <span>{{ next_post.excerpt }}</span>
+                </a>
+                {% endif %}
+            </section>
+            {% endif %}
+        </article>
 
-                <section class="comments-section story-comments-section">
-                    <h2 class="story-comments-title">评论</h2>
-                    <div class="comments-toolbar">
-                        <div class="comments-toolbar-group">
-                            <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortLatestBtn" type="button" data-action="sort-comments" data-sort-mode="latest">最新</button>
-                            <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortHotBtn" type="button" data-action="sort-comments" data-sort-mode="hot">最热</button>
-                            <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsAuthorOnlyBtn" type="button" data-action="toggle-author-comments">只看作者回复</button>
-                        </div>
-                        <div class="comments-filter-meta" id="commentsFilterMeta"></div>
+        <section class="post-page-main glass story-comments-panel">
+            <section class="comments-section story-comments-section">
+                <h2 class="story-comments-title">评论</h2>
+                <div class="comments-toolbar">
+                    <div class="comments-toolbar-group">
+                        <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortLatestBtn" type="button" data-action="sort-comments" data-sort-mode="latest">最新</button>
+                        <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortHotBtn" type="button" data-action="sort-comments" data-sort-mode="hot">最热</button>
+                        <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsAuthorOnlyBtn" type="button" data-action="toggle-author-comments">只看作者回复</button>
                     </div>
-                    <div id="postCommentsList" class="post-comments-list">加载评论中...</div>
-                    <div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>
-                    <div class="post-comment-compose">
-                        <input type="text" id="commentInput" class="form-input" placeholder="写下你的评论..." />
-                        <button class="btn btn-primary" id="commentSendBtn" type="button">发送</button>
-                    </div>
-                </section>
-            </article>
+                    <div class="comments-filter-meta" id="commentsFilterMeta"></div>
+                </div>
+                <div id="postCommentsList" class="post-comments-list">加载评论中...</div>
+                <div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>
+                <div class="post-comment-compose">
+                    <input type="text" id="commentInput" class="form-input" placeholder="写下你的评论..." />
+                    <button class="btn btn-primary" id="commentSendBtn" type="button">发送</button>
+                </div>
+            </section>
         </section>
 
         <aside class="post-page-main glass seo-story-aside story-x-aside">
