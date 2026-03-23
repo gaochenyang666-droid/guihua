@@ -1400,8 +1400,26 @@
         padding: 0.88rem 0.88rem 0.92rem;
     }
 
+    .story-comments-head {
+        gap: 0.55rem;
+        margin-bottom: 0.7rem;
+        align-items: center;
+    }
+
+    .story-comments-subtitle {
+        font-size: 0.76rem;
+    }
+
+    .story-comments-count {
+        min-width: 36px;
+        min-height: 30px;
+        padding: 0.24rem 0.58rem;
+        font-size: 0.8rem;
+    }
+
     .story-comments-section .comments-toolbar {
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.6rem;
+        padding-bottom: 0.55rem;
     }
 
     .story-comments-section .comments-toolbar-group {
@@ -1419,6 +1437,8 @@
         flex-direction: column;
         align-items: stretch;
         gap: 0.5rem;
+        margin-top: 0.6rem;
+        padding-top: 0.7rem;
     }
 
     .story-comments-section .post-comment-compose .btn {
@@ -1427,18 +1447,32 @@
     }
 
     .story-comments-section .comment-item {
-        padding: 0.2rem 0.08rem 0.26rem;
+        padding: 0.72rem 0.75rem 0.72rem;
+        border-radius: 16px;
     }
 
     .story-comments-section .comment-header {
         gap: 0.35rem;
-        margin-bottom: 0.3rem;
+        margin-bottom: 0.36rem;
+    }
+
+    .story-comments-section .comment-body-text {
+        font-size: 0.93rem;
+        line-height: 1.66;
     }
 
     .story-comments-section .comment-actions-row {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.35rem;
+        gap: 0.34rem;
+        margin-top: 0.55rem;
+    }
+
+    .story-comments-section .comment-action-btn {
+        flex: 0 0 auto;
+        min-height: 32px;
+        padding: 0.32rem 0.58rem;
+        font-size: 0.8rem;
     }
 
     .story-comments-section .inline-reply-actions {

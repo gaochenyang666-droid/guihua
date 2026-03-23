@@ -896,8 +896,42 @@ body.page-motion.page-leaving {
 }
 
 .story-comments-title {
-    margin: 0 0 0.6rem;
-    font-size: 1.02rem;
+    margin: 0;
+    font-size: 1.08rem;
+}
+
+.story-comments-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.8rem;
+}
+
+.story-comments-heading {
+    min-width: 0;
+}
+
+.story-comments-subtitle {
+    margin: 0.22rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.story-comments-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 32px;
+    padding: 0.28rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(124, 58, 237, 0.22);
+    background: rgba(124, 58, 237, 0.1);
+    color: var(--accent-purple-light);
+    font-weight: 800;
+    font-size: 0.86rem;
 }
 
 .story-comments-panel,
@@ -930,8 +964,10 @@ body.page-motion.page-leaving {
 }
 
 .story-comments-section .comments-toolbar {
-    margin: 0 0 0.55rem;
+    margin: 0 0 0.75rem;
     gap: 0.55rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .story-comments-section .comments-toolbar-group {
@@ -946,21 +982,29 @@ body.page-motion.page-leaving {
 
 .story-comments-section .comments-filter-meta {
     font-size: 0.76rem;
+    color: var(--text-secondary);
 }
 
 .story-comments-section .post-comments-list {
     min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.78rem;
 }
 
 .story-comments-section .post-comment-compose {
     align-items: flex-end;
     gap: 0.6rem;
-    margin-top: 0.55rem;
+    margin-top: 0.7rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .story-comments-section .post-comment-compose .form-input {
     min-height: 48px;
     border-radius: 16px;
+    background: rgba(255, 255, 255, 0.035);
+    border-color: rgba(255, 255, 255, 0.09);
 }
 
 .story-comments-section .post-comment-compose .btn {
@@ -968,6 +1012,79 @@ body.page-motion.page-leaving {
     min-height: 48px;
     border-radius: 16px;
     box-shadow: none;
+}
+
+.story-comments-section .comment-item {
+    padding: 0.85rem 0.95rem 0.82rem;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.story-comments-section .comment-item.is-author-comment {
+    background: rgba(124, 58, 237, 0.1);
+    border-color: rgba(124, 58, 237, 0.18);
+}
+
+.story-comments-section .comment-item.is-admin-comment {
+    box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.story-comments-section .comment-header {
+    gap: 0.5rem 0.8rem;
+    margin-bottom: 0.45rem;
+}
+
+.story-comments-section .comment-time {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+}
+
+.story-comments-section .comment-body-text {
+    color: rgba(241, 241, 247, 0.95);
+    font-size: 0.97rem;
+    line-height: 1.72;
+}
+
+.story-comments-section .comment-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.42rem;
+    margin-top: 0.65rem;
+}
+
+.story-comments-section .comment-action-btn {
+    min-height: 34px;
+    padding: 0.34rem 0.72rem;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.story-comments-section .comment-action-btn:hover,
+.story-comments-section .comment-action-btn:focus-visible {
+    color: var(--text-primary);
+    border-color: rgba(124, 58, 237, 0.24);
+    background: rgba(124, 58, 237, 0.08);
+}
+
+.story-comments-section .comment-thread-toggle-wrap {
+    margin-top: 0.55rem;
+}
+
+.story-comments-section .comment-thread-group {
+    margin-top: 0.7rem;
+}
+
+.story-comments-section .inline-reply-box {
+    margin-top: 0.65rem;
+    padding: 0.78rem;
+    border-radius: 16px;
+}
+
+.story-comments-section .inline-reply-title {
+    margin-bottom: 0.55rem;
 }
 
 .seo-story-cover {

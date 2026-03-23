@@ -56,23 +56,23 @@
                             '<div class="inline-reply-title">回复 @' + escapeHtml(state.replyTargetName || nick) + '</div>' +
                             '<div class="inline-reply-actions">' +
                                 '<input type="text" id="inlineReplyInput" class="form-input" placeholder="写下你的回复..." value="' + escapeAttr(state.replyDraftText || '') + '">' +
-                                '<button class="btn btn-primary btn-sm" type="button" data-action="submit-inline-reply">发送</button>' +
-                                '<button class="btn btn-ghost btn-sm" type="button" data-action="cancel-inline-reply">取消</button>' +
+                                '<button class="btn btn-primary btn-sm comment-action-btn comment-action-btn-primary" type="button" data-action="submit-inline-reply">发送</button>' +
+                                '<button class="btn btn-ghost btn-sm comment-action-btn" type="button" data-action="cancel-inline-reply">取消</button>' +
                             '</div>' +
                         '</div>'
                     )
                     : '';
                 return (
-                    '<div class="' + commentClasses.join(' ') + '" style="margin-left:' + margin + 'px; border-left:' + border + '; padding-left:' + padding + ';">' +
-                    '<div class="comment-header"><div class="comment-author-line"><span class="comment-author-name">' + escapeHtml(nick) + '</span>' + authorTag + adminTag + '</div><span>' + escapeHtml(created) + '</span></div>' +
-                    '<div style="margin-bottom:0.45rem;">' + mentionifyText((comment && comment.content) || '') + '</div>' +
-                    '<div style="display:flex; gap:0.45rem; flex-wrap:wrap;">' +
-                        '<button class="btn btn-ghost btn-sm" type="button" data-action="reply" data-parent-id="' + Number(comment.id) + '" data-nickname="' + escapeAttr(nick) + '">↩ 回复</button>' +
-                        '<button class="btn btn-ghost btn-sm" type="button" data-action="like-comment" data-comment-id="' + Number(comment.id) + '">' + ((comment && comment.is_liked) ? '👍 已赞' : '👍 点赞') + ' (' + Number((comment && comment.likes_count) || 0) + ')</button>' +
+                    '<div class="' + commentClasses.join(' ') + ' comment-depth-' + Math.min(depth, 4) + '" data-comment-depth="' + depth + '">' +
+                    '<div class="comment-header"><div class="comment-author-line"><span class="comment-author-name">' + escapeHtml(nick) + '</span>' + authorTag + adminTag + '</div><span class="comment-time">' + escapeHtml(created) + '</span></div>' +
+                    '<div class="comment-body-text">' + mentionifyText((comment && comment.content) || '') + '</div>' +
+                    '<div class="comment-actions-row">' +
+                        '<button class="btn btn-ghost btn-sm comment-action-btn" type="button" data-action="reply" data-parent-id="' + Number(comment.id) + '" data-nickname="' + escapeAttr(nick) + '">↩ 回复</button>' +
+                        '<button class="btn btn-ghost btn-sm comment-action-btn" type="button" data-action="like-comment" data-comment-id="' + Number(comment.id) + '">' + ((comment && comment.is_liked) ? '👍 已赞' : '👍 点赞') + ' (' + Number((comment && comment.likes_count) || 0) + ')</button>' +
                     '</div>' +
                     inlineReplyComposer +
                     (collapseDeepReplies
-                        ? '<div class="comment-thread-toggle-wrap"><button class="btn btn-ghost btn-sm comment-thread-toggle" type="button" data-action="toggle-replies" data-target-id="' + replyThreadId + '" data-collapsed-label="展开 ' + replyCount + ' 条深层回复" data-expanded-label="收起深层回复" aria-expanded="false">展开 ' + replyCount + ' 条深层回复</button></div><div class="comment-thread-group" id="' + replyThreadId + '" hidden>' + replies + '</div>'
+                        ? '<div class="comment-thread-toggle-wrap"><button class="btn btn-ghost btn-sm comment-thread-toggle comment-action-btn" type="button" data-action="toggle-replies" data-target-id="' + replyThreadId + '" data-collapsed-label="展开 ' + replyCount + ' 条深层回复" data-expanded-label="收起深层回复" aria-expanded="false">展开 ' + replyCount + ' 条深层回复</button></div><div class="comment-thread-group" id="' + replyThreadId + '" hidden>' + replies + '</div>'
                         : replies) +
                     '</div>'
                 );
@@ -173,7 +173,16 @@
                 var host = document.getElementById('postCommentsList');
                 if (!host) return;
                 var commentsHtml = renderVisibleComments(state, post);
-                host.innerHTML = commentsHtml || '<div style="color:var(--text-muted);">暂无评论</div>';
+                host.innerHTML = commentsHtml || '<div class="state-empty profile-inline-state">暂无评论</div>';
+                Array.prototype.forEach.call(host.querySelectorAll('[data-comment-depth]'), function (node) {
+                    var rawDepth = Number(node.getAttribute('data-comment-depth') || 0);
+                    var margin = Math.max(0, rawDepth) * 20;
+                    var border = rawDepth > 0 ? '2px solid var(--border-color)' : 'none';
+                    var padding = rawDepth > 0 ? '0.9rem' : '0';
+                    node.style.marginLeft = margin + 'px';
+                    node.style.borderLeft = border;
+                    node.style.paddingLeft = padding;
+                });
                 if (typeof hooks.bindEvents === 'function') hooks.bindEvents();
                 updateToolbar(state, post);
                 updateMoreButton(state, post);

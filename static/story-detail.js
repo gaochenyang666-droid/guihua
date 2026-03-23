@@ -34,6 +34,20 @@
         return requestJson(url, { method: 'POST', body: payload });
     }
 
+    function countAllComments(list) {
+        if (!Array.isArray(list) || !list.length) return 0;
+        return list.reduce(function (total, item) {
+            return total + 1 + countAllComments(item && item.replies);
+        }, 0);
+    }
+
+    function updateCommentsHeader() {
+        var countEl = document.getElementById('storyCommentsCount');
+        if (!countEl) return;
+        var total = countAllComments(currentPost && currentPost.comments);
+        countEl.textContent = String(total);
+    }
+
     function updateActionButtons() {
         if (!currentPost) return;
         Array.prototype.forEach.call(document.querySelectorAll('[data-action="like"]'), function (btn) {
@@ -186,6 +200,7 @@
         comments.resetVisibility(state, currentPost);
         comments.scheduleRender(state, currentPost, { bindEvents: bindCommentListEvents });
         updateActionButtons();
+        updateCommentsHeader();
     }
 
     try {
