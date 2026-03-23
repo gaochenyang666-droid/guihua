@@ -182,6 +182,10 @@ class Post(db.Model):
     __tablename__ = 'posts'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100))
+    slug = db.Column(db.String(160), nullable=True, index=True)
+    excerpt = db.Column(db.String(300), nullable=True)
+    seo_title = db.Column(db.String(160), nullable=True)
+    seo_description = db.Column(db.String(255), nullable=True)
     content = db.Column(db.Text)
     cover_image = db.Column(db.String(500), nullable=True)
     images = db.Column(db.Text)
@@ -204,6 +208,7 @@ class Post(db.Model):
     original_post_id = db.Column(db.Integer, db.ForeignKey('posts.id'), nullable=True)
     repost_comment = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), index=True)
 
     comments = db.relationship('Comment', backref='post', lazy='dynamic', cascade='all, delete-orphan')
     likes = db.relationship('Like', backref='post', lazy='dynamic', cascade='all, delete-orphan')
@@ -213,6 +218,7 @@ class Post(db.Model):
 
     def to_dict(self, current_user_id=None, likes_count=None, comments_count=None,
                 is_liked=None, is_bookmarked=None):
+        from services.seo import build_excerpt as _build_excerpt, story_path as _story_path
         try:
             images_list = json.loads(self.images) if self.images else []
         except (TypeError, ValueError):
@@ -249,8 +255,13 @@ class Post(db.Model):
         return {
             'id': self.id,
             'title': self.title,
+            'slug': self.slug,
+            'story_url': _story_path(self),
+            'excerpt': self.excerpt or _build_excerpt(self.content or ''),
+            'seo_title': self.seo_title,
+            'seo_description': self.seo_description,
             'content': self.content,
-            'cover_image': None,
+            'cover_image': self.cover_image,
             'images': images_list,
             'tags': tags_list,
             'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻', 'honor_title': '新魂'},
@@ -265,6 +276,7 @@ class Post(db.Model):
             'post_type': self.post_type,
             'is_permanent': is_permanent,
             'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'is_repost': self.is_repost,
             'original_post_id': self.original_post_id,
             'original_post': original_post_data,
