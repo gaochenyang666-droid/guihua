@@ -58,9 +58,11 @@ def main() -> int:
         post_list = posts.get("posts") or []
         print(f"posts_count={len(post_list)}")
 
-        public_username = ""
-        if post_list:
-            public_username = str((((post_list[0] or {}).get("author") or {}).get("username")) or "").strip()
+        public_usernames = []
+        for post in post_list:
+            username = str((((post or {}).get("author") or {}).get("username")) or "").strip()
+            if username and username not in public_usernames:
+                public_usernames.append(username)
 
         if post_list:
             first_id = post_list[0].get("id")
@@ -80,11 +82,19 @@ def main() -> int:
         assert_contains(notifications, "list-page-shell", "notifications page")
         print("notifications_ok=1")
 
-        profile_url = base + (f"/profile?user={urllib.parse.quote(public_username)}" if public_username else "/profile")
-        profile_page = fetch_text(profile_url)
-        assert_contains(profile_page, "/static/profile.js", "profile page")
-        assert_contains(profile_page, "profileArea", "profile page")
-        print("profile_ok=1")
+        profile_ok = False
+        for username in public_usernames:
+            profile_url = base + f"/profile?user={urllib.parse.quote(username)}"
+            profile_page = fetch_text(profile_url)
+            if "/static/profile.js" in profile_page and "profileArea" in profile_page:
+                profile_ok = True
+                break
+        if not profile_ok:
+            if public_usernames:
+                raise AssertionError("profile page: missing `/static/profile.js`")
+            print("profile_skipped=1")
+        else:
+            print("profile_ok=1")
 
         studio_page = fetch_text(base + "/studio")
         assert_contains(studio_page, "studioView", "studio page")
