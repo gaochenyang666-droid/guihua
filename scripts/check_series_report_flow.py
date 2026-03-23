@@ -149,6 +149,13 @@ def cleanup(ids):
         db.session.commit()
 
 
+def cleanup_remote(base, ids, admin_token):
+    if ids.get("post_id"):
+        http_json(base + f"/api/posts/{ids['post_id']}", method="DELETE", token=admin_token)
+    if ids.get("series_id"):
+        http_json(base + f"/api/series/{ids['series_id']}", method="DELETE", token=admin_token)
+
+
 def main():
     maybe_disable_ssl_verify()
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
@@ -259,7 +266,13 @@ def main():
         print(f"series_report_flow_error={exc}", file=sys.stderr)
         return 1
     finally:
-        if not is_remote:
+        if is_remote:
+            try:
+                if 'admin_token' in locals():
+                    cleanup_remote(base, ids, admin_token)
+            except Exception:
+                pass
+        else:
             cleanup(ids)
 
 
