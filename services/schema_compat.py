@@ -196,6 +196,62 @@ def ensure_posts_tags_column(db_session, dialect):
         print(f'[Startup] posts tags column skip: {exc}')
 
 
+def ensure_posts_seo_columns(db_session, dialect):
+    targets = (
+        ('slug', "VARCHAR(160)", "posts.slug added."),
+        ('excerpt', "VARCHAR(300)", "posts.excerpt added."),
+        ('seo_title', "VARCHAR(160)", "posts.seo_title added."),
+        ('seo_description', "VARCHAR(255)", "posts.seo_description added."),
+        ('updated_at', "TIMESTAMP NULL" if dialect == 'postgresql' else "DATETIME", "posts.updated_at added."),
+    )
+    try:
+        if dialect == 'postgresql':
+            cols = db_session.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name='posts' AND column_name IN ('slug','excerpt','seo_title','seo_description','updated_at')
+            """)).fetchall()
+            existing = {col[0] for col in cols}
+        elif dialect == 'sqlite':
+            cols = db_session.execute(text("PRAGMA table_info(posts)")).fetchall()
+            existing = {col[1] for col in cols}
+        else:
+            return
+
+        changed = False
+        for name, sql_type, log_line in targets:
+            if name in existing:
+                continue
+            db_session.execute(text(f"ALTER TABLE posts ADD COLUMN {name} {sql_type}"))
+            print(f'[Startup] {log_line}')
+            changed = True
+        if changed:
+            db_session.commit()
+    except Exception as exc:
+        db_session.rollback()
+        print(f'[Startup] posts seo columns skip: {exc}')
+
+
+def backfill_posts_seo_fields(db_session, post_model):
+    try:
+        from services.seo import ensure_post_seo_fields
+    except Exception as exc:
+        print(f'[Startup] posts seo backfill skip: {exc}')
+        return
+
+    changed = 0
+    try:
+        rows = db_session.query(post_model).order_by(post_model.id.asc()).all()
+        for row in rows:
+            if ensure_post_seo_fields(db_session, row, post_model):
+                changed += 1
+        if changed:
+            db_session.commit()
+            print(f'[Startup] posts seo fields backfilled: {changed}')
+    except Exception as exc:
+        db_session.rollback()
+        print(f'[Startup] posts seo backfill skip: {exc}')
+
+
 def ensure_notifications_columns(db_session, dialect):
     try:
         if dialect == 'postgresql':
