@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
-    <title>诡话 - 创作者工作室</title>
+    {% include 'partials/seo_meta.html' %}
     <!-- Favicon 统一使用 logo.svg，适配桌面与移动端 -->
     <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
     <link rel="shortcut icon" href="/static/logo.svg">
@@ -81,6 +81,10 @@
     
     <div class="toast-container" id="toastContainer"></div>
 
+    <script src="/static/studio-series.js?v={{ asset_version }}"></script>
+    <script src="/static/studio-publish.js?v={{ asset_version }}"></script>
+    <script src="/static/studio-editor.js?v={{ asset_version }}"></script>
+    <script src="/static/studio-shell.js?v={{ asset_version }}"></script>
     <script src="/static/studio.js?v={{ asset_version }}"></script>
 </body>
 </html>

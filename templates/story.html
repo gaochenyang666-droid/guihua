@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7c3aed">
+    {% include 'partials/seo_meta.html' %}
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body class="story-article-page">
+    <nav class="navbar glass">
+        <a href="/" class="logo" data-no-transition="1">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
+            <span>诡话</span>
+        </a>
+        <div class="nav-actions">
+            <a href="/stories" class="btn btn-ghost" data-no-transition="1">故事列表</a>
+            <a href="/" class="btn btn-ghost" data-no-transition="1">返回首页</a>
+        </div>
+    </nav>
+
+    <main class="seo-story-shell">
+        <article class="glass seo-story-article">
+            <nav class="seo-breadcrumbs" aria-label="面包屑">
+                {% for item in breadcrumbs %}
+                <a href="{{ item.url }}" class="seo-breadcrumb-link">{{ item.name }}</a>{% if not loop.last %}<span class="seo-breadcrumb-sep">/</span>{% endif %}
+                {% endfor %}
+            </nav>
+
+            <header class="seo-story-header">
+                <p class="seo-story-kicker">{{ category.name }}</p>
+                <h1>{{ post.title }}</h1>
+                <p class="seo-story-excerpt">{{ post_view.excerpt }}</p>
+                <div class="seo-story-meta">
+                    <span>作者：{{ post_view.author_name }}</span>
+                    <span>发布时间：{{ post.created_at.strftime('%Y-%m-%d') if post.created_at else '' }}</span>
+                    <span>更新时间：{{ (post.updated_at or post.created_at).strftime('%Y-%m-%d') if (post.updated_at or post.created_at) else '' }}</span>
+                    <span>浏览：{{ post_view.view_count }}</span>
+                </div>
+                {% if post.cover_image %}
+                <figure class="seo-story-cover">
+                    <img src="{{ post.cover_image }}" alt="{{ post.title }}" width="1200" height="675" loading="eager">
+                </figure>
+                {% endif %}
+            </header>
+
+            <section class="seo-story-content prose-content">
+                {{ post.content|safe }}
+            </section>
+
+            <section class="seo-story-taxonomy">
+                <div><strong>分类：</strong><span>{{ category.name }}</span></div>
+                {% if post_view.tags %}
+                <div><strong>标签：</strong>
+                    <div class="seo-tag-list">
+                        {% for tag in post_view.tags %}
+                        <span class="tag timeline-tag">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="seo-story-disclaimer">
+                <h2>投稿与内容说明</h2>
+                <p>本文为诡话站内内容页，可能包含用户投稿的真实见闻、整理资料或叙事性创作。站内保留原始表达供读者索引、讨论与二次判断，请结合上下文与评论自行甄别。</p>
+            </section>
+
+            <section class="seo-story-nav">
+                {% if prev_post %}
+                <a class="seo-story-nav-link" href="{{ prev_post.url }}">⬅ 上一篇：{{ prev_post.title }}</a>
+                {% endif %}
+                {% if next_post %}
+                <a class="seo-story-nav-link" href="{{ next_post.url }}">下一篇：{{ next_post.title }} ➡</a>
+                {% endif %}
+            </section>
+
+            <section class="seo-story-faq">
+                <h2>阅读常见问题</h2>
+                {% for item in story_faq %}
+                <div class="seo-faq-item">
+                    <h3>{{ item.question }}</h3>
+                    <p>{{ item.answer }}</p>
+                </div>
+                {% endfor %}
+            </section>
+        </article>
+
+        <aside class="glass seo-story-aside">
+            <section>
+                <h2>相关推荐</h2>
+                <div class="seo-story-link-list">
+                    {% for item in related_posts %}
+                    <article class="seo-story-link-card">
+                        <a href="{{ item.url }}" class="seo-story-link-title">{{ item.title }}</a>
+                        <p>{{ item.excerpt }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section>
+                <h2>作者更多内容</h2>
+                <p>作者：{{ post_view.author_name }}</p>
+                <a href="/stories" class="btn btn-ghost btn-sm">继续浏览更多灵异故事</a>
+            </section>
+        </aside>
+    </main>
+</body>
+</html>

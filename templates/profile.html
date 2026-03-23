@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
-    <title>用户档案 - 诡话</title>
+    {% include 'partials/seo_meta.html' %}
     <!-- Favicon 统一使用 logo.svg，适配桌面与移动端 -->
     <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
     <link rel="shortcut icon" href="/static/logo.svg">
@@ -22,11 +22,11 @@
         <div id="myActions"></div>
     </nav>
 
-    <div class="container" style="max-width: 800px; margin: 2rem auto; padding: 0 1rem;">
-        <div id="profileArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 2rem;">加载中...</div>
-        <div id="tipThanksArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 1.2rem; padding: 1rem; display:none;"></div>
-        <div id="seriesArea" class="glass" style="border-radius: var(--radius-lg); margin-bottom: 1.2rem; padding: 1rem; display:none;"></div>
-        <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">发布的灵异事件</h3>
+    <div class="container profile-page-shell">
+        <div id="profileArea" class="glass profile-shell-card">加载中...</div>
+        <div id="tipThanksArea" class="glass profile-shell-card profile-shell-section-card" hidden></div>
+        <div id="seriesArea" class="glass profile-shell-card profile-shell-section-card" hidden></div>
+        <h3 class="profile-posts-heading">发布的灵异事件</h3>
         <div id="postsArea" class="post-list"></div>
     </div>
 

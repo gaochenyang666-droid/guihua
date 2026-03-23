@@ -46,6 +46,11 @@ from services.publish_recovery import (
     clear_pending_publication as _svc_clear_pending_publication,
     get_latest_pending_publication as _svc_get_latest_pending_publication,
 )
+from services.post_recovery import (
+    build_check_tx_payload as _svc_build_check_tx_payload,
+    clear_pending_publication_for_user as _svc_clear_pending_for_user,
+    retry_pending_publication_for_user as _svc_retry_pending_for_user,
+)
 from services.app_support import (
     parse_iso_datetime as _parse_iso_datetime,
     humanize_verify_error as _humanize_verify_error,
@@ -55,6 +60,7 @@ from services.app_support import (
 from services.observability import log_event as _svc_log_event
 from services.pending_resume import resume_pending_publication_row as _resume_pending_publication_row
 from services.runtime_state import allow_view_count_increment as _svc_allow_view_count_increment
+from services.seo import ensure_post_seo_fields as _ensure_post_seo_fields, build_excerpt as _build_excerpt, story_path as _story_path
 
 posts_bp = Blueprint('posts', __name__)
 
@@ -247,71 +253,14 @@ def check_tx_status():
     tx_hash = request.args.get('tx_hash')
     if not tx_hash:
         return jsonify({'error': '缺少交易哈希'}), 400
-        
-    post = Post.query.filter_by(tx_hash=tx_hash).first()
-    if post:
-        return jsonify({
-            'status': 'success',
-            'stage': 'published',
-            'message': '帖子已成功发布',
-            'post_id': post.id,
-            'post_title': post.title
-        })
-
-    pending_row = PendingPublication.query.filter_by(tx_hash=tx_hash).first()
-    if pending_row:
-        if pending_row.status == 'awaiting_retry':
-            return jsonify({
-                'status': 'pending',
-                'stage': 'awaiting_retry',
-                'message': pending_row.last_error or '支付已确认，但永存写入失败，可直接继续发布重试',
-                'confirmations': int(getattr(pending_row, 'confirmations', 0) or 0),
-                'confirmations_needed': TX_CONFIRMATIONS_NEEDED,
-                'pending_publication': pending_row.to_dict(),
-            })
-        if pending_row.status == 'storage_ready':
-            return jsonify({
-                'status': 'pending',
-                'stage': 'storage_ready',
-                'message': '永存档案已写入，正在创建帖子记录',
-                'confirmations': int(getattr(pending_row, 'confirmations', 0) or 0),
-                'confirmations_needed': TX_CONFIRMATIONS_NEEDED,
-                'pending_publication': pending_row.to_dict(),
-            })
-        if pending_row.status in ('payment_verified', 'initiated'):
-            return jsonify({
-                'status': 'pending',
-                'stage': pending_row.status,
-                'message': '支付已记录，正在继续处理发布',
-                'confirmations': int(getattr(pending_row, 'confirmations', 0) or 0),
-                'confirmations_needed': TX_CONFIRMATIONS_NEEDED,
-                'pending_publication': pending_row.to_dict(),
-            })
-
-    inspect = _svc_inspect_transaction_status(tx_hash, tx_confirmations=TX_CONFIRMATIONS_NEEDED)
-    if inspect.get('stage') == 'confirmed':
-        return jsonify({
-            'status': 'pending',
-            'stage': 'confirmed_processing',
-            'message': '链上支付已确认，正在写入永存档案并创建帖子',
-            'confirmations': inspect.get('confirmations', 0),
-            'confirmations_needed': inspect.get('confirmations_needed', TX_CONFIRMATIONS_NEEDED),
-        })
-    if inspect.get('ok'):
-        return jsonify({
-            'status': 'pending',
-            'stage': inspect.get('stage') or 'pending',
-            'message': inspect.get('message') or '处理中',
-            'confirmations': inspect.get('confirmations', 0),
-            'confirmations_needed': inspect.get('confirmations_needed', TX_CONFIRMATIONS_NEEDED),
-        })
-    return jsonify({
-        'status': 'error',
-        'stage': inspect.get('stage') or 'error',
-        'message': inspect.get('message') or '交易状态异常',
-        'confirmations': inspect.get('confirmations', 0),
-        'confirmations_needed': inspect.get('confirmations_needed', TX_CONFIRMATIONS_NEEDED),
-    })
+    payload, status_code = _svc_build_check_tx_payload(
+        Post,
+        PendingPublication,
+        tx_hash,
+        _svc_inspect_transaction_status,
+        TX_CONFIRMATIONS_NEEDED,
+    )
+    return jsonify(payload), status_code
 
 
 @posts_bp.route('/api/posts/pending/latest', methods=['GET'])
@@ -328,14 +277,14 @@ def get_latest_pending_post():
 def clear_pending_post():
     data = request.get_json(silent=True) or {}
     tx_hash = (data.get('tx_hash') or '').strip()
-    row = None
-    if tx_hash:
-        row = PendingPublication.query.filter_by(tx_hash=tx_hash, user_id=g.current_user.id).first()
-    else:
-        row = _svc_get_latest_pending_publication(PendingPublication, g.current_user.id)
+    row = _svc_clear_pending_for_user(
+        db.session,
+        PendingPublication,
+        g.current_user.id,
+        tx_hash=tx_hash or None,
+        latest_getter=_svc_get_latest_pending_publication,
+    )
     if row:
-        db.session.delete(row)
-        db.session.commit()
         _log_flow_event('pending_publication_cleared', tx_hash=row.tx_hash, user_id=g.current_user.id)
     return jsonify({'message': '待恢复记录已清除'})
 
@@ -343,31 +292,16 @@ def clear_pending_post():
 @posts_bp.route('/api/posts/pending/retry', methods=['POST'])
 @token_required
 def retry_pending_post():
-    data = request.get_json(silent=True) or {}
-    tx_hash = (data.get('tx_hash') or '').strip()
-    if not tx_hash:
-        return jsonify({'error': '缺少交易哈希'}), 400
-    row = PendingPublication.query.filter_by(tx_hash=tx_hash, user_id=g.current_user.id).first()
-    if not row:
-        payload = {
-            'title': data.get('title') or '',
-            'content': data.get('content') or '',
-            'tags': _normalize_tags(data.get('tags') or data.get('tag_names')),
-            'region': data.get('region') or '其他',
-            'series_id': data.get('series_id'),
-            'is_special_announcement': bool(data.get('is_special_announcement')) if g.current_user.is_admin else False,
-        }
-        row = _svc_upsert_pending_publication(
-            PendingPublication, db.session, g.current_user.id, tx_hash,
-            payload=payload, status='initiated'
-        )
-        db.session.commit()
-    ok, message, post, pending_row = _resume_pending_publication_row(row, actor_user=g.current_user)
-    if ok:
-        return jsonify({'message': message, 'post': post.to_dict(g.current_user.id)}), 200
-    if pending_row:
-        return jsonify({'error': message, 'pending': pending_row.to_dict()}), 503
-    return jsonify({'error': message}), 400
+    payload, status_code = _svc_retry_pending_for_user(
+        session=db.session,
+        pending_model=PendingPublication,
+        user=g.current_user,
+        data=request.get_json(silent=True) or {},
+        normalize_tags=_normalize_tags,
+        upsert_pending_publication=_svc_upsert_pending_publication,
+        resume_pending_publication=_resume_pending_publication_row,
+    )
+    return jsonify(payload), status_code
 
 
 @posts_bp.route('/api/posts', methods=['POST'])
@@ -546,6 +480,7 @@ def create_post():
         title=clean_title,
         content=clean_content,
         cover_image=cover_image,
+        excerpt=_build_excerpt(clean_content),
         images=json.dumps(data.get('images', [])),
         tags=json.dumps(normalized_tags, ensure_ascii=False),
         author_id=g.current_user.id,
@@ -560,6 +495,8 @@ def create_post():
     
     try:
         db.session.add(post)
+        db.session.flush()
+        _ensure_post_seo_fields(db.session, post, Post, refresh_excerpt=True)
         db.session.flush()
         
         # 5. Handle Votes
@@ -590,7 +527,7 @@ def create_post():
                 comment_id=None,
                 type='mention',
                 content='在帖子中提到了你',
-                link=f"/?post={post.id}"
+                link=_story_path(post)
             ))
             
         db.session.commit()
@@ -644,6 +581,8 @@ def get_post_detail(post_id):
             joinedload(Post.author),
             subqueryload(Post.votes),
         ).get_or_404(post_id)
+        if _ensure_post_seo_fields(db.session, post, Post):
+            db.session.commit()
         payload = _get_optional_jwt_payload()
         current_user_id = payload.get('user_id') if payload else None
         viewer = User.query.get(current_user_id) if current_user_id else None
@@ -776,6 +715,7 @@ def repost_post(post_id):
     new_post = Post(
         title=bleach.clean(f"转发: {original_post.title}", strip=True),
         content="",
+        excerpt=clean_comment[:140] if clean_comment else '',
         repost_comment=clean_comment,
         author_id=g.current_user.id,
         is_repost=True,
@@ -784,6 +724,8 @@ def repost_post(post_id):
     )
     
     db.session.add(new_post)
+    db.session.flush()
+    _ensure_post_seo_fields(db.session, new_post, Post, refresh_excerpt=True)
     db.session.commit()
     return jsonify(new_post.to_dict()), 201
 
@@ -1053,8 +995,10 @@ def update_post(post_id):
         post.title = bleach.clean(title, strip=True)
     if content:
         post.content = _bleach_clean_post_content(content)
+        post.excerpt = _build_excerpt(post.content)
     if 'tags' in data or 'tag_names' in data:
         post.tags = json.dumps(_normalize_tags(data.get('tags') or data.get('tag_names')), ensure_ascii=False)
+    _ensure_post_seo_fields(db.session, post, Post)
         
     db.session.commit()
     return jsonify({'message': '帖子已更新', 'post': post.to_dict()})

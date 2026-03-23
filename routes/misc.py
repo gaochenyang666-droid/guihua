@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, request, jsonify, g, current_app, Response
 from web3 import Web3
 
 from extensions import db
@@ -20,6 +20,7 @@ from services.app_support import (
 )
 from services.user_progress import get_user_level as _svc_get_user_level
 from services.observability import log_event as _svc_log_event
+from services.seo import build_absolute_url, get_site_base_url, ensure_post_seo_fields, story_path
 
 misc_bp = Blueprint('misc', __name__)
 
@@ -43,6 +44,58 @@ def _tip_amount_to_usdt_str(raw_amount):
 
 def _get_user_level(user):
     return _svc_get_user_level(user, calc_level_info)
+
+
+@misc_bp.route('/robots.txt', methods=['GET'])
+def robots_txt():
+    base = get_site_base_url(request)
+    lines = [
+        'User-agent: *',
+        'Allow: /',
+        'Disallow: /login',
+        'Disallow: /studio',
+        'Disallow: /profile',
+        'Disallow: /notifications',
+        'Disallow: /notices',
+        'Disallow: /api/auth/',
+        'Disallow: /api/admin/',
+        'Disallow: /api/notifications/',
+        'Disallow: /api/reports',
+        'Disallow: /api/reports/',
+        f'Sitemap: {base}/sitemap.xml',
+    ]
+    return Response('\n'.join(lines) + '\n', mimetype='text/plain; charset=utf-8')
+
+
+@misc_bp.route('/sitemap.xml', methods=['GET'])
+def sitemap_xml():
+    rows = Post.query.filter_by(is_hidden=False).order_by(Post.created_at.desc()).all()
+    items = [
+        ('/', None),
+        ('/stories', None),
+        ('/about', None),
+    ]
+    for row in rows:
+        if ensure_post_seo_fields(db.session, row, Post):
+            db.session.flush()
+        if not row.slug:
+            continue
+        updated_at = getattr(row, 'updated_at', None) or getattr(row, 'created_at', None)
+        items.append((story_path(row), updated_at))
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for path, lastmod in items:
+        xml.append('<url>')
+        xml.append(f'<loc>{build_absolute_url(path, request)}</loc>')
+        if lastmod:
+            stamp = lastmod if lastmod.tzinfo else lastmod.replace(tzinfo=timezone.utc)
+            xml.append(f'<lastmod>{stamp.isoformat()}</lastmod>')
+        xml.append('</url>')
+    xml.append('</urlset>')
+    return Response('\n'.join(xml), mimetype='application/xml; charset=utf-8')
 
 
 # ---- Config ----

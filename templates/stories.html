@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7c3aed">
+    {% include 'partials/seo_meta.html' %}
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body class="stories-page">
+    <nav class="navbar glass">
+        <a href="/" class="logo" data-no-transition="1">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
+            <span>诡话</span>
+        </a>
+        <div class="nav-actions">
+            <a href="/" class="btn btn-ghost" data-no-transition="1">返回首页</a>
+        </div>
+    </nav>
+
+    <main class="seo-list-shell">
+        <section class="glass seo-list-main">
+            <header class="seo-list-header">
+                <p class="seo-story-kicker">故事列表</p>
+                <h1>灵异故事大全</h1>
+                <p class="seo-list-intro">这里汇总诡话站内最新收录的灵异故事、真实诡事、都市传说与民间怪谈。所有列表首屏都直接输出真实标题、摘要与链接，便于搜索引擎和读者直接进入正文。</p>
+                {% if q %}
+                <p class="seo-search-note">当前搜索关键词：<strong>{{ q }}</strong></p>
+                {% endif %}
+            </header>
+
+            <div class="seo-story-list">
+                {% for item in stories %}
+                <article class="glass seo-story-card">
+                    <div class="seo-story-card-meta">
+                        <span class="tag timeline-tag">{{ item.category.name }}</span>
+                        <span>{{ item.author_name }}</span>
+                        <span>{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '' }}</span>
+                    </div>
+                    <h2><a href="{{ item.url }}">{{ item.title }}</a></h2>
+                    <p>{{ item.excerpt }}</p>
+                    <div class="seo-story-card-footer">
+                        <a href="{{ item.url }}" class="btn btn-ghost btn-sm">阅读全文</a>
+                        <span>浏览 {{ item.view_count }}</span>
+                    </div>
+                </article>
+                {% else %}
+                <div class="state-empty">当前列表还没有可展示的故事。</div>
+                {% endfor %}
+            </div>
+
+            <nav class="seo-pagination" aria-label="分页导航">
+                {% if pagination.has_prev %}
+                <a href="/stories?page={{ pagination.prev_num }}{{ query_suffix }}" class="btn btn-ghost btn-sm">上一页</a>
+                {% endif %}
+                <span class="seo-pagination-status">第 {{ page }} / {{ pagination.pages or 1 }} 页</span>
+                {% if pagination.has_next %}
+                <a href="/stories?page={{ pagination.next_num }}{{ query_suffix }}" class="btn btn-ghost btn-sm">下一页</a>
+                {% endif %}
+            </nav>
+        </section>
+    </main>
+</body>
+</html>

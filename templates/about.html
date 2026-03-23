@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#7c3aed">
+    {% include 'partials/seo_meta.html' %}
+    <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+    <link rel="shortcut icon" href="/static/logo.svg">
+    <link rel="apple-touch-icon" href="/static/logo.svg">
+    <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+</head>
+<body class="about-page">
+    <nav class="navbar glass">
+        <a href="/" class="logo" data-no-transition="1">
+            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
+            <span>诡话</span>
+        </a>
+        <div class="nav-actions">
+            <a href="/stories" class="btn btn-ghost">故事列表</a>
+        </div>
+    </nav>
+
+    <main class="seo-list-shell">
+        <section class="glass seo-list-main">
+            <header class="seo-list-header">
+                <p class="seo-story-kicker">关于我们</p>
+                <h1>关于诡话</h1>
+                <p class="seo-list-intro">诡话是一个围绕灵异故事、真实诡事、都市传说、恐怖故事与民间怪谈建立的内容社区。我们保留内容检索、用户投稿、打赏与链上永存等能力，但在面向搜索引擎和读者的页面中，坚持让故事正文和信息结构成为主角。</p>
+            </header>
+
+            <section class="seo-story-faq">
+                <div class="seo-faq-item">
+                    <h2>诡话收录哪些内容？</h2>
+                    <p>本站收录用户投稿的诡事见闻、都市传说整理、民间怪谈、校园怪谈与恐怖故事内容，并通过稳定 URL 进行持续归档。</p>
+                </div>
+                <div class="seo-faq-item">
+                    <h2>如何投稿？</h2>
+                    <p>登录后可前往创作台发布故事。若支付或永存流程中断，系统会保留恢复发布记录，便于继续完成。</p>
+                </div>
+                <div class="seo-faq-item">
+                    <h2>为什么部分故事会显示链上或永存信息？</h2>
+                    <p>诡话保留 Web3 与 Arweave 永存能力，用于为内容提供可验证的存档与引用凭证，但不会让这些能力干扰故事正文的抓取与阅读。</p>
+                </div>
+            </section>
+        </section>
+    </main>
+</body>
+</html>
