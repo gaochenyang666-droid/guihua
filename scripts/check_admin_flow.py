@@ -147,6 +147,37 @@ def http_json(url, method="GET", token=None, payload=None):
         return exc.code, data
 
 
+def http_json_with_auth_mode(url, method="GET", token=None, payload=None, auth_mode="bearer"):
+    headers = {"User-Agent": "guihua-admin-smoke/1.0"}
+    if token:
+        token = token.strip()
+        headers["Authorization"] = f"Bearer {token}" if auth_mode == "bearer" else token
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return resp.status, json.loads(body or "{}")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(body or "{}")
+        except json.JSONDecodeError:
+            data = {"error": body}
+        return exc.code, data
+
+
+def _is_auth_failure(status, data):
+    if status in (401, 403):
+        return True
+    text = json.dumps(data or {}, ensure_ascii=False)
+    markers = ("登录状态无效", "未登录", "token", "unauthorized", "forbidden", "invalid")
+    return any(marker in text.lower() for marker in (m.lower() for m in markers))
+
+
 def assert_ok(status, data, label):
     if not (200 <= status < 300):
         raise AssertionError(f"{label}: status={status} data={data}")
@@ -166,6 +197,70 @@ def login(base, username, password=None):
     return token
 
 
+def _get_remote_admin_auth(base):
+    raw_token = (os.environ.get("GUIHUA_ADMIN_TOKEN") or "").strip()
+    admin_username = (os.environ.get("GUIHUA_ADMIN_USERNAME") or "").strip()
+    admin_password = (os.environ.get("GUIHUA_ADMIN_PASSWORD") or "").strip()
+    create_payload = {"title": f"QA Smoke Post {int(time.time())}", "content": "<p>Smoke content for admin flow.</p>"}
+
+    if raw_token:
+        for auth_mode in ("bearer", "raw"):
+            status, data = http_json_with_auth_mode(
+                base + "/api/posts",
+                method="POST",
+                token=raw_token,
+                payload=create_payload,
+                auth_mode=auth_mode,
+            )
+            if 200 <= status < 300:
+                post_id = (data.get("post") or {}).get("id")
+                if not post_id:
+                    raise AssertionError(f"create post missing id: {data}")
+                return {
+                    "admin_token": raw_token,
+                    "admin_auth_mode": auth_mode,
+                    "post_id": post_id,
+                }
+            if not _is_auth_failure(status, data):
+                raise AssertionError(f"create post (remote): status={status} data={data}")
+
+    if admin_username and admin_password:
+        admin_token = login(base, admin_username, admin_password)
+        for auth_mode in ("bearer", "raw"):
+            status, data = http_json_with_auth_mode(
+                base + "/api/posts",
+                method="POST",
+                token=admin_token,
+                payload=create_payload,
+                auth_mode=auth_mode,
+            )
+            if 200 <= status < 300:
+                post_id = (data.get("post") or {}).get("id")
+                if not post_id:
+                    raise AssertionError(f"create post missing id: {data}")
+                return {
+                    "admin_token": admin_token,
+                    "admin_auth_mode": auth_mode,
+                    "post_id": post_id,
+                }
+            if not _is_auth_failure(status, data):
+                raise AssertionError(f"create post (remote): status={status} data={data}")
+
+    if raw_token:
+        raise AssertionError("GUIHUA_ADMIN_TOKEN 已配置但无效；并且 GUIHUA_ADMIN_USERNAME + GUIHUA_ADMIN_PASSWORD 未提供或登录失败")
+    raise AssertionError("远程验收需要有效的 GUIHUA_ADMIN_TOKEN，或 GUIHUA_ADMIN_USERNAME + GUIHUA_ADMIN_PASSWORD")
+
+
+def _remote_request(base, path, *, method="GET", token=None, payload=None, auth_mode="bearer"):
+    return http_json_with_auth_mode(
+        base + path,
+        method=method,
+        token=token,
+        payload=payload,
+        auth_mode=auth_mode,
+    )
+
+
 def main():
     maybe_disable_ssl_verify()
     base = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:5012").rstrip("/")
@@ -182,65 +277,91 @@ def main():
             post_id = ensure_users_and_post()
             admin_token = login(base, admin_username, admin_password)
             user_token = login(base, user_username, user_password)
+            admin_auth_mode = "bearer"
+            user_auth_mode = "bearer"
         else:
-            if _get_accept_admin_token and _get_accept_user_token:
-                admin_token = _get_accept_admin_token(base)
-                user_token = _get_accept_user_token(base, allow_fallback_to_admin=True)
+            creds = _remote_credentials()
+            auth_ctx = _get_remote_admin_auth(base)
+            admin_token = auth_ctx["admin_token"]
+            admin_auth_mode = auth_ctx["admin_auth_mode"]
+            post_id = auth_ctx["post_id"]
+            if creds[2] and creds[3]:
+                user_username = creds[2]
+                user_password = creds[3]
+                user_token = login(base, user_username, user_password)
+                user_auth_mode = "bearer"
             else:
-                creds = _remote_credentials()
-                if not creds[0] or not creds[1]:
-                    print("admin_flow_error=远程环境请设置 GUIHUA_ADMIN_TOKEN（推荐）或 GUIHUA_ADMIN_USERNAME 与 GUIHUA_ADMIN_PASSWORD", file=sys.stderr)
-                    return 1
-                admin_username, admin_password = creds[0], creds[1]
-                user_username = creds[2] or admin_username
-                user_password = creds[3] or admin_password
-                admin_token = login(base, admin_username, admin_password)
-                user_token = login(base, user_username, user_password) if user_username != admin_username else admin_token
-            status, data = http_json(
-                base + "/api/posts",
-                method="POST",
-                token=admin_token,
-                payload={"title": f"QA Smoke Post {int(time.time())}", "content": "<p>Smoke content for admin flow.</p>"},
-            )
-            assert_ok(status, data, "create post (remote)")
-            post_id = (data.get("post") or {}).get("id")
-            if not post_id:
-                raise AssertionError(f"create post missing id: {data}")
+                user_token = admin_token
+                user_auth_mode = admin_auth_mode
 
-        status, data = http_json(f"{base}/api/posts/{post_id}/like", method="POST", token=user_token)
+        if is_remote:
+            status, data = _remote_request(base, f"/api/posts/{post_id}/like", method="POST", token=user_token, auth_mode=user_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/posts/{post_id}/like", method="POST", token=user_token)
         assert_ok(status, data, "user like")
         print("user_like_ok=1")
 
-        status, data = http_json(f"{base}/api/posts/{post_id}/bookmark", method="POST", token=user_token)
+        if is_remote:
+            status, data = _remote_request(base, f"/api/posts/{post_id}/bookmark", method="POST", token=user_token, auth_mode=user_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/posts/{post_id}/bookmark", method="POST", token=user_token)
         assert_ok(status, data, "user bookmark")
         print("user_bookmark_ok=1")
 
-        status, data = http_json(
-            f"{base}/api/posts/{post_id}/comments",
-            method="POST",
-            token=user_token,
-            payload={"content": "qa smoke comment"},
-        )
+        if is_remote:
+            status, data = _remote_request(
+                base,
+                f"/api/posts/{post_id}/comments",
+                method="POST",
+                token=user_token,
+                payload={"content": "qa smoke comment"},
+                auth_mode=user_auth_mode,
+            )
+        else:
+            status, data = http_json(
+                f"{base}/api/posts/{post_id}/comments",
+                method="POST",
+                token=user_token,
+                payload={"content": "qa smoke comment"},
+            )
         assert_ok(status, data, "user comment")
         print("user_comment_ok=1")
 
-        status, data = http_json(f"{base}/api/admin/posts/{post_id}/pin", method="POST", token=admin_token, payload={"pinned": True, "exclusive": False})
+        if is_remote:
+            status, data = _remote_request(base, f"/api/admin/posts/{post_id}/pin", method="POST", token=admin_token, payload={"pinned": True, "exclusive": False}, auth_mode=admin_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/admin/posts/{post_id}/pin", method="POST", token=admin_token, payload={"pinned": True, "exclusive": False})
         assert_ok(status, data, "admin pin")
         print("admin_pin_ok=1")
 
-        status, data = http_json(f"{base}/api/admin/posts/{post_id}/toggle-comments", method="POST", token=admin_token)
+        if is_remote:
+            status, data = _remote_request(base, f"/api/admin/posts/{post_id}/toggle-comments", method="POST", token=admin_token, auth_mode=admin_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/admin/posts/{post_id}/toggle-comments", method="POST", token=admin_token)
         assert_ok(status, data, "admin toggle comments off")
-        status, data = http_json(f"{base}/api/admin/posts/{post_id}/toggle-comments", method="POST", token=admin_token)
+        if is_remote:
+            status, data = _remote_request(base, f"/api/admin/posts/{post_id}/toggle-comments", method="POST", token=admin_token, auth_mode=admin_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/admin/posts/{post_id}/toggle-comments", method="POST", token=admin_token)
         assert_ok(status, data, "admin toggle comments on")
         print("admin_comments_ok=1")
 
-        status, data = http_json(f"{base}/api/admin/posts/{post_id}/hide", method="POST", token=admin_token)
+        if is_remote:
+            status, data = _remote_request(base, f"/api/admin/posts/{post_id}/hide", method="POST", token=admin_token, auth_mode=admin_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/admin/posts/{post_id}/hide", method="POST", token=admin_token)
         assert_ok(status, data, "admin hide")
-        status, data = http_json(f"{base}/api/admin/posts/{post_id}/hide", method="POST", token=admin_token)
+        if is_remote:
+            status, data = _remote_request(base, f"/api/admin/posts/{post_id}/hide", method="POST", token=admin_token, auth_mode=admin_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/admin/posts/{post_id}/hide", method="POST", token=admin_token)
         assert_ok(status, data, "admin unhide")
         print("admin_hide_ok=1")
 
-        status, data = http_json(f"{base}/api/posts/{post_id}", method="DELETE", token=admin_token)
+        if is_remote:
+            status, data = _remote_request(base, f"/api/posts/{post_id}", method="DELETE", token=admin_token, auth_mode=admin_auth_mode)
+        else:
+            status, data = http_json(f"{base}/api/posts/{post_id}", method="DELETE", token=admin_token)
         assert_ok(status, data, "admin delete")
         post_id = None
         print("admin_delete_ok=1")
