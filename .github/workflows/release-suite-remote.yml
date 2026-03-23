@@ -73,6 +73,7 @@ jobs:
 
       - name: Run remote release suite
         env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
           GUIHUA_SKIP_SSL_VERIFY: ${{ secrets.GUIHUA_SKIP_SSL_VERIFY }}
           GUIHUA_ADMIN_TOKEN: ${{ secrets.GUIHUA_ADMIN_TOKEN }}
           GUIHUA_USER_TOKEN: ${{ secrets.GUIHUA_USER_TOKEN }}

@@ -24,6 +24,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
+os.environ.setdefault("SECRET_KEY", "ci-wallet-flow-secret")
 
 from app import app, db, _new_user  # noqa: E402
 from models import User  # noqa: E402
