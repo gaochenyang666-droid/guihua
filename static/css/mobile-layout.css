@@ -1329,7 +1329,7 @@
         margin: 0.4rem auto 0.85rem;
     }
 
-    .story-x-article {
+    .story-panel {
         padding: 0.9rem 0.9rem 0.92rem;
     }
 
@@ -1364,14 +1364,6 @@
         font-size: 0.76rem;
     }
 
-    .story-x-taxonomy {
-        margin-top: 0.85rem;
-    }
-
-    .story-tag-panel-title {
-        font-size: 0.94rem;
-    }
-
     .story-section-head,
     .story-comments-head {
         gap: 0.5rem;
@@ -1396,11 +1388,6 @@
     .story-comments-section {
         margin-top: 0;
         padding-top: 0;
-    }
-
-    .story-comments-panel,
-    .story-x-aside {
-        padding: 0.9rem 0.9rem 0.92rem;
     }
 
     .story-comments-head {

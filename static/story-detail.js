@@ -17,6 +17,21 @@
     });
     var state = comments.createState();
     var currentPost = null;
+    var backBtn = document.getElementById('storyBackBtn');
+
+    if (backBtn) {
+        backBtn.addEventListener('click', function (evt) {
+            try {
+                var ref = document.referrer ? new URL(document.referrer) : null;
+                if (ref && ref.origin === window.location.origin && window.history.length > 1) {
+                    evt.preventDefault();
+                    window.history.back();
+                }
+            } catch (_) {
+                // Fall back to the anchor href.
+            }
+        });
+    }
 
     function toastError(msg) {
         if (window.Toast && window.Toast.error) window.Toast.error(msg || '操作失败');

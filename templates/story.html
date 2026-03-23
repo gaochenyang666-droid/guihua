@@ -12,13 +12,13 @@
 </head>
 <body class="story-article-page">
     <nav class="glass story-topbar">
-        <a href="javascript:history.back()" class="story-topbar-back" data-no-transition="1" aria-label="返回">←</a>
+        <a href="/stories" class="story-topbar-back" id="storyBackBtn" data-no-transition="1" aria-label="返回">←</a>
         <div class="story-topbar-title">帖子</div>
         <div class="story-topbar-spacer" aria-hidden="true"></div>
     </nav>
 
     <main class="post-page-shell story-x-shell" data-post-id="{{ post.id }}">
-        <article class="post-page-main post-page-body is-ready glass seo-story-article story-x-article">
+        <article class="post-page-main post-page-body is-ready glass seo-story-article story-x-article story-panel">
             <header class="story-x-header">
                 <div class="story-x-author-row">
                     <div class="story-x-avatar">{{ (post.author.avatar if post.author and post.author.avatar else '👻') }}</div>
@@ -49,25 +49,6 @@
                 {{ post.content|safe }}
             </section>
 
-            {% if category.name or post_view.tags %}
-            <section class="seo-story-taxonomy story-x-taxonomy">
-                <div class="story-section-head">
-                    <div class="story-section-heading">
-                        <div class="story-section-kicker">Story</div>
-                        <div class="story-tag-panel-title">标签</div>
-                    </div>
-                </div>
-                <div class="seo-tag-list">
-                    {% if category.name %}
-                    <span class="tag timeline-tag">{{ category.name }}</span>
-                    {% endif %}
-                    {% for tag in post_view.tags %}
-                    <span class="tag timeline-tag">{{ tag }}</span>
-                    {% endfor %}
-                </div>
-            </section>
-            {% endif %}
-
             <section class="post-detail-actions story-engagement-bar">
                 <button class="btn btn-ghost story-engagement-btn" type="button" data-action="like">😰 恐惧 ({{ story_post_seed.likes_count if story_post_seed else 0 }})</button>
                 <button class="btn btn-ghost story-engagement-btn" type="button" data-action="bookmark">⭐ 收藏{% if story_post_seed and story_post_seed.is_bookmarked %}（已收）{% endif %}</button>
@@ -77,7 +58,7 @@
 
         </article>
 
-        <section class="post-page-main glass story-comments-panel">
+        <section class="post-page-main glass story-comments-panel story-panel">
             <section class="comments-section story-comments-section">
                 <div class="story-comments-head">
                     <div class="story-comments-heading story-section-heading">
@@ -104,7 +85,7 @@
             </section>
         </section>
 
-        <aside class="post-page-main glass seo-story-aside story-x-aside">
+        <aside class="post-page-main glass seo-story-aside story-x-aside story-panel">
             <section>
                 <div class="story-section-head story-related-head">
                     <div class="story-section-heading">
