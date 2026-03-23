@@ -58,12 +58,16 @@ def main() -> int:
         post_list = posts.get("posts") or []
         print(f"posts_count={len(post_list)}")
 
+        public_username = ""
+        if post_list:
+            public_username = str((((post_list[0] or {}).get("author") or {}).get("username")) or "").strip()
+
         if post_list:
             first_id = post_list[0].get("id")
             if first_id is not None:
                 detail = fetch_text(base + f"/post/{urllib.parse.quote(str(first_id))}")
-                assert_contains(detail, "/static/post.js", "post detail")
-                assert_contains(detail, "post-page-shell", "post detail")
+                assert_contains(detail, "seo-story-article", "post detail")
+                assert_contains(detail, "<article", "post detail")
                 print(f"detail_ok={first_id}")
 
         notices = fetch_text(base + "/notices?type=activity")
@@ -76,7 +80,8 @@ def main() -> int:
         assert_contains(notifications, "list-page-shell", "notifications page")
         print("notifications_ok=1")
 
-        profile_page = fetch_text(base + "/profile")
+        profile_url = base + (f"/profile?user={urllib.parse.quote(public_username)}" if public_username else "/profile")
+        profile_page = fetch_text(profile_url)
         assert_contains(profile_page, "/static/profile.js", "profile page")
         assert_contains(profile_page, "profileArea", "profile page")
         print("profile_ok=1")
