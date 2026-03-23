@@ -1314,6 +1314,34 @@
         grid-template-columns: 1fr;
     }
 
+    .story-topbar {
+        width: calc(100% - 16px);
+    }
+
+    .story-x-shell {
+        width: calc(100% - 16px);
+        grid-template-columns: 1fr;
+        gap: 0.85rem;
+    }
+
+    .story-x-article {
+        padding: 0.9rem;
+    }
+
+    .story-x-title {
+        font-size: 1.65rem;
+    }
+
+    .story-x-content {
+        font-size: 1rem;
+        line-height: 1.82;
+    }
+
+    .story-x-aside {
+        position: static;
+        top: auto;
+    }
+
     .seo-home-intro h1,
     .seo-list-header h1,
     .seo-story-header h1 {

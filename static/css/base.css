@@ -690,6 +690,39 @@ body.page-motion.page-leaving {
     gap: 1rem;
 }
 
+.story-topbar {
+    width: min(1080px, calc(100vw - 24px));
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.story-topbar-back,
+.story-topbar-link {
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: 700;
+    min-width: 72px;
+}
+
+.story-topbar-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.story-x-shell {
+    width: min(1080px, calc(100vw - 24px));
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 1rem;
+}
+
+.story-x-main {
+    padding: 0;
+    overflow: hidden;
+}
+
 .seo-story-page-shell .seo-story-article {
     margin: 0;
     width: 100%;
@@ -702,6 +735,104 @@ body.page-motion.page-leaving {
 .seo-story-page-shell .seo-story-aside {
     margin: 0;
     width: 100%;
+}
+
+.story-x-article {
+    padding: 1rem 1.1rem 1.25rem;
+}
+
+.story-x-header {
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.story-x-author-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+    margin-bottom: 0.9rem;
+}
+
+.story-x-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+.story-x-author-meta {
+    min-width: 0;
+}
+
+.story-x-author-line,
+.story-x-meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.story-x-author-name {
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.story-x-author-handle,
+.story-x-meta-line {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.story-x-title {
+    margin: 0;
+    font-size: clamp(1.8rem, 3vw, 2.5rem);
+    line-height: 1.18;
+}
+
+.story-x-cover {
+    margin-top: 1rem;
+}
+
+.story-x-content {
+    margin-top: 1rem;
+    font-size: 1.08rem;
+    line-height: 1.92;
+}
+
+.story-x-content p {
+    margin: 0 0 1rem;
+}
+
+.story-x-taxonomy {
+    margin-top: 1rem;
+}
+
+.story-x-actions {
+    justify-content: flex-start;
+}
+
+.story-comments-section {
+    margin-top: 1.1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.story-comments-title {
+    margin: 0 0 0.8rem;
+    font-size: 1.1rem;
+}
+
+.story-x-aside {
+    align-self: start;
+    position: sticky;
+    top: calc(var(--nav-height) + 14px);
 }
 
 .seo-story-cover {

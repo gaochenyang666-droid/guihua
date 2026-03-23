@@ -11,87 +11,87 @@
     <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
 </head>
 <body class="story-article-page">
-    <nav class="navbar glass">
-        <a href="/" class="logo" data-no-transition="1">
-            <img src="/static/logo.svg" alt="诡话" class="navbar-logo-img">
-            <span>诡话</span>
-        </a>
-        <div class="nav-actions">
-            <a href="/stories" class="btn btn-ghost" data-no-transition="1">故事列表</a>
-            <a href="/" class="btn btn-ghost" data-no-transition="1">返回首页</a>
-        </div>
+    <nav class="navbar glass story-topbar">
+        <a href="javascript:history.back()" class="story-topbar-back" data-no-transition="1" aria-label="返回">←</a>
+        <div class="story-topbar-title">帖子</div>
+        <a href="/stories" class="story-topbar-link" data-no-transition="1" aria-label="故事列表">故事列表</a>
     </nav>
 
-    <main class="post-page-shell seo-story-page-shell">
-        <section class="post-page-main glass">
-        <article class="post-page-body is-ready seo-story-article">
-            <nav class="seo-breadcrumbs" aria-label="面包屑">
-                {% for item in breadcrumbs %}
-                <a href="{{ item.url }}" class="seo-breadcrumb-link">{{ item.name }}</a>{% if not loop.last %}<span class="seo-breadcrumb-sep">/</span>{% endif %}
-                {% endfor %}
-            </nav>
+    <main class="post-page-shell story-x-shell" data-post-id="{{ post.id }}">
+        <section class="post-page-main glass story-x-main">
+            <article class="post-page-body is-ready seo-story-article story-x-article">
+                <header class="story-x-header">
+                    <div class="story-x-author-row">
+                        <div class="story-x-avatar">{{ (post.author.avatar if post.author and post.author.avatar else '👻') }}</div>
+                        <div class="story-x-author-meta">
+                            <div class="story-x-author-line">
+                                <span class="story-x-author-name">{{ post_view.author_name }}</span>
+                                {% if post.author and post.author.username %}
+                                <span class="story-x-author-handle">@{{ post.author.username }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="story-x-meta-line">
+                                <span>{{ category.name }}</span>
+                                <span>·</span>
+                                <span>{{ post.created_at.strftime('%Y-%m-%d') if post.created_at else '' }}</span>
+                                <span>·</span>
+                                <span>{{ post_view.view_count }} 浏览</span>
+                            </div>
+                        </div>
+                    </div>
+                    <h1 class="post-detail-title story-x-title">{{ post.title }}</h1>
+                    {% if post.cover_image %}
+                    <figure class="seo-story-cover story-x-cover">
+                        <img src="{{ post.cover_image }}" alt="{{ post.title }}" width="1200" height="675" loading="eager">
+                    </figure>
+                    {% endif %}
+                </header>
 
-            <header class="seo-story-header">
-                <p class="seo-story-kicker">{{ category.name }}</p>
-                <h1 class="post-detail-title">{{ post.title }}</h1>
-                <p class="seo-story-excerpt">{{ post_view.excerpt }}</p>
-                <div class="post-detail-meta-row seo-story-meta">
-                    <span>作者：{{ post_view.author_name }}</span>
-                    <span>发布时间：{{ post.created_at.strftime('%Y-%m-%d') if post.created_at else '' }}</span>
-                    <span>更新时间：{{ (post.updated_at or post.created_at).strftime('%Y-%m-%d') if (post.updated_at or post.created_at) else '' }}</span>
-                    <span>浏览：{{ post_view.view_count }}</span>
-                </div>
-                {% if post.cover_image %}
-                <figure class="seo-story-cover">
-                    <img src="{{ post.cover_image }}" alt="{{ post.title }}" width="1200" height="675" loading="eager">
-                </figure>
-                {% endif %}
-            </header>
+                <section class="post-detail-content seo-story-content prose-content story-x-content">
+                    {{ post.content|safe }}
+                </section>
 
-            <section class="post-detail-content seo-story-content prose-content">
-                {{ post.content|safe }}
-            </section>
-
-            <section class="seo-story-taxonomy">
-                <div><strong>分类：</strong><span>{{ category.name }}</span></div>
                 {% if post_view.tags %}
-                <div><strong>标签：</strong>
+                <section class="seo-story-taxonomy story-x-taxonomy">
                     <div class="seo-tag-list">
                         {% for tag in post_view.tags %}
                         <span class="tag timeline-tag">{{ tag }}</span>
                         {% endfor %}
                     </div>
-                </div>
+                </section>
                 {% endif %}
-            </section>
 
-            <section class="seo-story-disclaimer">
-                <h2>投稿与内容说明</h2>
-                <p>本文为诡话站内内容页，可能包含用户投稿的真实见闻、整理资料或叙事性创作。站内保留原始表达供读者索引、讨论与二次判断，请结合上下文与评论自行甄别。</p>
-            </section>
+                <section class="post-detail-actions story-x-actions">
+                    {% if prev_post %}
+                    <a class="btn btn-ghost seo-story-nav-link" href="{{ prev_post.url }}">⬅ 上一篇</a>
+                    {% endif %}
+                    {% if next_post %}
+                    <a class="btn btn-ghost seo-story-nav-link" href="{{ next_post.url }}">下一篇 ➡</a>
+                    {% endif %}
+                    <a class="btn btn-ghost" href="/stories">更多故事</a>
+                </section>
 
-            <section class="seo-story-nav">
-                {% if prev_post %}
-                <a class="btn btn-ghost seo-story-nav-link" href="{{ prev_post.url }}">⬅ 上一篇：{{ prev_post.title }}</a>
-                {% endif %}
-                {% if next_post %}
-                <a class="btn btn-ghost seo-story-nav-link" href="{{ next_post.url }}">下一篇：{{ next_post.title }} ➡</a>
-                {% endif %}
-            </section>
-
-            <section class="seo-story-faq">
-                <h2>阅读常见问题</h2>
-                {% for item in story_faq %}
-                <div class="seo-faq-item">
-                    <h3>{{ item.question }}</h3>
-                    <p>{{ item.answer }}</p>
-                </div>
-                {% endfor %}
-            </section>
-        </article>
+                <section class="comments-section story-comments-section">
+                    <h2 class="story-comments-title">评论</h2>
+                    <div class="comments-toolbar">
+                        <div class="comments-toolbar-group">
+                            <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortLatestBtn" type="button" data-action="sort-comments" data-sort-mode="latest">最新</button>
+                            <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsSortHotBtn" type="button" data-action="sort-comments" data-sort-mode="hot">最热</button>
+                            <button class="btn btn-ghost btn-sm comments-filter-btn" id="commentsAuthorOnlyBtn" type="button" data-action="toggle-author-comments">只看作者回复</button>
+                        </div>
+                        <div class="comments-filter-meta" id="commentsFilterMeta"></div>
+                    </div>
+                    <div id="postCommentsList" class="post-comments-list">加载评论中...</div>
+                    <div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>
+                    <div class="post-comment-compose">
+                        <input type="text" id="commentInput" class="form-input" placeholder="写下你的评论..." />
+                        <button class="btn btn-primary" id="commentSendBtn" type="button">发送</button>
+                    </div>
+                </section>
+            </article>
         </section>
 
-        <aside class="post-page-main glass seo-story-aside">
+        <aside class="post-page-main glass seo-story-aside story-x-aside">
             <section>
                 <h2>相关推荐</h2>
                 <div class="seo-story-link-list">
@@ -103,13 +103,11 @@
                     {% endfor %}
                 </div>
             </section>
-
-            <section>
-                <h2>作者更多内容</h2>
-                <p>作者：{{ post_view.author_name }}</p>
-                <a href="/stories" class="btn btn-ghost btn-sm">继续浏览更多灵异故事</a>
-            </section>
         </aside>
     </main>
+
+    <script src="/static/common.js?v={{ asset_version }}"></script>
+    <script src="/static/post-comments.js?v={{ asset_version }}"></script>
+    <script src="/static/story-detail.js?v={{ asset_version }}"></script>
 </body>
 </html>
