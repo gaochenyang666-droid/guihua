@@ -22,8 +22,6 @@ except ImportError:
     def maybe_disable_ssl_verify():
         pass
 
-from app import app, db, _new_user  # noqa: E402
-from models import User, Post, Series, Report, Notification  # noqa: E402
 
 try:
     from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token, get_user_token as _get_accept_user_token
@@ -52,6 +50,16 @@ def _is_remote_base(base: str) -> bool:
     return "127.0.0.1" not in base and "localhost" not in base
 
 
+
+
+def _load_local_ctx():
+    from app import app, db, _new_user  # noqa: E402
+    return app, db, _new_user
+
+def _load_series_models():
+    from models import User, Post, Series, Report, Notification  # noqa: E402
+    return User, Post, Series, Report, Notification
+
 def _remote_credentials():
     admin_user = os.environ.get("GUIHUA_ADMIN_USERNAME", "").strip()
     admin_pass = os.environ.get("GUIHUA_ADMIN_PASSWORD", "").strip()
@@ -61,6 +69,8 @@ def _remote_credentials():
 
 
 def ensure_users():
+    app, db, _new_user = _load_local_ctx()
+    User, Post, Series, Report, Notification = _load_series_models()
     with app.app_context():
         admin = User.query.filter_by(username=ADMIN_USERNAME).first()
         if not admin:
@@ -117,6 +127,8 @@ def login(base, username, password=None):
 
 
 def cleanup(ids):
+    app, db, _new_user = _load_local_ctx()
+    User, Post, Series, Report, Notification = _load_series_models()
     with app.app_context():
         if ids.get("series_id"):
             row = db.session.get(Series, ids["series_id"])
@@ -177,7 +189,7 @@ def main():
         print("series_post_seed_ok=1")
 
         status, data = http_json(
-            base + "/api/series",
+            base + "/api/series/",
             method="POST",
             token=admin_token,
             payload={"title": f"QA 系列 {int(time.time())}", "description": "smoke", "is_public": True},

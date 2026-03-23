@@ -22,8 +22,6 @@ except ImportError:
     def maybe_disable_ssl_verify():
         pass
 
-from app import app, db, _new_user  # noqa: E402
-from models import User, Post, Comment, Like, Bookmark, PendingPublication  # noqa: E402
 
 try:
     from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token, get_user_token as _get_accept_user_token
@@ -44,6 +42,16 @@ def _is_remote_base(base: str) -> bool:
     return "127.0.0.1" not in base and "localhost" not in base
 
 
+
+
+def _load_local_ctx():
+    from app import app, db, _new_user  # noqa: E402
+    return app, db, _new_user
+
+def _load_admin_models():
+    from models import User, Post, Comment, Like, Bookmark, PendingPublication  # noqa: E402
+    return User, Post, Comment, Like, Bookmark, PendingPublication
+
 def _remote_credentials():
     """当对远程跑时使用环境变量；未设置则返回 None，调用方应报错或跳过。"""
     admin_user = os.environ.get("GUIHUA_ADMIN_USERNAME", "").strip()
@@ -54,6 +62,8 @@ def _remote_credentials():
 
 
 def ensure_users_and_post():
+    app, db, _new_user = _load_local_ctx()
+    User, Post, Comment, Like, Bookmark, PendingPublication = _load_admin_models()
     with app.app_context():
         admin = User.query.filter_by(username=ADMIN_USERNAME).first()
         if not admin:
@@ -90,6 +100,8 @@ def ensure_users_and_post():
 
 
 def cleanup_post(post_id):
+    app, db, _new_user = _load_local_ctx()
+    User, Post, Comment, Like, Bookmark, PendingPublication = _load_admin_models()
     with app.app_context():
         post = db.session.get(Post, post_id)
         if not post:
@@ -104,6 +116,8 @@ def cleanup_post(post_id):
 
 
 def cleanup_pending(tx_hash):
+    app, db, _new_user = _load_local_ctx()
+    User, Post, Comment, Like, Bookmark, PendingPublication = _load_admin_models()
     with app.app_context():
         row = PendingPublication.query.filter_by(tx_hash=tx_hash).first()
         if row:
@@ -232,6 +246,8 @@ def main():
         print("admin_delete_ok=1")
 
         if not is_remote:
+            app, db, _new_user = _load_local_ctx()
+            User, Post, Comment, Like, Bookmark, PendingPublication = _load_admin_models()
             with app.app_context():
                 admin_id = User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar()
                 row = PendingPublication(

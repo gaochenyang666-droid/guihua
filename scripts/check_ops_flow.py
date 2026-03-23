@@ -22,8 +22,6 @@ except ImportError:
     def maybe_disable_ssl_verify():
         pass
 
-from app import app, db, _new_user, _log_flow_event  # noqa: E402
-from models import User, PendingPublication  # noqa: E402
 
 try:
     from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token
@@ -50,6 +48,17 @@ def _is_remote_base(base: str) -> bool:
     return "127.0.0.1" not in base and "localhost" not in base
 
 
+
+
+def _load_local_ctx():
+    from app import app, db, _new_user  # noqa: E402
+    return app, db, _new_user
+
+def _load_ops_ctx():
+    from models import User, PendingPublication  # noqa: E402
+    from services.observability import log_flow_event  # noqa: E402
+    return (*_load_local_ctx(), User, PendingPublication, log_flow_event)
+
 def _remote_admin_creds():
     u = os.environ.get("GUIHUA_ADMIN_USERNAME", "").strip()
     p = os.environ.get("GUIHUA_ADMIN_PASSWORD", "").strip()
@@ -57,6 +66,7 @@ def _remote_admin_creds():
 
 
 def ensure_admin():
+    app, db, _new_user, User, PendingPublication, log_flow_event = _load_ops_ctx()
     with app.app_context():
         admin = User.query.filter_by(username=ADMIN_USERNAME).first()
         if not admin:
@@ -72,6 +82,7 @@ def ensure_admin():
 
 
 def cleanup_pending(tx_hash):
+    app, db, _new_user, User, PendingPublication, log_flow_event = _load_ops_ctx()
     with app.app_context():
         row = PendingPublication.query.filter_by(tx_hash=tx_hash).first()
         if row:
@@ -128,6 +139,7 @@ def main():
     try:
         if not is_remote:
             admin_id = ensure_admin()
+            app, db, _new_user, User, PendingPublication, log_flow_event = _load_ops_ctx()
             with app.app_context():
                 row = PendingPublication(
                     user_id=admin_id,
@@ -140,7 +152,7 @@ def main():
                 )
                 db.session.add(row)
                 db.session.commit()
-                _log_flow_event('ops_smoke_seeded', severity='warn', tx_hash=pending_tx_hash)
+                log_flow_event('ops_smoke_seeded', severity='warn', tx_hash=pending_tx_hash)
 
         if is_remote and _get_accept_admin_token:
             token = _get_accept_admin_token(base)

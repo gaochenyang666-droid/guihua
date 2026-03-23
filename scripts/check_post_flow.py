@@ -22,8 +22,6 @@ except ImportError:
     def maybe_disable_ssl_verify():
         pass
 
-from app import app, db, _new_user  # noqa: E402
-from models import User, Post, PendingPublication  # noqa: E402
 
 try:
     from scripts._acceptance_auth import get_admin_token as _get_accept_admin_token
@@ -42,6 +40,16 @@ def _is_remote_base(base: str) -> bool:
     return "127.0.0.1" not in base and "localhost" not in base
 
 
+
+
+def _load_local_ctx():
+    from app import app, db, _new_user  # noqa: E402
+    return app, db, _new_user
+
+def _load_post_models():
+    from models import User, Post, PendingPublication  # noqa: E402
+    return User, Post, PendingPublication
+
 def _remote_admin_creds():
     u = os.environ.get("GUIHUA_ADMIN_USERNAME", "").strip()
     p = os.environ.get("GUIHUA_ADMIN_PASSWORD", "").strip()
@@ -49,6 +57,8 @@ def _remote_admin_creds():
 
 
 def ensure_admin():
+    app, db, _new_user = _load_local_ctx()
+    User, Post, PendingPublication = _load_post_models()
     with app.app_context():
         admin = User.query.filter_by(username=ADMIN_USERNAME).first()
         if not admin:
@@ -107,6 +117,8 @@ def login(base, username=None, password=None):
 
 
 def cleanup_post(post_id):
+    app, db, _new_user = _load_local_ctx()
+    User, Post, PendingPublication = _load_post_models()
     with app.app_context():
         row = db.session.get(Post, post_id)
         if row:
@@ -115,6 +127,8 @@ def cleanup_post(post_id):
 
 
 def cleanup_pending(tx_hash):
+    app, db, _new_user = _load_local_ctx()
+    User, Post, PendingPublication = _load_post_models()
     with app.app_context():
         row = PendingPublication.query.filter_by(tx_hash=tx_hash).first()
         if row:
@@ -163,6 +177,8 @@ def main():
         print("post_create_ok=1")
 
         if not is_remote:
+            app, db, _new_user = _load_local_ctx()
+            User, Post, PendingPublication = _load_post_models()
             with app.app_context():
                 row = Post(
                     title="QA Chain Published",
@@ -186,6 +202,8 @@ def main():
                 raise AssertionError(f"unexpected published stage: {data}")
             print("post_check_tx_ok=1")
 
+            app, db, _new_user = _load_local_ctx()
+            User, Post, PendingPublication = _load_post_models()
             with app.app_context():
                 row = PendingPublication(
                     user_id=User.query.filter_by(username=ADMIN_USERNAME).with_entities(User.id).scalar(),
