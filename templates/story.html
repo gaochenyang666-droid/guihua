@@ -22,8 +22,9 @@
         </div>
     </nav>
 
-    <main class="seo-story-shell">
-        <article class="glass seo-story-article">
+    <main class="post-page-shell seo-story-page-shell">
+        <section class="post-page-main glass">
+        <article class="post-page-body is-ready seo-story-article">
             <nav class="seo-breadcrumbs" aria-label="面包屑">
                 {% for item in breadcrumbs %}
                 <a href="{{ item.url }}" class="seo-breadcrumb-link">{{ item.name }}</a>{% if not loop.last %}<span class="seo-breadcrumb-sep">/</span>{% endif %}
@@ -32,9 +33,9 @@
 
             <header class="seo-story-header">
                 <p class="seo-story-kicker">{{ category.name }}</p>
-                <h1>{{ post.title }}</h1>
+                <h1 class="post-detail-title">{{ post.title }}</h1>
                 <p class="seo-story-excerpt">{{ post_view.excerpt }}</p>
-                <div class="seo-story-meta">
+                <div class="post-detail-meta-row seo-story-meta">
                     <span>作者：{{ post_view.author_name }}</span>
                     <span>发布时间：{{ post.created_at.strftime('%Y-%m-%d') if post.created_at else '' }}</span>
                     <span>更新时间：{{ (post.updated_at or post.created_at).strftime('%Y-%m-%d') if (post.updated_at or post.created_at) else '' }}</span>
@@ -47,7 +48,7 @@
                 {% endif %}
             </header>
 
-            <section class="seo-story-content prose-content">
+            <section class="post-detail-content seo-story-content prose-content">
                 {{ post.content|safe }}
             </section>
 
@@ -71,10 +72,10 @@
 
             <section class="seo-story-nav">
                 {% if prev_post %}
-                <a class="seo-story-nav-link" href="{{ prev_post.url }}">⬅ 上一篇：{{ prev_post.title }}</a>
+                <a class="btn btn-ghost seo-story-nav-link" href="{{ prev_post.url }}">⬅ 上一篇：{{ prev_post.title }}</a>
                 {% endif %}
                 {% if next_post %}
-                <a class="seo-story-nav-link" href="{{ next_post.url }}">下一篇：{{ next_post.title }} ➡</a>
+                <a class="btn btn-ghost seo-story-nav-link" href="{{ next_post.url }}">下一篇：{{ next_post.title }} ➡</a>
                 {% endif %}
             </section>
 
@@ -88,8 +89,9 @@
                 {% endfor %}
             </section>
         </article>
+        </section>
 
-        <aside class="glass seo-story-aside">
+        <aside class="post-page-main glass seo-story-aside">
             <section>
                 <h2>相关推荐</h2>
                 <div class="seo-story-link-list">
