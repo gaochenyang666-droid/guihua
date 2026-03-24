@@ -219,8 +219,8 @@
         margin-bottom: 0;
     }
     .timeline-item {
-        border-radius: 18px;
-        padding: 0.94rem 1.05rem;
+        border-radius: var(--content-panel-radius);
+        padding: 0.96rem 1.02rem;
     }
     .timeline-title {
         font-size: 1.12rem;

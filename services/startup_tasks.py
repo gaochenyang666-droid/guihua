@@ -100,6 +100,7 @@ def warn_if_redis_missing(redis_url, flask_debug=False):
     print('  - view count anti-refresh protection becomes process-local fallback')
     print('  This is acceptable for local development, but should be treated as a production readiness gap.')
     print('  Recommendation: configure REDIS_URL in production.')
+    print('  Deploy doc: docs/ops_deploy.md')
     print('=' * 60)
 
 

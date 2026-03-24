@@ -52,14 +52,20 @@ def get_redis_status():
         return {
             'status': 'ok',
             'message': 'Redis 已连接，限流与状态存储为共享模式',
+            'configured': True,
+            'readiness': 'ready',
             'required_in_production': True,
             'degraded': False,
+            'recommendation': '当前状态正常，可作为生产正式依赖使用。',
         }
     return {
         'status': 'fallback',
         'message': 'Redis 未配置或不可用，当前退化为进程内 fallback',
+        'configured': False,
+        'readiness': 'readiness_gap',
         'required_in_production': True,
         'degraded': True,
+        'recommendation': '请在线上配置 REDIS_URL，避免限流、nonce 与防刷退化为进程内模式。',
     }
 
 

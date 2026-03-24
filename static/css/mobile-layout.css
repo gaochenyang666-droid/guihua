@@ -855,18 +855,18 @@
     width: 100%;
 }
 .timeline-item {
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--content-panel-border);
     border-radius: 16px;
-    padding: 0.82rem 0.92rem;
-    background: var(--bg-card);
+    padding: 0.84rem 0.88rem;
+    background: var(--content-panel-bg);
     cursor: pointer;
-    box-shadow: var(--shadow-card-subtle);
+    box-shadow: var(--content-panel-shadow);
     transition: transform var(--dur-fast) var(--ease-exit), border-color var(--dur-base) var(--ease-enter), background-color var(--dur-base) var(--ease-enter), box-shadow var(--dur-base) var(--ease-enter);
 }
 .timeline-item:hover {
     transform: translateY(-1px);
     border-color: rgba(167, 139, 250, 0.24);
-    background: rgba(29, 29, 42, 0.86);
+    background: var(--content-panel-bg-strong);
 }
 .timeline-head {
     display: flex;
@@ -1024,11 +1024,11 @@
     font-size: 1rem;
 }
 .timeline-actions {
-    margin-top: 0.65rem;
+    margin-top: 0.6rem;
     display: flex;
     flex-wrap: wrap;
-    gap: 0.38rem;
-    padding-top: 0.62rem;
+    gap: 0.34rem;
+    padding-top: 0.58rem;
     border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 .timeline-action-btn {
@@ -1305,8 +1305,16 @@
     .seo-story-article,
     .seo-story-aside {
         width: calc(100% - 1rem);
-        padding: 1rem;
+        padding: 0.92rem;
         margin: 0.75rem auto;
+    }
+
+    .seo-home-section,
+    .seo-story-faq,
+    .seo-story-taxonomy,
+    .seo-story-disclaimer {
+        padding: 0.82rem 0.85rem;
+        border-radius: 14px;
     }
 
     .seo-home-grid,

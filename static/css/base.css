@@ -26,6 +26,11 @@
     --radius-card-sm: 10px;
     --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
     --shadow-card-subtle: 0 4px 16px rgba(0, 0, 0, 0.25);
+    --content-panel-bg: rgba(24, 24, 34, 0.76);
+    --content-panel-bg-strong: rgba(28, 28, 40, 0.88);
+    --content-panel-border: rgba(255, 255, 255, 0.08);
+    --content-panel-radius: 18px;
+    --content-panel-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
     --font-base: 15px; /* Mobile base font */
     --nav-height: 60px; /* Mobile nav height */
     --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
@@ -568,9 +573,10 @@ body.page-motion.page-leaving {
     margin: 1rem auto;
     width: min(1180px, calc(100% - 2rem));
     padding: 1.5rem;
-    border-radius: var(--radius-card);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: var(--shadow-card-subtle);
+    border-radius: var(--content-panel-radius);
+    border: 1px solid var(--content-panel-border);
+    background: var(--content-panel-bg);
+    box-shadow: var(--content-panel-shadow);
 }
 
 .seo-home-intro h1,
@@ -613,8 +619,10 @@ body.page-motion.page-leaving {
 .seo-story-faq,
 .seo-story-taxonomy,
 .seo-story-disclaimer {
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1rem 1.05rem;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
     margin-top: 1rem;
 }
 
@@ -646,9 +654,10 @@ body.page-motion.page-leaving {
 .seo-story-link-card,
 .seo-story-card {
     padding: 1rem 1.1rem;
-    border-radius: var(--radius-card-sm);
+    border-radius: 14px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .seo-home-story-item h3,
@@ -744,7 +753,10 @@ body.page-motion.page-leaving {
     width: 100%;
     box-sizing: border-box;
     padding: 1.05rem 1.1rem 1.1rem;
-    border-radius: 20px;
+    border-radius: var(--content-panel-radius);
+    background: var(--content-panel-bg);
+    border-color: var(--content-panel-border);
+    box-shadow: var(--content-panel-shadow);
 }
 
 .seo-story-page-shell .seo-story-article {
@@ -1039,6 +1051,17 @@ body.page-motion.page-leaving {
 
 .story-comments-section .comment-item.is-admin-comment {
     box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.2);
+}
+
+.timeline-item {
+    border: 1px solid var(--content-panel-border);
+    border-radius: var(--content-panel-radius);
+    background: var(--content-panel-bg);
+    box-shadow: var(--content-panel-shadow);
+}
+
+.timeline-item:hover {
+    background: var(--content-panel-bg-strong);
 }
 
 .story-comments-section .comment-header {

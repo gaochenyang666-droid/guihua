@@ -38,11 +38,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Compile sanity check
+        run: |
+          python3 -m py_compile app.py routes/*.py services/*.py utils/*.py scripts/*.py
+
       - name: Preflight inputs and secrets
         env:
           GUIHUA_ADMIN_TOKEN: ${{ secrets.GUIHUA_ADMIN_TOKEN }}
           GUIHUA_ADMIN_USERNAME: ${{ secrets.GUIHUA_ADMIN_USERNAME }}
           GUIHUA_ADMIN_PASSWORD: ${{ secrets.GUIHUA_ADMIN_PASSWORD }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
           BASE_URL: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
         run: |
           set -euo pipefail
@@ -60,14 +65,25 @@ jobs:
           else
             echo "auth_mode=admin_username_password"
           fi
+          if [ -n "${SECRET_KEY:-}" ]; then
+            echo "secret_key=present"
+          else
+            echo "secret_key=missing_using_script_fallback"
+          fi
           {
             echo "## Release Suite Preflight"
             echo ""
+            echo "- sha: \`${GITHUB_SHA}\`"
             echo "- base_url: \`${BASE_URL}\`"
             if [ -n "${GUIHUA_ADMIN_TOKEN:-}" ]; then
               echo "- admin auth: token"
             else
               echo "- admin auth: username/password"
+            fi
+            if [ -n "${SECRET_KEY:-}" ]; then
+              echo "- secret_key: repository secret present"
+            else
+              echo "- secret_key: missing (wallet script fallback will be used)"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
