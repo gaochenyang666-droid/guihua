@@ -48,12 +48,17 @@ jobs:
           GUIHUA_ADMIN_USERNAME: ${{ secrets.GUIHUA_ADMIN_USERNAME }}
           GUIHUA_ADMIN_PASSWORD: ${{ secrets.GUIHUA_ADMIN_PASSWORD }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          BASE_URL: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
+          BASE_URL_RAW: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
+          DEFAULT_BASE_URL: https://guihua.fun
         run: |
           set -euo pipefail
+          BASE_URL="$(printf '%s' "${BASE_URL_RAW:-}" | tr -d '\r' | head -n 1 | xargs)"
           if [ -z "${BASE_URL:-}" ]; then
-            echo "BASE_URL is required. Set workflow input base_url or repository secret GUIHUA_BASE_URL." >&2
-            exit 1
+            BASE_URL="${DEFAULT_BASE_URL}"
+          fi
+          if ! printf '%s' "${BASE_URL}" | grep -Eq '^https?://'; then
+            echo "Invalid BASE_URL detected from workflow input or GUIHUA_BASE_URL secret; falling back to ${DEFAULT_BASE_URL}." >&2
+            BASE_URL="${DEFAULT_BASE_URL}"
           fi
           if [ -z "${GUIHUA_ADMIN_TOKEN:-}" ] && { [ -z "${GUIHUA_ADMIN_USERNAME:-}" ] || [ -z "${GUIHUA_ADMIN_PASSWORD:-}" ]; }; then
             echo "Admin auth is required. Set GUIHUA_ADMIN_TOKEN or both GUIHUA_ADMIN_USERNAME and GUIHUA_ADMIN_PASSWORD." >&2
@@ -97,9 +102,18 @@ jobs:
           GUIHUA_ADMIN_PASSWORD: ${{ secrets.GUIHUA_ADMIN_PASSWORD }}
           GUIHUA_USER_USERNAME: ${{ secrets.GUIHUA_USER_USERNAME }}
           GUIHUA_USER_PASSWORD: ${{ secrets.GUIHUA_USER_PASSWORD }}
-          BASE_URL: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
+          BASE_URL_RAW: ${{ inputs.base_url || secrets.GUIHUA_BASE_URL }}
+          DEFAULT_BASE_URL: https://guihua.fun
         run: |
           set -euo pipefail
+          BASE_URL="$(printf '%s' "${BASE_URL_RAW:-}" | tr -d '\r' | head -n 1 | xargs)"
+          if [ -z "${BASE_URL:-}" ]; then
+            BASE_URL="${DEFAULT_BASE_URL}"
+          fi
+          if ! printf '%s' "${BASE_URL}" | grep -Eq '^https?://'; then
+            echo "Invalid BASE_URL detected from workflow input or GUIHUA_BASE_URL secret; falling back to ${DEFAULT_BASE_URL}." >&2
+            BASE_URL="${DEFAULT_BASE_URL}"
+          fi
           set +e
           python3 scripts/check_release_suite.py "${BASE_URL}" > release-suite.out.txt 2> release-suite.err.txt
           rc=$?
