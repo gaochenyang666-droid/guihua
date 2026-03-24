@@ -52,6 +52,7 @@
             <section class="post-detail-actions story-engagement-bar">
                 <button class="btn btn-ghost story-engagement-btn" type="button" data-action="like">😰 恐惧 ({{ story_post_seed.likes_count if story_post_seed else 0 }})</button>
                 <button class="btn btn-ghost story-engagement-btn" type="button" data-action="bookmark">⭐ 收藏{% if story_post_seed and story_post_seed.is_bookmarked %}（已收）{% endif %}</button>
+                <button class="btn btn-ghost story-engagement-btn" type="button" data-action="tip-author">💰 打赏</button>
                 <button class="btn btn-ghost story-engagement-btn" type="button" data-action="share">🔗 转发</button>
                 <button class="btn btn-ghost story-engagement-btn" type="button" data-action="report">🚩 举报</button>
             </section>
@@ -105,6 +106,34 @@
             </section>
         </aside>
     </main>
+
+    <div class="modal-overlay" id="tipAuthorModal" data-dismiss="tipAuthorModal" role="dialog" aria-modal="true">
+        <div class="modal glass tip-author-modal">
+            <div class="modal-header">
+                <h3>💰 打赏作者</h3>
+                <button class="modal-close" type="button" data-dismiss="tipAuthorModal" aria-label="关闭">&times;</button>
+            </div>
+            <p class="tip-author-copy">
+                打赏将<strong class="tip-author-highlight">直接转入作者绑定的钱包</strong>，不经过平台、无抽成。
+            </p>
+            <div class="tip-author-address-block">
+                <strong class="tip-author-address-label">发帖人钱包ID：</strong>
+                <span id="tipAuthorAddressDisplay" class="tip-author-address-value">-</span>
+                <button type="button" class="btn btn-ghost btn-sm tip-author-copy-btn" id="tipAuthorCopyBtn" hidden data-action="tip-author-copy">复制</button>
+            </div>
+            <p class="tip-author-amount-label">选择金额 (USDT)</p>
+            <div class="tip-author-preset-row">
+                <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="1">1 USDT</button>
+                <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="5">5 USDT</button>
+                <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="10">10 USDT</button>
+            </div>
+            <div class="form-group">
+                <label class="form-label">金额 (USDT，可自定义，最低 1)</label>
+                <input type="number" id="tipAmountInput" class="form-input" value="1" min="1" step="0.1" placeholder="1">
+            </div>
+            <button class="btn btn-primary donate-submit-btn" type="button" data-action="tip-author-send">确认打赏</button>
+        </div>
+    </div>
 
     <script id="storyCommentsSeed" type="application/json">{{ story_comments_seed|safe }}</script>
     <script src="/static/common.js?v={{ asset_version }}"></script>

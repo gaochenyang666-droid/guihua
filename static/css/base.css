@@ -694,7 +694,8 @@ body.page-motion.page-leaving {
     position: sticky;
     top: 0;
     z-index: 110;
-    width: min(860px, calc(100vw - 24px));
+    width: min(var(--story-shell-max), calc(100vw - 24px));
+    box-sizing: border-box;
     min-height: 48px;
     margin: 10px auto 0;
     padding: 0.35rem 0.25rem;
@@ -732,7 +733,8 @@ body.page-motion.page-leaving {
 }
 
 .story-x-shell {
-    width: min(860px, calc(100vw - 24px));
+    width: min(var(--story-shell-max), calc(100vw - 24px));
+    box-sizing: border-box;
     margin: 0.55rem auto 1rem;
     grid-template-columns: minmax(0, 1fr);
     gap: 0.72rem;
@@ -999,24 +1001,27 @@ body.page-motion.page-leaving {
 }
 
 .story-comments-section .post-comment-compose {
-    align-items: flex-end;
-    gap: 0.6rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 0.55rem;
     margin-top: 0.7rem;
     padding-top: 0.8rem;
     border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .story-comments-section .post-comment-compose .form-input {
-    min-height: 48px;
+    min-height: 44px;
     border-radius: 16px;
     background: rgba(255, 255, 255, 0.035);
     border-color: rgba(255, 255, 255, 0.09);
 }
 
 .story-comments-section .post-comment-compose .btn {
-    min-width: 92px;
-    min-height: 48px;
-    border-radius: 16px;
+    min-width: 74px;
+    min-height: 42px;
+    padding: 0.38rem 0.92rem;
+    border-radius: 14px;
     box-shadow: none;
 }
 
@@ -1081,6 +1086,16 @@ body.page-motion.page-leaving {
 
 .story-comments-section .comment-thread-group {
     margin-top: 0.7rem;
+}
+
+.story-article-page {
+    --story-shell-max: 860px;
+}
+
+.story-article-page .story-comments-panel,
+.story-article-page .story-x-aside,
+.story-article-page .story-x-article {
+    width: 100%;
 }
 
 .story-comments-section .inline-reply-box {

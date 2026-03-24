@@ -153,15 +153,18 @@
         function updateMoreButton(state, post) {
             var btn = document.getElementById('commentsMoreBtn');
             if (!btn) return;
+            var wrap = btn.parentElement;
             var total = getProcessedComments(state, post).length;
             if (!total || state.visibleCount >= total) {
                 btn.hidden = true;
                 btn.textContent = '';
+                if (wrap) wrap.style.display = 'none';
                 return;
             }
             var remain = Math.max(0, total - state.visibleCount);
             btn.hidden = false;
             btn.textContent = '展开更多评论（剩余 ' + remain + ' 条）';
+            if (wrap) wrap.style.display = 'flex';
         }
 
         function scheduleRender(state, post, hooks) {
