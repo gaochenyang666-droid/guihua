@@ -117,6 +117,21 @@ def assert_ok(status, data, label):
         raise AssertionError(f"{label}: status={status} data={data}")
 
 
+def assert_remote_redis_ready(label, payload):
+    redis = payload.get("redis")
+    if not isinstance(redis, dict):
+        raise AssertionError(f"{label}: missing redis payload")
+    if redis.get("status") != "ok":
+        raise AssertionError(f"{label}: redis status is not ok: {redis}")
+    if redis.get("readiness") != "ready":
+        raise AssertionError(f"{label}: redis readiness is not ready: {redis}")
+    if bool(redis.get("degraded")):
+        raise AssertionError(f"{label}: redis degraded should be false: {redis}")
+    recommendation = str(redis.get("recommendation") or "")
+    if "待补齐" in recommendation or "REDIS_URL" in recommendation:
+        raise AssertionError(f"{label}: redis recommendation still indicates production gap: {redis}")
+
+
 def login(base, username=None, password=None):
     u = username or ADMIN_USERNAME
     p = password or PASSWORD
@@ -146,7 +161,6 @@ def main():
                     tx_hash=pending_tx_hash,
                     title=f"QA Ops Pending {int(time.time())}",
                     content="<p>ops</p>",
-                    tags='["ops"]',
                     status='awaiting_retry',
                     last_error='待自动补偿',
                 )
@@ -176,6 +190,8 @@ def main():
             redis_status = (data.get("redis") or {}).get("status")
             if redis_status not in ("ok", "fallback"):
                 raise AssertionError(f"admin stats redis status invalid: {redis_status}")
+        if is_remote:
+            assert_remote_redis_ready("admin stats", data)
         print("admin_stats_ok=1")
 
         status, data = http_json(base + "/api/admin/ops/summary", token=token)
@@ -183,6 +199,8 @@ def main():
         alerts = data.get("alerts") or []
         if not is_remote and not alerts:
             raise AssertionError(f"ops summary missing alerts: {data}")
+        if is_remote:
+            assert_remote_redis_ready("ops summary", data)
         print("ops_summary_ok=1")
 
         status, data = http_json(base + "/api/admin/flow-events?severity=warn&limit=20", token=token)
