@@ -1,38 +1,33 @@
 <!-- Main Content -->
 <div class="studio-container" id="studioView">
     <aside class="studio-sidebar">
-        <div class="sidebar-card glass" style="padding: 1rem;">
+        <div class="sidebar-card glass studio-step-card">
             <div class="step-progress">
                 <div class="step-item active" id="stepIndicator1">
-                    <div style="font-weight:bold;">1. 撰写</div>
-                    <div style="font-size:0.8rem; opacity:0.7;">创作你的故事</div>
+                    <div class="studio-step-title">1. 撰写</div>
+                    <div class="studio-step-caption">创作你的故事</div>
                 </div>
                 <div class="step-item" id="stepIndicator3">
-                    <div style="font-weight:bold;">2. 永存</div>
-                    <div style="font-size:0.8rem; opacity:0.7;">上链并发布</div>
+                    <div class="studio-step-title">2. 永存</div>
+                    <div class="studio-step-caption">上链并发布</div>
                 </div>
             </div>
         </div>
     </aside>
 
-    <main style="max-width: 100%;">
-        <div class="glass" style="padding: 2rem; border-radius: var(--radius-lg); min-height: 600px;">
+    <main class="studio-main">
+        <div class="glass studio-main-card">
 
             <!-- Step 1: Content -->
             <div class="step-content active" id="step1">
-                <h2 style="margin-bottom: 1.5rem;">发布新怪谈</h2>
+                <h2 class="studio-section-title">发布新怪谈</h2>
                 <div class="form-group">
                     <label class="form-label">标题</label>
                     <input type="text" class="form-input" id="studioPostTitle" placeholder="请输入引人入胜的标题...">
                 </div>
-                <div class="form-group" style="display:grid; gap:0.8rem;">
-                    <div>
-                        <label class="form-label">标签（可选）</label>
-                        <input type="text" class="form-input" id="studioPostTags" placeholder="示例：灵异, 都市传说, 夜谈">
-                        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:0.3rem;">多个标签请用英文逗号分隔，最多 8 个。</div>
-                    </div>
-                    <div>
-                        <label class="form-label" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                <div class="form-group studio-meta-grid">
+                    <div class="studio-meta-grid-full">
+                        <label class="form-label studio-label-inline">
                             <span>加入系列（可选）</span>
                             <button type="button" class="btn btn-ghost btn-sm" id="createSeriesBtn">+ 新建系列</button>
                         </label>
@@ -42,80 +37,80 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label" style="display:flex; justify-content:space-between;">
+                    <label class="form-label studio-label-inline">
                         <span>正文内容</span>
-                        <span style="font-size:0.8rem; color:var(--text-muted);" id="draftStatus"></span>
+                        <span class="studio-draft-status" id="draftStatus"></span>
                     </label>
-                    <div id="quillEditorWrap" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: var(--radius-sm); min-height: 260px;">
-                        <div id="studioPostContent" style="min-height: 200px;"></div>
+                    <div id="quillEditorWrap" class="studio-editor-wrap">
+                        <div id="studioPostContent" class="studio-editor"></div>
                     </div>
                 </div>
-                <button class="btn btn-primary" id="studioNextStepBtn" style="width: 100%; margin-top: 1rem;">下一步: 永存确认</button>
+                <button class="btn btn-primary studio-block-button studio-step-button" id="studioNextStepBtn">下一步: 永存确认</button>
             </div>
 
             <!-- Step 3: Payment Preview -->
             <div class="step-content" id="step3">
-                <h2 style="margin-bottom: 1.5rem; text-align: center;">Web3 永存确认</h2>
-                <p style="font-size:0.85rem; color:var(--text-muted); text-align:center; margin-bottom:1rem;">您仅需支付 USDT（BSC），永存档案由平台负责。</p>
-                <div style="background: var(--bg-secondary); padding: 1.5rem; border-radius: 16px; margin-bottom: 2rem; border: 1px solid var(--border-color);">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
-                        <span style="color: var(--text-secondary);">支付网络</span>
+                <h2 class="studio-section-title studio-section-title-centered">Web3 永存确认</h2>
+                <p class="studio-step-description">您仅需支付 USDT（BSC），永存档案由平台负责。</p>
+                <div class="studio-payment-summary">
+                    <div class="studio-summary-row studio-summary-row-separated">
+                        <span class="studio-summary-label">支付网络</span>
                         <span>BSC Mainnet 主网 (ID: 56)</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
-                        <span style="color: var(--text-secondary);">永存档案</span>
-                        <span style="font-size:0.9rem;">由平台负责</span>
+                    <div class="studio-summary-row studio-summary-row-separated">
+                        <span class="studio-summary-label">永存档案</span>
+                        <span class="studio-summary-note">由平台负责</span>
                     </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="color: var(--text-secondary);">您需支付</span>
-                        <span id="studioFeeDisplay" style="font-size: 1.5rem; font-weight: bold; color: var(--accent-gold);">—</span>
+                    <div class="studio-summary-row studio-summary-row-amount">
+                        <span class="studio-summary-label">您需支付</span>
+                        <span id="studioFeeDisplay" class="studio-fee-display">—</span>
                     </div>
                 </div>
 
                 <div id="walletActionArea">
-                    <button class="btn btn-primary" id="publishBtn" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+                    <button class="btn btn-primary studio-block-button studio-publish-button" id="publishBtn">
                         ⚡ 确认支付并发布
                     </button>
                 </div>
-                <div id="adminSpecialArea" style="display:none; margin-top: 0.9rem; padding: 0.8rem 1rem; border: 1px dashed var(--accent-orange); border-radius: 10px;">
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                <div id="adminSpecialArea" class="studio-admin-special" hidden>
+                    <label class="studio-admin-special-label">
                         <input type="checkbox" id="adminSpecialPostCheckbox">
-                        <span style="font-size:0.88rem; color:var(--text-primary);">发布为特殊帖子（始终优先出现在第一页）</span>
+                        <span class="studio-admin-special-text">发布为特殊帖子（始终优先出现在第一页）</span>
                     </label>
                 </div>
-                <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 12px; border: 1px solid var(--border-color);">
-                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">已支付但未完成发帖？输入交易哈希继续（无需再付）</div>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <input type="text" id="resumeTxHashInput" class="form-input" placeholder="0x..." style="flex: 1; font-family: monospace; font-size: 0.8rem;">
+                <div class="studio-resume-block">
+                    <div class="studio-resume-copy">已支付但未完成发帖？输入交易哈希继续（无需再付）</div>
+                    <div class="studio-resume-row">
+                        <input type="text" id="resumeTxHashInput" class="form-input studio-resume-input" placeholder="0x...">
                         <button type="button" class="btn btn-ghost" id="resumeWithTxHashBtn">用该哈希继续</button>
                     </div>
-                    <div id="resumeStatePanel" class="resume-state-panel" style="display:none;">
+                    <div id="resumeStatePanel" class="resume-state-panel" hidden>
                         <div class="resume-state-header">
                             <div>
-                                <div class="resume-state-eyebrow">恢复发布状态</div>
+                                <div class="resume-state-eyebrow">发布进度</div>
                                 <div id="resumeStateMessage" class="resume-state-message">等待检查交易状态…</div>
                             </div>
                             <div class="resume-state-actions">
-                                <button type="button" class="btn btn-ghost btn-sm" id="resumeCheckBtn">检查当前状态</button>
-                                <button type="button" class="btn btn-ghost btn-sm" id="resumeClearBtn">清除记录</button>
+                                <button type="button" class="btn btn-ghost btn-sm" id="resumeCheckBtn">刷新状态</button>
+                                <button type="button" class="btn btn-ghost btn-sm" id="resumeClearBtn">清除并重新开始</button>
                             </div>
                         </div>
                         <div class="resume-stage-list" id="resumeStageList">
-                            <span class="resume-stage-item" data-stage="initiated">已记录</span>
-                            <span class="resume-stage-item" data-stage="payment_verified">已支付</span>
-                            <span class="resume-stage-item" data-stage="storage_ready">永存已就绪</span>
-                            <span class="resume-stage-item" data-stage="awaiting_retry">等待补偿</span>
+                            <span class="resume-stage-item" data-stage="initiated">已记录交易</span>
+                            <span class="resume-stage-item" data-stage="payment_verified">支付已确认</span>
+                            <span class="resume-stage-item" data-stage="storage_ready">永存写入中</span>
+                            <span class="resume-stage-item" data-stage="awaiting_retry">等待重试</span>
                             <span class="resume-stage-item" data-stage="published">已发布</span>
                         </div>
                     </div>
                 </div>
 
-                <button class="btn btn-ghost" id="studioPrevStepBtn" style="width: 100%; margin-top: 1rem;">返回修改</button>
+                <button class="btn btn-ghost studio-block-button studio-step-button" id="studioPrevStepBtn">返回修改</button>
             </div>
 
         </div>
 
-        <footer style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-color); text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+        <footer class="studio-footer">
             <p>
                 本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
             </p>
