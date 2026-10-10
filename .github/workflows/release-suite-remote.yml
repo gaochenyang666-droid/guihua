@@ -7,9 +7,6 @@ on:
         description: "Base URL to verify (e.g. https://guihua.fun)"
         required: true
         type: string
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
