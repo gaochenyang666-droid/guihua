@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
-    <title>系列目录 - 诡话</title>
+    {% include 'partials/seo_meta.html' %}
     <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
     <link rel="shortcut icon" href="/static/logo.svg">
     <link rel="apple-touch-icon" href="/static/logo.svg">
@@ -24,9 +24,9 @@
         </div>
     </nav>
 
-    <div class="container" style="max-width: 920px; margin: 1.2rem auto; padding: 0 1rem;">
-        <div id="seriesMeta" class="glass" style="padding:1rem; border-radius:12px; margin-bottom:1rem;">加载中...</div>
-        <div id="seriesList" class="glass" style="padding:1rem; border-radius:12px;">加载中...</div>
+    <div class="container series-page-shell">
+        <div id="seriesMeta" class="glass series-meta-card">加载中...</div>
+        <div id="seriesList" class="glass series-list-card">加载中...</div>
     </div>
 
     <script src="/static/series.js?v={{ asset_version }}"></script>

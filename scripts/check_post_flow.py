@@ -210,7 +210,6 @@ def main():
                     tx_hash=pending_tx_hash,
                     title="QA Pending Publish",
                     content="<p>pending</p>",
-                    tags='["qa"]',
                     status='awaiting_retry',
                     last_error='支付已确认，但永存写入失败，可直接继续发布重试',
                 )
@@ -230,7 +229,6 @@ def main():
                     "tx_hash": pending_tx_hash,
                     "title": "QA Pending Publish",
                     "content": "<p>pending</p>",
-                    "tags": ["qa"],
                 },
             )
             if status != 503:

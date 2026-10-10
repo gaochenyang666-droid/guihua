@@ -223,12 +223,6 @@ class Post(db.Model):
             images_list = json.loads(self.images) if self.images else []
         except (TypeError, ValueError):
             images_list = []
-        try:
-            tags_list = json.loads(self.tags) if self.tags else []
-        except (TypeError, ValueError):
-            tags_list = []
-        if not isinstance(tags_list, list):
-            tags_list = []
 
         if is_liked is None or is_bookmarked is None:
             if current_user_id:
@@ -263,7 +257,6 @@ class Post(db.Model):
             'content': self.content,
             'cover_image': self.cover_image,
             'images': images_list,
-            'tags': tags_list,
             'author': self.author.to_dict() if self.author else {'id': self.author_id, 'nickname': '已注销', 'username': None, 'avatar': '👻', 'honor_title': '新魂'},
             'view_count': self.view_count,
             'likes_count': lc,
@@ -457,19 +450,12 @@ class PendingPublication(db.Model):
     series = db.relationship('Series', foreign_keys=[series_id])
 
     def to_dict(self):
-        try:
-            tags_list = json.loads(self.tags) if self.tags else []
-        except (TypeError, ValueError):
-            tags_list = []
-        if not isinstance(tags_list, list):
-            tags_list = []
         return {
             'id': self.id,
             'user_id': self.user_id,
             'tx_hash': self.tx_hash,
             'title': self.title,
             'content': self.content,
-            'tags': tags_list,
             'region': self.region,
             'series_id': self.series_id,
             'is_special_announcement': bool(self.is_special_announcement),

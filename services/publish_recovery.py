@@ -1,6 +1,3 @@
-import json
-
-
 def upsert_pending_publication(pending_model, db_session, user_id, tx_hash, payload=None, status='initiated',
                                last_error=None, ipfs_cid=None, confirmations=None):
     row = pending_model.query.filter_by(tx_hash=tx_hash).first()
@@ -13,9 +10,6 @@ def upsert_pending_publication(pending_model, db_session, user_id, tx_hash, payl
         row.region = payload.get('region') or row.region or '其他'
         row.series_id = payload.get('series_id') if payload.get('series_id') not in ('', None) else None
         row.is_special_announcement = bool(payload.get('is_special_announcement', row.is_special_announcement))
-        tags = payload.get('tags')
-        if tags is not None:
-            row.tags = json.dumps(tags if isinstance(tags, list) else [], ensure_ascii=False)
     if status:
         row.status = status
     if last_error is not None:
@@ -48,4 +42,3 @@ def get_latest_pending_publication(pending_model, user_id):
         pending_model.user_id == user_id,
         pending_model.status != 'published'
     ).order_by(pending_model.updated_at.desc(), pending_model.id.desc()).first()
-

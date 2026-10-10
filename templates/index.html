@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
-    <title>诡话 - 灵异事件分享平台 </title>
+    {% include 'partials/seo_meta.html' %}
     <!-- Favicon 统一使用 logo.svg，适配桌面与移动端 -->
     <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
     <link rel="shortcut icon" href="/static/logo.svg">
@@ -37,7 +37,6 @@
                         <div class="search-advanced-grid">
                             <label>从 <input type="date" id="searchFromDate" class="form-input"></label>
                             <label>到 <input type="date" id="searchToDate" class="form-input"></label>
-                            <label>标签 <input type="text" id="searchTags" class="form-input" placeholder="灵异,都市传说"></label>
                             <label class="search-toggle"><input type="checkbox" id="searchPermanentOnly"> 仅永存</label>
                         </div>
                         <div class="search-advanced-actions">
@@ -50,7 +49,7 @@
 
             <div class="nav-actions">
                 <!-- 创作者入口 -->
-                <button class="btn btn-ghost" id="createStudioBtn" type="button" style="color: var(--accent-green); border-color: var(--accent-green);">
+                <button class="btn btn-ghost create-studio-btn" id="createStudioBtn" type="button">
                     <i class="fas fa-magic"></i> <span>创作</span>
                 </button>
 
@@ -58,9 +57,9 @@
                     <button class="btn btn-primary" id="homeLoginBtn" type="button">登录</button>
                 </div>
 
-                <div class="user-menu" id="userMenu" style="display: none;">
+                <div class="user-menu" id="userMenu" hidden>
                     <div class="user-menu-header" id="userMenuHeader">
-                        <span id="userDisplayName" style="font-size: 0.9rem;"></span>
+                        <span id="userDisplayName" class="user-display-name"></span>
                         <div class="user-avatar-emoji" id="userAvatarEmoji"></div>
                     </div>
                     <div class="user-menu-section">
@@ -93,6 +92,58 @@
             <span id="siteAnnouncementContent" class="site-announcement-content"></span>
         </div>
     </div>
+
+    <section class="glass seo-home-shell">
+        <div class="seo-home-intro">
+            <p class="seo-story-kicker">内容社区</p>
+            <h1>诡话 - 灵异故事与都市传说社区</h1>
+            <p>{{ seo_home_intro }}</p>
+        </div>
+        <div class="seo-home-grid">
+            <section class="seo-home-section">
+                <div class="seo-home-section-head">
+                    <h2>最新故事</h2>
+                    <a href="/stories" class="btn btn-ghost btn-sm">查看全部</a>
+                </div>
+                <div class="seo-home-story-list">
+                    {% for item in seo_latest_posts %}
+                    <article class="seo-home-story-item">
+                        <h3><a href="{{ item.url }}">{{ item.title }}</a></h3>
+                        <p>{{ item.excerpt }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+            <section class="seo-home-section">
+                <div class="seo-home-section-head">
+                    <h2>热门故事</h2>
+                    <a href="/stories" class="btn btn-ghost btn-sm">进入列表</a>
+                </div>
+                <div class="seo-home-story-list">
+                    {% for item in seo_hot_posts %}
+                    <article class="seo-home-story-item">
+                        <h3><a href="{{ item.url }}">{{ item.title }}</a></h3>
+                        <p>{{ item.excerpt }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+        <section class="seo-home-faq">
+            <h2>常见问题</h2>
+            {% for item in home_faq %}
+            <div class="seo-faq-item">
+                <h3>{{ item.question }}</h3>
+                <p>{{ item.answer }}</p>
+            </div>
+            {% endfor %}
+        </section>
+        <div class="seo-home-links">
+            <a href="/stories">全部故事</a>
+            <a href="/about">关于诡话</a>
+        </div>
+    </section>
+
     <div class="main-container">
         <aside class="sidebar sidebar-left">
             <div class="sidebar-card glass profile-quick-card" id="leftProfileCard">
@@ -146,9 +197,9 @@
                 <div id="pinnedGuideExtra" class="pinned-guide-extra" hidden></div>
             </div>
             <div class="masonry-grid" id="postGrid"></div>
-            <div id="loadingArea" style="text-align: center; padding: 2rem; color: var(--text-muted);">正在召唤灵体...</div>
-            <div id="loadMoreArea" style="text-align: center; padding: 1rem; display: none;">
-                <span style="font-size:0.85rem; color:var(--text-secondary);">继续下滑自动加载更多...</span>
+            <div id="loadingArea" class="feed-loading-state">正在召唤灵体...</div>
+            <div id="loadMoreArea" class="feed-load-more-hint" hidden>
+                <span class="feed-load-more-text">继续下滑自动加载更多...</span>
             </div>
             <div id="mobileUtilityMount"></div>
         </main>
@@ -201,7 +252,7 @@
                     <div id="groupLinksList" class="onboarding-task-list"></div>
                 </div>
             </div>
-            <div class="sidebar-card glass sidebar-web3-note utility-accordion-card" id="web3NoteCard" data-utility-key="web3" style="display: block;">
+            <div class="sidebar-card glass sidebar-web3-note utility-accordion-card" id="web3NoteCard" data-utility-key="web3">
                 <button class="utility-card-trigger" type="button" data-utility-trigger="web3">
                     <span class="utility-card-title">👻 Web3 内容映射</span>
                     <span class="utility-card-meta">显示详情</span>
@@ -220,25 +271,25 @@
     <footer class="site-footer">
         <div class="site-footer-inner">
             <div class="site-footer-disclaimer">
-                <p style="margin-bottom: 0.5rem;">⚠️ <b>Disclaimer / 免责声明</b></p>
+                <p class="site-footer-disclaimer-title">⚠️ <b>Disclaimer / 免责声明</b></p>
                 <p>
                     This platform is a decentralized content display interface. All content is stored on the distributed network and the blockchain.<br>
                     Users are solely responsible for the content they publish. The platform developers do not control, endorse, or assume liability for user-generated content.<br>
                     本平台仅提供去中心化展示技术，内容由用户发布并存储于区块链/去中心化网络。请用户自行承担发布内容的法律责任。
                 </p>
             </div>
-            <p class="site-footer-meta">© 2026 诡话 (GuiHua) | <a href="#" id="footerDonateLink" style="color: var(--accent-gold);">☕ 赞赏支持站长</a></p>
+            <p class="site-footer-meta">© 2026 诡话 (GuiHua) | <a href="#" id="footerDonateLink" class="footer-donate-link">☕ 赞赏支持站长</a></p>
         </div>
     </footer>
 
     <!-- Mobile Bottom Nav -->
-    <div class="bottom-nav" style="display: none;">
+    <div class="bottom-nav" hidden>
         <a href="/" class="bottom-nav-item active">
             <i class="fas fa-home"></i>
             <span>首页</span>
         </a>
         <a href="#" id="bottomCreateLink" class="bottom-nav-item">
-            <i class="fas fa-plus-circle nav-highlight-btn" style="font-size: 32px; color: var(--accent-purple); margin-top: -10px;"></i>
+            <i class="fas fa-plus-circle nav-highlight-btn bottom-create-icon"></i>
         </a>
         <a href="#" id="bottomProfileLink" class="bottom-nav-item">
             <i class="fas fa-user"></i>
@@ -266,27 +317,27 @@
                             <label class="form-label">密码</label>
                             <input type="password" class="form-input" id="loginPassword" required />
                         </div>
-                        <button type="submit" class="btn btn-primary" style="width: 100%;">登录</button>
+                        <button type="submit" class="btn btn-primary auth-submit-btn">登录</button>
                         
                         <div class="auth-divider">
                             <span>或</span>
                         </div>
-                        <button type="button" class="btn btn-ghost" style="width: 100%; border-color: var(--accent-gold); color: var(--accent-gold);" data-action="auth-open-wallet">
+                        <button type="button" class="btn btn-ghost auth-wallet-btn" data-action="auth-open-wallet">
                             <i class="fas fa-wallet"></i> 钱包登录（多种钱包）
                         </button>
-                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">支持 Binance Wallet、MetaMask、WalletConnect 扫码</p>
-                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem; text-align: center;">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
+                        <p class="auth-wallet-hint">支持 Binance Wallet、MetaMask、WalletConnect 扫码</p>
+                        <p class="auth-wallet-subhint">移动端请用币安 App、Trust Wallet 等内置浏览器打开本站</p>
 
-                        <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                            <a href="#" data-action="auth-toggle" data-mode="register" style="color: var(--accent-purple);">没有账号？点击注册</a>
-                            <span style="color: var(--text-muted);"> · </span>
-                            <a href="#" data-action="auth-toggle" data-mode="changePassword" style="color: var(--accent-purple);">找回密码</a>
+                        <div class="auth-toggle-row">
+                            <a href="#" data-action="auth-toggle" data-mode="register" class="auth-link-accent">没有账号？点击注册</a>
+                            <span class="auth-link-divider"> · </span>
+                            <a href="#" data-action="auth-toggle" data-mode="changePassword" class="auth-link-accent">找回密码</a>
                         </div>
                     </form>
                 </div>
 
                 <!-- Register Form -->
-                <div id="registerFormContainer" style="display: none;">
+                <div id="registerFormContainer" hidden>
                     <div class="form-group">
                         <label class="form-label">用户名</label>
                         <input type="text" class="form-input" id="regUsername" required />
@@ -295,14 +346,14 @@
                         <label class="form-label">密码（至少 6 位）</label>
                         <input type="password" class="form-input" id="regPassword" placeholder="至少6位" minlength="6" required />
                     </div>
-                    <button class="btn btn-primary" style="width: 100%;" type="button" data-action="auth-register">立即签约</button>
-                    <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                        <a href="#" data-action="auth-toggle" data-mode="login" style="color: var(--text-secondary);">返回登录</a>
+                    <button class="btn btn-primary auth-submit-btn" type="button" data-action="auth-register">立即签约</button>
+                    <div class="auth-toggle-row">
+                        <a href="#" data-action="auth-toggle" data-mode="login" class="auth-link-muted">返回登录</a>
                     </div>
                 </div>
 
                 <!-- 找回密码：账号 + 原密码 → 设置新密码 -->
-                <div id="changePasswordFormContainer" style="display: none;">
+                <div id="changePasswordFormContainer" hidden>
                     <div class="form-group">
                         <label class="form-label">用户名</label>
                         <input type="text" class="form-input" id="cpUsername" placeholder="您的账号" />
@@ -319,9 +370,9 @@
                         <label class="form-label">确认新密码</label>
                         <input type="password" class="form-input" id="cpConfirmPassword" placeholder="再输入一次新密码" />
                     </div>
-                    <button type="button" class="btn btn-primary" style="width: 100%;" data-action="auth-change-password">确认修改密码</button>
-                    <div style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
-                        <a href="#" data-action="auth-toggle" data-mode="login" style="color: var(--text-secondary);">返回登录</a>
+                    <button type="button" class="btn btn-primary auth-submit-btn" data-action="auth-change-password">确认修改密码</button>
+                    <div class="auth-toggle-row">
+                        <a href="#" data-action="auth-toggle" data-mode="login" class="auth-link-muted">返回登录</a>
                     </div>
                 </div>
             </div>
@@ -336,18 +387,18 @@
                 <button class="modal-close" type="button" data-dismiss="walletSelectModal" aria-label="关闭">&times;</button>
             </div>
             <div id="walletSelectList"></div>
-            <div id="walletSelectQr" class="wallet-select-qr" style="display:none;"></div>
+            <div id="walletSelectQr" class="wallet-select-qr" hidden></div>
         </div>
     </div>
 
     <!-- Admin Stats Modal -->
     <div class="modal-overlay" id="adminStatsModal" data-dismiss="adminStatsModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width: 600px;">
+        <div class="modal glass modal-admin-stats">
             <div class="modal-header">
                 <h3>📊 财富看板 (Admin)</h3>
                 <button class="modal-close" type="button" data-dismiss="adminStatsModal" aria-label="关闭">&times;</button>
             </div>
-            <div id="adminStatsBody" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div id="adminStatsBody" class="admin-stats-body">
                 <!-- Stats loaded here -->
             </div>
         </div>
@@ -355,68 +406,68 @@
 
     <!-- Admin Reports Modal -->
     <div class="modal-overlay" id="adminReportsModal" data-dismiss="adminReportsModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal glass modal-admin-list">
             <div class="modal-header">
                 <h3>🚩 举报列表</h3>
                 <button class="modal-close" type="button" data-dismiss="adminReportsModal" aria-label="关闭">&times;</button>
             </div>
-            <div id="adminReportsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+            <div id="adminReportsBody" class="modal-scroll-body">加载中...</div>
         </div>
     </div>
 
     <!-- Admin Users Modal -->
     <div class="modal-overlay" id="adminUsersModal" data-dismiss="adminUsersModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width: 700px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal glass modal-admin-list">
             <div class="modal-header">
                 <h3>👥 用户列表</h3>
                 <button class="modal-close" type="button" data-dismiss="adminUsersModal" aria-label="关闭">&times;</button>
             </div>
-            <div id="adminUsersBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+            <div id="adminUsersBody" class="modal-scroll-body">加载中...</div>
         </div>
     </div>
 
     <!-- Admin Announcements Modal -->
     <div class="modal-overlay" id="adminAnnouncementsModal" data-dismiss="adminAnnouncementsModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal glass modal-admin-wide">
             <div class="modal-header">
                 <h3>📣 公告管理</h3>
                 <button class="modal-close" type="button" data-dismiss="adminAnnouncementsModal" aria-label="关闭">&times;</button>
             </div>
-            <div style="padding: 0 1rem 0.8rem;">
+            <div class="modal-toolbar">
                 <button class="btn btn-primary btn-sm" type="button" id="adminCreateAnnouncementBtn">新增公告</button>
             </div>
-            <div id="adminAnnouncementsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+            <div id="adminAnnouncementsBody" class="modal-scroll-body">加载中...</div>
         </div>
     </div>
 
     <!-- Admin Audit Modal -->
     <div class="modal-overlay" id="adminAuditModal" data-dismiss="adminAuditModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal glass modal-admin-wide">
             <div class="modal-header">
                 <h3>🧾 管理审计日志</h3>
                 <button class="modal-close" type="button" data-dismiss="adminAuditModal" aria-label="关闭">&times;</button>
             </div>
-            <div id="adminAuditBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+            <div id="adminAuditBody" class="modal-scroll-body">加载中...</div>
         </div>
     </div>
 
     <div class="modal-overlay" id="adminPendingModal" data-dismiss="adminPendingModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width: 760px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal glass modal-admin-wide">
             <div class="modal-header">
                 <h3>🧷 待发布补偿队列</h3>
                 <button class="modal-close" type="button" data-dismiss="adminPendingModal" aria-label="关闭">&times;</button>
             </div>
-            <div id="adminPendingBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+            <div id="adminPendingBody" class="modal-scroll-body">加载中...</div>
         </div>
     </div>
 
     <div class="modal-overlay" id="adminOpsModal" data-dismiss="adminOpsModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width: 860px; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+        <div class="modal glass modal-admin-ops">
             <div class="modal-header">
                 <h3>🚨 运维监控</h3>
                 <button class="modal-close" type="button" data-dismiss="adminOpsModal" aria-label="关闭">&times;</button>
             </div>
-            <div id="adminOpsBody" style="overflow: auto; flex: 1; padding: 0 1rem 1rem;">加载中...</div>
+            <div id="adminOpsBody" class="modal-scroll-body">加载中...</div>
         </div>
     </div>
 
@@ -427,9 +478,9 @@
                 <h3>🔔 通知</h3>
                 <button class="modal-close" type="button" data-dismiss="notificationModal" aria-label="关闭">&times;</button>
             </div>
-            <div style="display:flex; justify-content:space-between; margin-bottom:1rem; align-items:center;">
-                <span style="font-size:0.8rem; color:var(--text-secondary);">最近收到的消息</span>
-                <button class="btn btn-ghost" id="notificationReadAllBtn" type="button" style="padding:0.2rem 0.5rem; font-size:0.75rem;">全部已读</button>
+            <div class="notification-modal-toolbar">
+                <span class="notification-modal-meta">最近收到的消息</span>
+                <button class="btn btn-ghost notification-read-all-btn" id="notificationReadAllBtn" type="button">全部已读</button>
             </div>
             <div id="notificationList">
                 <!-- Loaded via JS -->
@@ -439,57 +490,57 @@
 
     <!-- Donate Modal -->
     <div class="modal-overlay" id="donateModal" data-dismiss="donateModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="text-align: center;">
+        <div class="modal glass donate-modal">
             <div class="modal-header">
                 <h3>☕ 赞赏站长</h3>
                 <button class="modal-close" type="button" data-dismiss="donateModal" aria-label="关闭">&times;</button>
             </div>
-            <div style="font-size: 3rem; margin-bottom: 1rem;">🙏</div>
-            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+            <div class="donate-hero-icon">🙏</div>
+            <p class="donate-modal-copy">
                 如果您喜欢这个平台，欢迎打赏支持服务器和开发费用。<br>
                 您的支持是我们坚持下去的动力！
             </p>
             
             <div class="donate-address-block">
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">官方接收地址 (BSC USDT)</p>
-                <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
-                    <code style="color: var(--accent-purple); word-break: break-all;" id="donateAddress">—</code>
-                    <button class="btn btn-ghost" type="button" data-action="donate-copy-address" style="padding: 0.2rem 0.5rem;">📋</button>
+                <p class="donate-address-label">官方接收地址 (BSC USDT)</p>
+                <div class="donate-address-row">
+                    <code class="donate-address-code" id="donateAddress">—</code>
+                    <button class="btn btn-ghost donate-copy-btn" type="button" data-action="donate-copy-address">📋</button>
                 </div>
             </div>
             <div class="donate-amount-group">
-                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.8rem;">选择金额或自定义（USDT）</p>
-                <div style="display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; margin-bottom: 0.8rem;">
+                <p class="donate-amount-label">选择金额或自定义（USDT）</p>
+                <div class="donate-preset-row">
                     <button class="btn btn-ghost" type="button" data-action="donate-send-preset" data-amount="1">💰 1 USDT</button>
                     <button class="btn btn-ghost" type="button" data-action="donate-send-preset" data-amount="5">💰 5 USDT</button>
                     <button class="btn btn-primary" type="button" data-action="donate-send-preset" data-amount="10">💎 10 USDT</button>
                 </div>
-                <div class="form-group" style="margin-bottom: 0.8rem;">
+                <div class="form-group donate-custom-group">
                     <label class="form-label">自定义金额 (USDT)</label>
                     <input type="number" id="donateCustomAmount" class="form-input" min="0.1" step="0.1" placeholder="输入金额">
                 </div>
             </div>
-            <button class="btn btn-primary" type="button" data-action="donate-send-custom" style="width: 100%;">确认打赏上述金额</button>
+            <button class="btn btn-primary donate-submit-btn" type="button" data-action="donate-send-custom">确认打赏上述金额</button>
         </div>
     </div>
 
     <!-- 打赏作者模态框：USDT 直接转入作者钱包，不经过平台、无抽成 -->
     <div class="modal-overlay" id="tipAuthorModal" data-dismiss="tipAuthorModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="text-align: left;">
+        <div class="modal glass tip-author-modal">
             <div class="modal-header">
                 <h3>💰 打赏作者</h3>
                 <button class="modal-close" type="button" data-dismiss="tipAuthorModal" aria-label="关闭">&times;</button>
             </div>
-            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.6rem;">
-                打赏将<strong style="color: var(--accent-green);">直接转入作者绑定的钱包</strong>，不经过平台、无抽成。
+            <p class="tip-author-copy">
+                打赏将<strong class="tip-author-highlight">直接转入作者绑定的钱包</strong>，不经过平台、无抽成。
             </p>
-            <div style="margin-bottom: 1rem; padding: 0.6rem; background: var(--bg-secondary); border-radius: 8px; font-size: 0.85rem;">
-                <strong style="color: var(--text-secondary);">发帖人钱包ID：</strong>
-                <span id="tipAuthorAddressDisplay" style="word-break: break-all; color: var(--accent-green);">-</span>
-                <button type="button" class="btn btn-ghost btn-sm" id="tipAuthorCopyBtn" style="margin-left: 0.5rem; display: none;" data-action="tip-author-copy">复制</button>
+            <div class="tip-author-address-block">
+                <strong class="tip-author-address-label">发帖人钱包ID：</strong>
+                <span id="tipAuthorAddressDisplay" class="tip-author-address-value">-</span>
+                <button type="button" class="btn btn-ghost btn-sm tip-author-copy-btn" id="tipAuthorCopyBtn" hidden data-action="tip-author-copy">复制</button>
             </div>
-            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem;">选择金额 (USDT)</p>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.8rem;">
+            <p class="tip-author-amount-label">选择金额 (USDT)</p>
+            <div class="tip-author-preset-row">
                 <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="1">1 USDT</button>
                 <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="5">5 USDT</button>
                 <button class="btn btn-ghost" type="button" data-action="tip-amount-preset" data-amount="10">10 USDT</button>
@@ -498,7 +549,7 @@
                 <label class="form-label">金额 (USDT，可自定义，最低 1)</label>
                 <input type="number" id="tipAmountInput" class="form-input" value="1" min="1" step="0.1" placeholder="1">
             </div>
-            <button class="btn btn-primary" type="button" data-action="tip-author-send" style="width: 100%;">确认打赏</button>
+            <button class="btn btn-primary donate-submit-btn" type="button" data-action="tip-author-send">确认打赏</button>
         </div>
     </div>
 
@@ -514,12 +565,12 @@
     </div>
     
     <div class="modal-overlay" id="noticeCenterModal" data-dismiss="noticeCenterModal" role="dialog" aria-modal="true">
-        <div class="modal glass" style="max-width:760px; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;">
+        <div class="modal glass modal-admin-wide">
             <div class="modal-header">
                 <h3 id="noticeCenterTitle">📣 公告</h3>
                 <button class="modal-close" type="button" data-dismiss="noticeCenterModal" aria-label="关闭">&times;</button>
             </div>
-            <div id="noticeCenterBody" style="overflow:auto; flex:1; padding:0 0.2rem 0.5rem;">加载中...</div>
+            <div id="noticeCenterBody" class="notice-center-body">加载中...</div>
         </div>
     </div>
 

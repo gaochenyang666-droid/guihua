@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#7c3aed">
-    <title>登录 - 诡话</title>
+    {% include 'partials/seo_meta.html' %}
     <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
     <link rel="shortcut icon" href="/static/logo.svg">
     <link rel="apple-touch-icon" href="/static/logo.svg">
@@ -27,12 +27,12 @@
         </div>
     </nav>
 
-    <main class="container" style="max-width: 520px; margin: 1.5rem auto; padding: 0 1rem;">
-        <section class="glass" style="padding:1.2rem; border-radius: var(--radius-lg);">
-            <h2 style="margin-bottom:0.8rem;">欢迎回来</h2>
-            <p style="color:var(--text-secondary); font-size:0.88rem; margin-bottom:1rem;">登录后继续查看和创作帖子。</p>
+    <main class="container login-page-shell">
+        <section class="glass login-card">
+            <h2 class="login-card-title">欢迎回来</h2>
+            <p class="login-card-subtitle">登录后继续查看和创作帖子。</p>
 
-            <div id="loginModeBar" style="display:flex; gap:0.5rem; margin-bottom:0.9rem; flex-wrap:wrap;">
+            <div id="loginModeBar" class="login-mode-bar">
                 <button class="btn btn-primary btn-sm" id="modeLoginBtn" type="button">账号登录</button>
                 <button class="btn btn-ghost btn-sm" id="modeRegisterBtn" type="button">注册账号</button>
                 <button class="btn btn-ghost btn-sm" id="modePasswordBtn" type="button">修改密码</button>
@@ -47,10 +47,10 @@
                     <label class="form-label">密码</label>
                     <input class="form-input" id="loginPassword" type="password" autocomplete="current-password" required>
                 </div>
-                <button class="btn btn-primary" style="width:100%;" type="submit" id="loginSubmitBtn">登录</button>
+                <button class="btn btn-primary login-submit-btn" type="submit" id="loginSubmitBtn">登录</button>
             </form>
 
-            <form id="registerForm" style="display:none;">
+            <form id="registerForm" hidden>
                 <div class="form-group">
                     <label class="form-label">用户名</label>
                     <input class="form-input" id="registerUsername" type="text" maxlength="50" autocomplete="username">
@@ -59,10 +59,10 @@
                     <label class="form-label">密码（至少 6 位）</label>
                     <input class="form-input" id="registerPassword" type="password" autocomplete="new-password">
                 </div>
-                <button class="btn btn-primary" style="width:100%;" type="submit" id="registerSubmitBtn">创建账号并登录</button>
+                <button class="btn btn-primary login-submit-btn" type="submit" id="registerSubmitBtn">创建账号并登录</button>
             </form>
 
-            <form id="passwordForm" style="display:none;">
+            <form id="passwordForm" hidden>
                 <div class="form-group">
                     <label class="form-label">用户名</label>
                     <input class="form-input" id="passwordUsername" type="text" maxlength="50" autocomplete="username">
@@ -75,17 +75,17 @@
                     <label class="form-label">新密码（至少 6 位）</label>
                     <input class="form-input" id="passwordNew" type="password" autocomplete="new-password">
                 </div>
-                <button class="btn btn-primary" style="width:100%;" type="submit" id="passwordSubmitBtn">确认修改</button>
+                <button class="btn btn-primary login-submit-btn" type="submit" id="passwordSubmitBtn">确认修改</button>
             </form>
 
-            <div style="display:flex; align-items:center; gap:0.5rem; margin:1rem 0;">
-                <div style="height:1px; flex:1; background:var(--border-color);"></div>
-                <span style="font-size:0.78rem; color:var(--text-muted);">或</span>
-                <div style="height:1px; flex:1; background:var(--border-color);"></div>
+            <div class="login-divider">
+                <div class="login-divider-line"></div>
+                <span class="login-divider-text">或</span>
+                <div class="login-divider-line"></div>
             </div>
 
-            <button class="btn btn-ghost" style="width:100%;" id="walletLoginBtn" type="button">🦊 钱包登录（多种钱包）</button>
-            <p style="font-size:0.78rem; color:var(--text-muted); margin-top:0.7rem;">如控制台出现 `inpage.js: Origin not allowed`，通常是钱包扩展自身告警，不影响本站登录逻辑。</p>
+            <button class="btn btn-ghost login-submit-btn" id="walletLoginBtn" type="button">🦊 钱包登录（多种钱包）</button>
+            <p class="login-help-text">如控制台出现 `inpage.js: Origin not allowed`，通常是钱包扩展自身告警，不影响本站登录逻辑。</p>
         </section>
     </main>
 
@@ -96,7 +96,7 @@
                 <button class="modal-close" type="button" id="loginWalletSelectCloseBtn">&times;</button>
             </div>
             <div id="loginWalletSelectList"></div>
-            <div id="loginWalletSelectQr" class="wallet-select-qr" style="display:none;"></div>
+            <div id="loginWalletSelectQr" class="wallet-select-qr" hidden></div>
         </div>
     </div>
 

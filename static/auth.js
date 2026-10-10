@@ -73,9 +73,18 @@
                 var login = document.getElementById('loginFormContainer');
                 var reg = document.getElementById('registerFormContainer');
                 var cp = document.getElementById('changePasswordFormContainer');
-                if (login) login.style.display = (mode === 'login') ? 'block' : 'none';
-                if (reg) reg.style.display = (mode === 'register') ? 'block' : 'none';
-                if (cp) cp.style.display = (mode === 'changePassword') ? 'block' : 'none';
+                if (login) {
+                    login.hidden = mode !== 'login';
+                    login.style.display = (mode === 'login') ? 'block' : 'none';
+                }
+                if (reg) {
+                    reg.hidden = mode !== 'register';
+                    reg.style.display = (mode === 'register') ? 'block' : 'none';
+                }
+                if (cp) {
+                    cp.hidden = mode !== 'changePassword';
+                    cp.style.display = (mode === 'changePassword') ? 'block' : 'none';
+                }
             },
             async fetchNonceForAddress(address) {
                 var nonceResult = await apiJson(API_BASE + '/auth/nonce?address=' + encodeURIComponent(address), {
@@ -218,6 +227,7 @@
                     return;
                 }
                 if (qrWrap) {
+                    qrWrap.hidden = true;
                     qrWrap.style.display = 'none';
                     qrWrap.innerHTML = '';
                 }
@@ -234,7 +244,7 @@
                 listEl.innerHTML =
                     '<div class="wallet-select-group-title">已安装</div>' +
                     '<div class="wallet-select-list">' +
-                        (groups.installed.length ? groups.installed.map(renderItem).join('') : '<div class="wallet-select-sub" style="padding:0.35rem 0.2rem;">未检测到注入钱包，可使用 WalletConnect 扫码登录。</div>') +
+                        (groups.installed.length ? groups.installed.map(renderItem).join('') : '<div class="wallet-select-sub wallet-select-sub-padded">未检测到注入钱包，可使用 WalletConnect 扫码登录。</div>') +
                     '</div>' +
                     '<div class="wallet-select-group-title">其他方式</div>' +
                     '<div class="wallet-select-list">' + groups.others.map(renderItem).join('') + '</div>';
@@ -305,11 +315,13 @@
                     var qrWrap = document.getElementById(qrContainerId);
                     if (qrWrap) {
                         qrWrap.style.display = 'block';
-                        qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
+                        qrWrap.hidden = false;
+                        qrWrap.innerHTML = '<p class="wallet-select-qr-hint">请使用币安钱包 / Trust Wallet 扫码</p>';
                     }
                     provider.on('display_uri', function (uri) {
                         if (!qrWrap) return;
-                        qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
+                        qrWrap.hidden = false;
+                        qrWrap.innerHTML = '<p class="wallet-select-qr-hint">请使用币安钱包 / Trust Wallet 扫码</p>';
                         new QRCode(qrWrap, { text: uri, width: 220, height: 220 });
                     });
                     await provider.connect({

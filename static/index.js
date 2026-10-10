@@ -139,10 +139,8 @@
                     if(!notifBtn) {
                         notifBtn = document.createElement('div');
                         notifBtn.id = 'notifBtn';
-                        notifBtn.style.position = 'relative';
-                        notifBtn.style.cursor = 'pointer';
-                        notifBtn.style.marginRight = '0.5rem';
-                        notifBtn.innerHTML = '<span style="font-size:1.2rem;">🔔</span><div id="notifBadge" style="position:absolute; top:-2px; right:-2px; width:8px; height:8px; background:var(--accent-red); border-radius:50%; display:none;"></div>';
+                        notifBtn.className = 'nav-notif-btn';
+                        notifBtn.innerHTML = '<span class="nav-notif-icon">🔔</span><div id="notifBadge" class="nav-notif-badge" hidden></div>';
                         notifBtn.onclick = () => {
                             if (typeof navigateWithTransition === 'function') navigateWithTransition('/notifications');
                             else window.location.href = '/notifications';
@@ -155,9 +153,7 @@
                     if(!profileLink) {
                         profileLink = document.createElement('a');
                         profileLink.id = 'profileLink';
-                        profileLink.className = 'btn btn-ghost';
-                        profileLink.style.padding = '0.3rem 0.6rem';
-                        profileLink.style.fontSize = '0.8rem';
+                        profileLink.className = 'btn btn-ghost nav-user-link';
                         profileLink.textContent = '👤 我的主页';
                     }
                     profileLink.href = `/profile?user=${currentUser.username || currentUser.address}`;
@@ -167,11 +163,7 @@
                     if(!bindBtn) {
                         bindBtn = document.createElement('button');
                         bindBtn.id = 'bindWalletBtn';
-                        bindBtn.className = 'btn btn-ghost';
-                        bindBtn.style.padding = '0.3rem 0.6rem';
-                        bindBtn.style.fontSize = '0.8rem';
-                        bindBtn.style.color = 'var(--accent-orange)';
-                        bindBtn.style.borderColor = 'var(--accent-orange)';
+                        bindBtn.className = 'btn btn-ghost nav-user-link nav-bind-wallet-btn';
                         bindBtn.textContent = '🔗 绑定钱包';
                         bindBtn.onclick = Auth.bindWallet;
                     }
@@ -179,8 +171,7 @@
                     const logoutBtn = document.getElementById('logoutBtn');
                     if (logoutBtn) userMenuMain.appendChild(logoutBtn);
 
-                    if(bindBtn && currentUser.address) bindBtn.style.display = 'none';
-                    else if (bindBtn) bindBtn.style.display = 'inline-flex';
+                    if (bindBtn) bindBtn.hidden = !!currentUser.address;
 
                     if(currentUser.is_admin) {
                         userMenuAdminSection.hidden = false;
@@ -188,57 +179,42 @@
                         if(!statsBtn) {
                             statsBtn = document.createElement('button');
                             statsBtn.id = 'adminStatsBtn';
-                            statsBtn.className = 'btn btn-ghost';
-                            statsBtn.style.color = 'var(--accent-gold)';
-                            statsBtn.style.borderColor = 'var(--accent-gold)';
+                            statsBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-gold';
                             statsBtn.textContent = '📊 看板';
                             statsBtn.onclick = Admin.openStats;
                             const reportsBtn = document.createElement('button');
                             reportsBtn.id = 'adminReportsBtn';
-                            reportsBtn.className = 'btn btn-ghost';
-                            reportsBtn.style.color = 'var(--accent-red)';
-                            reportsBtn.style.borderColor = 'var(--accent-red)';
+                            reportsBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-red';
                             reportsBtn.textContent = '🚩 举报';
                             reportsBtn.onclick = Admin.openReports;
                             const usersBtn = document.createElement('button');
                             usersBtn.id = 'adminUsersBtn';
-                            usersBtn.className = 'btn btn-ghost';
-                            usersBtn.style.color = 'var(--accent-purple)';
-                            usersBtn.style.borderColor = 'var(--accent-purple)';
+                            usersBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-purple';
                             usersBtn.textContent = '👥 用户';
                             usersBtn.onclick = Admin.openUsers;
                             const annBtn = document.createElement('button');
                             annBtn.id = 'adminAnnBtn';
-                            annBtn.className = 'btn btn-ghost';
-                            annBtn.style.color = 'var(--accent-orange)';
-                            annBtn.style.borderColor = 'var(--accent-orange)';
+                            annBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-orange';
                             annBtn.textContent = '📣 公告';
                             annBtn.onclick = Admin.openAnnouncements;
                             const groupBtn = document.createElement('button');
                             groupBtn.id = 'adminGroupLinksBtn';
-                            groupBtn.className = 'btn btn-ghost';
-                            groupBtn.style.color = 'var(--accent-green)';
-                            groupBtn.style.borderColor = 'var(--accent-green)';
+                            groupBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-green';
                             groupBtn.textContent = '🛰️ 群链接';
                             groupBtn.onclick = Admin.editGroupLinks;
                             const auditBtn = document.createElement('button');
                             auditBtn.id = 'adminAuditBtn';
-                            auditBtn.className = 'btn btn-ghost';
-                            auditBtn.style.color = 'var(--text-secondary)';
+                            auditBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-muted';
                             auditBtn.textContent = '🧾 日志';
                             auditBtn.onclick = Admin.openAuditLogs;
                             const opsBtn = document.createElement('button');
                             opsBtn.id = 'adminOpsBtn';
-                            opsBtn.className = 'btn btn-ghost';
-                            opsBtn.style.color = 'var(--accent-red)';
-                            opsBtn.style.borderColor = 'var(--accent-red)';
+                            opsBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-red';
                             opsBtn.textContent = '🚨 告警';
                             opsBtn.onclick = Admin.openOpsSummary;
                             const pendingBtn = document.createElement('button');
                             pendingBtn.id = 'adminPendingBtn';
-                            pendingBtn.className = 'btn btn-ghost';
-                            pendingBtn.style.color = 'var(--accent-orange)';
-                            pendingBtn.style.borderColor = 'var(--accent-orange)';
+                            pendingBtn.className = 'btn btn-ghost nav-admin-link nav-admin-link-orange';
                             pendingBtn.textContent = '🧷 待发布';
                             pendingBtn.onclick = Admin.openPendingPublications;
                             const addAdminAction = (el) => {

@@ -100,7 +100,7 @@ def get_posts_fallback(page, per_page, current_user_id):
             rows = db.session.execute(text("""
                 SELECT id, title, content, author_id, created_at, cover_image, images, view_count,
                        tx_hash, ipfs_cid, is_paid, region, is_on_chain, post_type, is_hidden, allow_comments,
-                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment, tags,
+                       is_special_announcement, is_pinned, pinned_at, pinned_by, is_repost, original_post_id, repost_comment,
                        slug, excerpt, seo_title, seo_description, updated_at
                 FROM posts WHERE is_hidden = false
                   AND title NOT ILIKE 'QA 系列帖 %'
@@ -197,7 +197,6 @@ def get_posts_fallback(page, per_page, current_user_id):
                 view_count = getattr(p, 'view_count', 0)
                 tx_hash = getattr(p, 'tx_hash', None)
                 ipfs_cid = getattr(p, 'ipfs_cid', None)
-                tags_raw = getattr(p, 'tags', None)
                 slug = getattr(p, 'slug', None)
                 excerpt = getattr(p, 'excerpt', None)
                 seo_title = getattr(p, 'seo_title', None)
@@ -239,12 +238,11 @@ def get_posts_fallback(page, per_page, current_user_id):
                 is_repost = r[20] if len(r) > 20 else False
                 original_post_id = r[21] if len(r) > 21 else None
                 repost_comment = r[22] if len(r) > 22 else None
-                tags_raw = r[23] if len(r) > 23 else None
-                slug = r[24] if len(r) > 24 else None
-                excerpt = r[25] if len(r) > 25 else None
-                seo_title = r[26] if len(r) > 26 else None
-                seo_description = r[27] if len(r) > 27 else None
-                updated_at = r[28] if len(r) > 28 else None
+                slug = r[23] if len(r) > 23 else None
+                excerpt = r[24] if len(r) > 24 else None
+                seo_title = r[25] if len(r) > 25 else None
+                seo_description = r[26] if len(r) > 26 else None
+                updated_at = r[27] if len(r) > 27 else None
 
             images_list = []
             if images_raw:
@@ -252,14 +250,6 @@ def get_posts_fallback(page, per_page, current_user_id):
                     images_list = json.loads(images_raw) if isinstance(images_raw, str) else (images_raw or [])
                 except (TypeError, ValueError):
                     pass
-            tags_list = []
-            if tags_raw:
-                try:
-                    tags_list = json.loads(tags_raw) if isinstance(tags_raw, str) else (tags_raw or [])
-                except (TypeError, ValueError):
-                    pass
-            if not isinstance(tags_list, list):
-                tags_list = []
             is_permanent = bool(tx_hash or ipfs_cid or is_on_chain or post_type == 1)
             p_likes_count = like_counts.get(pid, 0)
             p_comments_count = comment_counts.get(pid, 0)
@@ -278,7 +268,6 @@ def get_posts_fallback(page, per_page, current_user_id):
                 'content': content,
                 'cover_image': cover_image,
                 'images': images_list,
-                'tags': tags_list,
                 'author': authors_map.get(author_id, {'id': author_id, 'nickname': '用户', 'avatar': '👻', 'honor_title': '新魂'}),
                 'view_count': view_count,
                 'likes_count': p_likes_count,

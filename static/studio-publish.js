@@ -121,13 +121,11 @@
                 const quill = getQuill();
                 const title = document.getElementById('studioPostTitle').value;
                 const content = quill ? quill.root.innerHTML : '';
-                const tags = this.parseTagsInput();
                 const seriesId = this.seriesSelectValue();
                 const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const data = {
                     title,
                     content,
-                    tags,
                     series_id: seriesId || null,
                     tx_hash: txHash !== undefined ? txHash : (this.pendingTxHash || null),
                     is_special_announcement: specialChecked,
@@ -168,10 +166,6 @@
                     this.pendingTxHash = pending.tx_hash;
                     if (pending.title) document.getElementById('studioPostTitle').value = pending.title;
                     if (pending.content && quill) quill.clipboard.dangerouslyPasteHTML(pending.content);
-                    if (Array.isArray(pending.tags)) {
-                        const tagsInput = document.getElementById('studioPostTags');
-                        if (tagsInput) tagsInput.value = pending.tags.join(', ');
-                    }
                     const seriesVal = (pending.series_id == null ? '' : String(pending.series_id));
                     this.loadSeriesOptions(seriesVal);
                     const specialBox = document.getElementById('adminSpecialPostCheckbox');
@@ -206,10 +200,6 @@
                     this.pendingTxHash = p.tx_hash;
                     if (p.title) document.getElementById('studioPostTitle').value = p.title;
                     if (p.content && quill) quill.clipboard.dangerouslyPasteHTML(p.content);
-                    if (Array.isArray(p.tags)) {
-                        const tagsInput = document.getElementById('studioPostTags');
-                        if (tagsInput) tagsInput.value = p.tags.join(', ');
-                    }
                     const seriesVal = (p.series_id == null ? '' : String(p.series_id));
                     this.loadSeriesOptions(seriesVal);
                     const specialBox = document.getElementById('adminSpecialPostCheckbox');
@@ -404,7 +394,7 @@
                 poll();
             },
 
-            async resumePendingPublication(txHash, title, content, tags, seriesId, specialChecked) {
+            async resumePendingPublication(txHash, title, content, seriesId, specialChecked) {
                 this.addLog('检测到已支付交易，正在走服务端补偿发布...');
                 const result = await apiJson(`${apiBase}/posts/pending/retry`, {
                     method: 'POST',
@@ -412,7 +402,6 @@
                         tx_hash: txHash,
                         title,
                         content,
-                        tags,
                         series_id: seriesId || null,
                         is_special_announcement: specialChecked,
                         region: '其他'
@@ -451,7 +440,6 @@
                 }
                 const title = document.getElementById('studioPostTitle').value;
                 const content = quill ? quill.root.innerHTML : '';
-                const tags = this.parseTagsInput();
                 const seriesId = this.seriesSelectValue();
                 const specialChecked = !!(document.getElementById('adminSpecialPostCheckbox') && document.getElementById('adminSpecialPostCheckbox').checked);
                 const btn = document.getElementById('publishBtn');
@@ -465,7 +453,7 @@
                     const pre = await this.runPrecheck();
                     if (!pre.ok) throw new Error((pre.issues && pre.issues[0]) || '发布前检查未通过');
                     if (txHash) {
-                        const resumed = await this.resumePendingPublication(txHash, title, content, tags, seriesId, specialChecked);
+                        const resumed = await this.resumePendingPublication(txHash, title, content, seriesId, specialChecked);
                         if (resumed && resumed.handled) return;
                     }
 
@@ -542,7 +530,6 @@
                             title,
                             content,
                             tx_hash: txHash,
-                            tags,
                             series_id: seriesId || null,
                             is_special_announcement: specialChecked,
                             images: [],
@@ -604,7 +591,6 @@
                 const title = document.getElementById('studioPostTitle').value.trim();
                 const content = quill ? quill.root.innerHTML : '';
                 const textContent = quill ? quill.getText().trim() : '';
-                const tags = this.parseTagsInput();
                 const seriesId = this.seriesSelectValue();
                 if (!title) return Toast.error('请填写标题');
                 if (!textContent) return Toast.error('请填写正文');
@@ -617,7 +603,6 @@
                         body: {
                             title,
                             content,
-                            tags,
                             series_id: seriesId || null,
                             is_special_announcement: specialChecked,
                             images: [],

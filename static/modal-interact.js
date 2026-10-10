@@ -107,7 +107,7 @@
                 }
             },
 
-            async openDetail(evtOrId, idMaybe) {
+            async openDetail(evtOrId, idMaybe, urlMaybe) {
                 var isEventLike = !!(evtOrId && typeof evtOrId === 'object' && typeof evtOrId.preventDefault === 'function');
                 if (isEventLike) {
                     evtOrId.preventDefault();
@@ -116,7 +116,7 @@
                 var targetIdRaw = isEventLike ? idMaybe : evtOrId;
                 var targetId = Number(targetIdRaw);
                 if (!Number.isFinite(targetId) || targetId <= 0) return;
-                var next = '/post/' + targetId;
+                var next = (typeof urlMaybe === 'string' && urlMaybe.trim()) ? urlMaybe.trim() : ('/post/' + targetId);
                 if (typeof navigateWithTransition === 'function') navigateWithTransition(next);
                 else window.location.href = next;
             }

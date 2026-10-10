@@ -1,7 +1,11 @@
 (function () {
     'use strict';
 
-    function getShareUrl(postId) {
+    function getShareUrl(postId, storyUrl) {
+        if (storyUrl && typeof storyUrl === 'string' && storyUrl.trim()) {
+            if (/^https?:\/\//i.test(storyUrl)) return storyUrl.trim();
+            return window.location.origin + '/' + storyUrl.replace(/^\/+/, '');
+        }
         var id = Number(postId);
         if (!Number.isFinite(id) || id <= 0) return '';
         return window.location.origin + '/post/' + id;
@@ -15,14 +19,16 @@
     async function share(refOrPostId, titleMaybe) {
         var postId = null;
         var title = '';
+        var storyUrl = '';
         if (refOrPostId && typeof refOrPostId === 'object' && typeof refOrPostId.getAttribute === 'function') {
             postId = Number(refOrPostId.getAttribute('data-post-id'));
             title = refOrPostId.getAttribute('data-title') || '';
+            storyUrl = refOrPostId.getAttribute('data-story-url') || '';
         } else {
             postId = Number(refOrPostId);
             title = String(titleMaybe || '');
         }
-        var url = getShareUrl(postId);
+        var url = getShareUrl(postId, storyUrl);
         if (!url) return false;
         var text = getShareText(title);
         if (navigator.share) {

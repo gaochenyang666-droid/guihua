@@ -32,6 +32,9 @@
         const modeRegisterBtn = document.getElementById('modeRegisterBtn');
         const modePasswordBtn = document.getElementById('modePasswordBtn');
 
+        loginForm.hidden = mode !== 'login';
+        registerForm.hidden = mode !== 'register';
+        passwordForm.hidden = mode !== 'password';
         loginForm.style.display = (mode === 'login') ? '' : 'none';
         registerForm.style.display = (mode === 'register') ? '' : 'none';
         passwordForm.style.display = (mode === 'password') ? '' : 'none';
@@ -49,7 +52,13 @@
 
     function closeWalletSelector() {
         const modal = document.getElementById('loginWalletSelectModal');
+        const qrWrap = document.getElementById('loginWalletSelectQr');
         if (modal) modal.classList.remove('active');
+        if (qrWrap) {
+            qrWrap.hidden = true;
+            qrWrap.innerHTML = '';
+            qrWrap.style.display = 'none';
+        }
     }
 
     async function copyText(text, successMsg) {
@@ -200,12 +209,14 @@
 
             const qrWrap = document.getElementById(qrContainerId);
             if (qrWrap) {
+                qrWrap.hidden = false;
                 qrWrap.style.display = 'block';
-                qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
+                qrWrap.innerHTML = '<p class="wallet-select-qr-hint">请使用币安钱包 / Trust Wallet 扫码</p>';
             }
             provider.on('display_uri', function (uri) {
                 if (!qrWrap) return;
-                qrWrap.innerHTML = '<p style="margin-bottom:0.55rem; color:var(--text-secondary);">请使用币安钱包 / Trust Wallet 扫码</p>';
+                qrWrap.hidden = false;
+                qrWrap.innerHTML = '<p class="wallet-select-qr-hint">请使用币安钱包 / Trust Wallet 扫码</p>';
                 new QRCode(qrWrap, { text: uri, width: 220, height: 220 });
             });
 
@@ -237,6 +248,7 @@
             return;
         }
         if (qrWrap) {
+            qrWrap.hidden = true;
             qrWrap.style.display = 'none';
             qrWrap.innerHTML = '';
         }
@@ -255,7 +267,7 @@
         listEl.innerHTML = `
             <div class="wallet-select-group-title">已安装</div>
             <div class="wallet-select-list">
-                ${groups.installed.length ? groups.installed.map(renderItem).join('') : '<div class="wallet-select-sub" style="padding:0.35rem 0.2rem;">未检测到注入钱包，可使用 WalletConnect 扫码登录。</div>'}
+                ${groups.installed.length ? groups.installed.map(renderItem).join('') : '<div class="wallet-select-sub wallet-select-sub-padded">未检测到注入钱包，可使用 WalletConnect 扫码登录。</div>'}
             </div>
             <div class="wallet-select-group-title">其他方式</div>
             <div class="wallet-select-list">${groups.others.map(renderItem).join('')}</div>

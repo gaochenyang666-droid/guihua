@@ -151,8 +151,8 @@
         return series.map(function (s) {
             return (
                 '<div class="series-block">' +
-                '<div style="margin-bottom:0.35rem;">📚 所属系列：<a href="/series/' + Number(s.series_id) + '" data-no-transition="1" style="color:var(--accent-purple-light); text-decoration:underline;">' + escapeHtml(s.title || '') + '</a> · 第 ' + Number(s.order_index || 0) + ' 篇</div>' +
-                '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">' +
+                '<div class="series-block-title">📚 所属系列：<a class="series-block-link" href="/series/' + Number(s.series_id) + '" data-no-transition="1">' + escapeHtml(s.title || '') + '</a> · 第 ' + Number(s.order_index || 0) + ' 篇</div>' +
+                '<div class="series-block-actions">' +
                 (s.prev_post_id ? '<a class="btn btn-ghost btn-sm" href="/post/' + Number(s.prev_post_id) + '" data-no-transition="1">⬅️ 上一篇</a>' : '') +
                 (s.next_post_id ? '<a class="btn btn-ghost btn-sm" href="/post/' + Number(s.next_post_id) + '" data-no-transition="1">➡️ 下一篇</a>' : '') +
                 '</div>' +
@@ -170,28 +170,28 @@
         var seriesHtml = renderSeries(p.series || []);
         var canComment = !!(p.allow_comments || (currentUser && currentUser.is_admin));
         var meta = [
-            (p.is_special_announcement ? '<span style="color:var(--accent-orange); font-weight:700;">📜 长公告</span>' : ''),
-            (p.is_pinned ? '<span style="color:var(--accent-gold); font-weight:700;">📌 置顶</span>' : ''),
+            (p.is_special_announcement ? '<span class="post-meta-flag post-meta-flag-warning">📜 长公告</span>' : ''),
+            (p.is_pinned ? '<span class="post-meta-flag post-meta-flag-pinned">📌 置顶</span>' : ''),
             '发布者: ' + escapeHtml((p.author && p.author.nickname) || '用户') + ' ' + renderAuthorBadge(p.author) + ' ' + ((p.author && p.author.id != null) ? formatUserId(p.author.id, p.author) : ''),
             '浏览: ' + Number(p.view_count || 0)
         ].filter(Boolean).join(' | ');
         var adminControls = '';
         if (currentUser && currentUser.is_admin) {
             adminControls =
-                '<div style="margin-top:1rem; padding-top:1rem; border-top:1px dashed var(--accent-red); color:var(--accent-red);">' +
-                    '<div style="margin-bottom:0.5rem; font-size:0.82rem; font-weight:700;">👮 管理员操作</div>' +
-                    '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">' +
-                        '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-delete" style="border-color:var(--accent-red); color:var(--accent-red);">删除帖子</button>' +
+                '<div class="post-admin-panel">' +
+                    '<div class="post-admin-title">👮 管理员操作</div>' +
+                    '<div class="post-admin-actions">' +
+                        '<button class="btn btn-ghost btn-sm post-admin-danger" type="button" data-action="admin-delete">删除帖子</button>' +
                         '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-toggle-hide">' + (p.is_hidden ? '取消隐藏' : '隐藏帖子') + '</button>' +
                         '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-toggle-comments">' + (p.allow_comments ? '关闭评论' : '开启评论') + '</button>' +
-                        '<button class="btn btn-ghost btn-sm" type="button" data-action="admin-toggle-pin" style="border-color:var(--accent-gold); color:var(--accent-gold);">' + (p.is_pinned ? '取消置顶' : '设为置顶') + '</button>' +
+                        '<button class="btn btn-ghost btn-sm post-admin-pin" type="button" data-action="admin-toggle-pin">' + (p.is_pinned ? '取消置顶' : '设为置顶') + '</button>' +
                     '</div>' +
                 '</div>';
         }
 
         body.innerHTML = '' +
-            '<h2 style="margin-bottom:0.5rem;">' + escapeHtml(p.title || '') + '</h2>' +
-            '<div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem; display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap;">' + meta + '</div>' +
+            '<h2 class="post-detail-title">' + escapeHtml(p.title || '') + '</h2>' +
+            '<div class="post-detail-meta-row">' + meta + '</div>' +
             '<article class="post-detail-content">' + (typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize((p.content == null) ? '' : String(p.content)) : ((p.content == null) ? '' : String(p.content))) + '</article>' +
             (p.ipfs_cid ? (
                 '<section class="post-arweave-footer glass">' +
@@ -209,15 +209,15 @@
                     '</div>' +
                 '</section>'
             ) : '') +
-            '<div class="on-chain-evidence" style="margin-top:1rem; padding:0.75rem; background:var(--bg-secondary); border-radius:8px; font-size:0.85rem;">' +
-                '<div style="color:var(--text-muted); margin-bottom:0.5rem;">' + (isPermanent ? '✅ 已永久保存 · 链上可验' : 'ℹ️ 当前帖子暂未永存') + '</div>' +
-                '<div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem;">' +
-                    (p.tx_hash ? '<a href="https://bscscan.com/tx/' + escapeAttr(p.tx_hash) + '" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证 BSCScan</a>' : '<span style="color:var(--text-muted);">无支付凭证</span>') +
-                    (p.ipfs_cid ? '<a href="https://arweave.net/' + escapeAttr(p.ipfs_cid) + '" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>' : '') +
+            '<div class="on-chain-evidence">' +
+                '<div class="on-chain-evidence-status">' + (isPermanent ? '✅ 已永久保存 · 链上可验' : 'ℹ️ 当前帖子暂未永存') + '</div>' +
+                '<div class="on-chain-evidence-links">' +
+                    (p.tx_hash ? '<a class="on-chain-link on-chain-link-payment" href="https://bscscan.com/tx/' + escapeAttr(p.tx_hash) + '" target="_blank" rel="noopener">⛓ 支付凭证 BSCScan</a>' : '<span class="on-chain-link-muted">无支付凭证</span>') +
+                    (p.ipfs_cid ? '<a class="on-chain-link on-chain-link-storage" href="https://arweave.net/' + escapeAttr(p.ipfs_cid) + '" target="_blank" rel="noopener">💾 永存档案</a>' : '') +
                 '</div>' +
             '</div>' +
             seriesHtml +
-            '<div style="display:flex; gap:0.5rem; margin:1rem 0; border-top:1px solid var(--border-color); padding-top:1rem; flex-wrap:wrap;">' +
+            '<div class="post-detail-actions">' +
                 '<button class="btn btn-ghost" type="button" data-action="like">😰 恐惧 (' + Number(p.likes_count || 0) + ')</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="bookmark">⭐ 收藏' + (p.is_bookmarked ? '（已收）' : '') + '</button>' +
                 '<button class="btn btn-ghost" type="button" data-action="share">🔗 分享</button>' +
@@ -234,9 +234,9 @@
                     '</div>' +
                     '<div class="comments-filter-meta" id="commentsFilterMeta"></div>' +
                 '</div>' +
-                '<div id="postCommentsList" style="margin-bottom:0.8rem;">' + (postComments ? postComments.renderLoadingState() : '') + '</div>' +
+                '<div id="postCommentsList" class="post-comments-list">' + (postComments ? postComments.renderLoadingState() : '') + '</div>' +
                 '<div class="comments-more-wrap"><button class="btn btn-ghost btn-sm" id="commentsMoreBtn" type="button" data-action="more-comments" hidden></button></div>' +
-                '<div style="display:flex; gap:0.5rem;">' +
+                '<div class="post-comment-compose">' +
                     '<input type="text" id="commentInput" class="form-input" placeholder="' + (canComment ? '发表评论...' : '评论区已关闭') + '" ' + (canComment ? '' : 'disabled') + '>' +
                     '<button class="btn btn-primary" id="commentSendBtn" type="button" data-action="comment" ' + (canComment ? '' : 'disabled') + '>发送</button>' +
                 '</div>' +

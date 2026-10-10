@@ -132,24 +132,6 @@ def story_path(post):
 
 
 def derive_category(post):
-    tags = []
-    try:
-        raw_tags = getattr(post, 'tags', None)
-        if isinstance(raw_tags, list):
-            tags = raw_tags
-        elif raw_tags:
-            import json
-            tags = json.loads(raw_tags)
-    except Exception:
-        tags = []
-    tags = [str(tag or '').strip() for tag in tags if str(tag or '').strip()]
-    joined = ' '.join(tags)
-    if '都市传说' in joined:
-        return {'name': '都市传说', 'slug': 'dushichuanshuo'}
-    if '校园' in joined:
-        return {'name': '校园怪谈', 'slug': 'xiaoyuan-guaitan'}
-    if '民间' in joined:
-        return {'name': '民间怪谈', 'slug': 'minjian-guaitan'}
     region = str(getattr(post, 'region', '') or '').strip()
     if region and region != '其他':
         return {'name': f'{region}诡事', 'slug': _slug_base(region)}

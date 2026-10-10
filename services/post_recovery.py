@@ -84,7 +84,6 @@ def retry_pending_publication_for_user(
     pending_model,
     user,
     data,
-    normalize_tags,
     upsert_pending_publication,
     resume_pending_publication,
 ):
@@ -97,7 +96,6 @@ def retry_pending_publication_for_user(
         payload = {
             'title': data.get('title') or '',
             'content': data.get('content') or '',
-            'tags': normalize_tags(data.get('tags') or data.get('tag_names')),
             'region': data.get('region') or '其他',
             'series_id': data.get('series_id'),
             'is_special_announcement': bool(data.get('is_special_announcement')) if user.is_admin else False,

@@ -173,29 +173,6 @@ def ensure_posts_special_column(db_session, dialect):
         print(f'[Startup] posts special column skip: {exc}')
 
 
-def ensure_posts_tags_column(db_session, dialect):
-    try:
-        if dialect == 'postgresql':
-            row = db_session.execute(text(
-                "SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='tags'"
-            ))
-            if row.scalar() is None:
-                db_session.execute(text("ALTER TABLE posts ADD COLUMN tags TEXT"))
-                db_session.commit()
-                print('[Startup] posts.tags added.')
-            return
-        if dialect == 'sqlite':
-            cols = db_session.execute(text("PRAGMA table_info(posts)")).fetchall()
-            existing = {col[1] for col in cols}
-            if 'tags' not in existing:
-                db_session.execute(text("ALTER TABLE posts ADD COLUMN tags TEXT"))
-                db_session.commit()
-                print('[Startup] posts.tags added.')
-    except Exception as exc:
-        db_session.rollback()
-        print(f'[Startup] posts tags column skip: {exc}')
-
-
 def ensure_posts_seo_columns(db_session, dialect):
     targets = (
         ('slug', "VARCHAR(160)", "posts.slug added."),

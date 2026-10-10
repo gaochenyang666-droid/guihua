@@ -312,7 +312,7 @@
                     var required = Number(g.required_level || 1);
                     if (g.unlocked && g.url) {
                         var safeUrl = escapeAttr(g.url);
-                        return '<div class="onboarding-task-item"><span>✅</span><a href="' + safeUrl + '" target="_blank" rel="noopener" style="color:var(--accent-green); text-decoration:underline;">加入' + escapeHtml(g.title || '') + '</a></div>';
+                        return '<div class="onboarding-task-item"><span>✅</span><a href="' + safeUrl + '" target="_blank" rel="noopener" class="group-link-anchor">加入' + escapeHtml(g.title || '') + '</a></div>';
                     }
                     if (g.unlocked && !g.configured) {
                         return '<div class="onboarding-task-item"><span>🛠️</span><span>' + escapeHtml(g.title || '') + ' 链接待管理员配置</span></div>';

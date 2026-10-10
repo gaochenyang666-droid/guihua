@@ -1,5 +1,4 @@
 import re
-import bleach
 
 
 MENTION_PATTERN = re.compile(r'@([A-Za-z0-9_\u4e00-\u9fff]{2,32})')
@@ -37,34 +36,6 @@ def build_post_precheck(user, data):
             'image_count': image_count
         }
     }
-
-
-def normalize_tags(raw):
-    values = []
-    if isinstance(raw, str):
-        values.extend(re.split(r'[,\s，、]+', raw))
-    elif isinstance(raw, list):
-        for item in raw:
-            if isinstance(item, str):
-                values.append(item)
-    clean = []
-    seen = set()
-    for tag in values:
-        t = bleach.clean((tag or '').strip(), tags=[], strip=True)
-        t = t.lstrip('#').strip()
-        if not t:
-            continue
-        if len(t) > 20:
-            t = t[:20]
-        key = t.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        clean.append(t)
-        if len(clean) >= 12:
-            break
-    return clean
-
 
 def extract_mention_tokens(text_value):
     text = (text_value or '').strip()

@@ -65,10 +65,10 @@
         }
         var profileKey = encodeURIComponent(currentUser.username || currentUser.address || currentUser.id || '');
         var bindWalletBtn = !currentUser.address
-            ? '<a class="btn btn-ghost" href="/?bind_wallet=1" data-no-transition="1" style="color:var(--accent-orange); border-color:rgba(249,115,22,0.55);">绑定钱包</a>'
+            ? '<a class="btn btn-ghost profile-bind-wallet-btn" href="/?bind_wallet=1" data-no-transition="1">绑定钱包</a>'
             : '';
         area.innerHTML = '' +
-            '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;">' +
+            '<div class="profile-actions-row">' +
                 '<a class="btn btn-ghost" href="/profile?user=' + profileKey + '" data-no-transition="1">我的主页</a>' +
                 bindWalletBtn +
                 '<button class="btn btn-ghost" type="button" id="profileLogoutBtn">退出</button>' +
@@ -224,10 +224,10 @@
     }
 
     function showProfileError(msg, showBack) {
-        var backHtml = showBack ? '<p style="margin-top:1rem;"><a href="/" class="btn btn-primary">返回首页</a></p>' : '';
+        var backHtml = showBack ? '<p class="profile-error-actions"><a href="/" class="btn btn-primary">返回首页</a></p>' : '';
         var area = document.getElementById('profileArea');
         if (!area) return;
-        area.innerHTML = '<div style="text-align:center; padding: 2rem; color: var(--text-secondary);"><p style="color:var(--accent-red); margin-bottom:0.5rem;">' + escapeHtml(msg) + '</p>' + backHtml + '</div>';
+        area.innerHTML = '<div class="state-error profile-state-card"><p class="profile-error-message">' + escapeHtml(msg) + '</p>' + backHtml + '</div>';
     }
 
     function renderAchievementWallBody() {
@@ -235,7 +235,7 @@
         if (!wall) return;
         var state = myAchievementsState;
         if (!state || !Array.isArray(state.achievements)) {
-            wall.innerHTML = '<div style="color:var(--text-muted); padding:0.8rem;">暂无成就数据</div>';
+            wall.innerHTML = '<div class="state-empty profile-achievement-empty">暂无成就数据</div>';
             return;
         }
         var canEquip = !!state.can_equip;
@@ -248,13 +248,13 @@
             var actionHtml = '';
             if (achievement.key === 'report_privilege') {
                 actionHtml = unlocked
-                    ? '<button class="btn btn-ghost btn-sm" style="border-color:var(--accent-red); color:var(--accent-red);" data-achievement-action="quick-report" type="button">快速举报</button>'
-                    : '<span style="font-size:0.78rem; color:var(--text-muted);">等级不足，无法举报</span>';
+                    ? '<button class="btn btn-ghost btn-sm profile-achievement-report-btn" data-achievement-action="quick-report" type="button">快速举报</button>'
+                    : '<span class="profile-achievement-note">等级不足，无法举报</span>';
             } else if (wearable) {
                 if (!unlocked) {
-                    actionHtml = '<span style="font-size:0.78rem; color:var(--text-muted);">' + (legacy ? '尚未满足解锁条件' : '未达佩戴等级') + '</span>';
+                    actionHtml = '<span class="profile-achievement-note">' + (legacy ? '尚未满足解锁条件' : '未达佩戴等级') + '</span>';
                 } else if (!canEquip) {
-                    actionHtml = '<span style="font-size:0.78rem; color:var(--text-muted);">Lv.3 解锁佩戴按钮</span>';
+                    actionHtml = '<span class="profile-achievement-note">Lv.3 解锁佩戴按钮</span>';
                 } else if (achievement.equipped) {
                     actionHtml = '<button class="btn btn-primary btn-sm" data-achievement-action="unequip" type="button">取消佩戴</button>';
                 } else {
@@ -262,27 +262,27 @@
                 }
             } else if (achievement.key === 'wearable_unlock') {
                 actionHtml = unlocked
-                    ? '<span style="font-size:0.78rem; color:var(--accent-green);">已解锁佩戴能力</span>'
-                    : '<span style="font-size:0.78rem; color:var(--text-muted);">Lv.3 解锁</span>';
+                    ? '<span class="profile-achievement-note is-unlocked">已解锁佩戴能力</span>'
+                    : '<span class="profile-achievement-note">Lv.3 解锁</span>';
             }
             return '' +
-                '<div style="padding:0.75rem; border:1px solid ' + (unlocked ? 'rgba(16,185,129,0.35)' : 'var(--border-color)') + '; border-radius:12px; background:' + (unlocked ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)') + ';">' +
-                    '<div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.35rem;">' +
+                '<div class="profile-achievement-card' + (unlocked ? ' is-unlocked' : '') + '">' +
+                    '<div class="profile-achievement-header">' +
                         '<b>' + escapeHtml(achievement.title || '') + '</b>' +
-                        '<span style="font-size:0.74rem; color:' + (unlocked ? 'var(--accent-green)' : 'var(--text-muted)') + ';">' + (legacy ? '旧成就 · ' : '') + lockedText + '</span>' +
+                        '<span class="profile-achievement-status' + (unlocked ? ' is-unlocked' : '') + '">' + (legacy ? '旧成就 · ' : '') + lockedText + '</span>' +
                     '</div>' +
-                    '<div style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:0.55rem;">' + escapeHtml(achievement.description || '') + '</div>' +
+                    '<div class="profile-achievement-description">' + escapeHtml(achievement.description || '') + '</div>' +
                     '<div>' + actionHtml + '</div>' +
                 '</div>';
         }).join('');
         var equippedTitle = achievementTitleByKey(state.equipped_key);
         wall.innerHTML = '' +
-            '<div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.8rem; flex-wrap:wrap;">' +
+            '<div class="profile-achievement-wall-head">' +
                 '<h3>🏆 我的成就安装墙</h3>' +
-                '<span style="font-size:0.8rem; color:var(--text-secondary);">当前佩戴：' + (equippedTitle ? '<span style="color:var(--accent-gold);">' + escapeHtml(equippedTitle) + '</span>' : '未佩戴') + '</span>' +
+                '<span class="profile-achievement-equipped">当前佩戴：' + (equippedTitle ? '<span class="profile-achievement-equipped-title">' + escapeHtml(equippedTitle) + '</span>' : '未佩戴') + '</span>' +
             '</div>' +
-            '<div style="font-size:0.82rem; color:var(--text-secondary); margin-bottom:0.7rem;">当前等级：' + (isAdminInfinite ? '<span style="color:var(--accent-gold);">∞（管理员）</span>' : escapeHtml(state.level_label || ('Lv.' + state.level))) + '</div>' +
-            '<div style="display:grid; gap:0.7rem;">' + cards + '</div>';
+            '<div class="profile-achievement-level">当前等级：' + (isAdminInfinite ? '<span class="profile-achievement-equipped-title">∞（管理员）</span>' : escapeHtml(state.level_label || ('Lv.' + state.level))) + '</div>' +
+            '<div class="profile-achievement-grid">' + cards + '</div>';
         wireProfileDynamicUi();
     }
 
@@ -303,11 +303,11 @@
         var area = document.getElementById('tipThanksArea');
         if (!area) return;
         if (!canShow) {
-            area.style.display = 'none';
+            area.hidden = true;
             area.innerHTML = '';
             return;
         }
-        area.style.display = 'block';
+        area.hidden = false;
         area.innerHTML = '加载感谢名单...';
         try {
             var qs = new URLSearchParams({ page: '1', per_page: '24' });
@@ -316,28 +316,28 @@
             var res = result.res;
             var data = result.data;
             if (!res.ok) {
-                area.innerHTML = '<div style="color:var(--text-muted);">' + escapeHtml(data.error || '该用户未公开感谢名单') + '</div>';
+                area.innerHTML = '<div class="state-error profile-inline-state">' + escapeHtml(data.error || '该用户未公开感谢名单') + '</div>';
                 return;
             }
             var items = data.items || [];
             if (!items.length) {
-                area.innerHTML = '<div style="color:var(--text-muted);">暂无打赏记录</div>';
+                area.innerHTML = '<div class="state-empty profile-inline-state">暂无打赏记录</div>';
                 return;
             }
             area.innerHTML = '' +
-                '<div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">' +
+                '<div class="profile-section-head-inline">' +
                     '<b>🙏 感谢名单</b>' +
-                    '<span style="font-size:0.78rem; color:var(--text-muted);">最近 ' + items.length + ' 条</span>' +
+                    '<span class="profile-section-count">最近 ' + items.length + ' 条</span>' +
                 '</div>' +
-                '<div style="display:flex; flex-wrap:wrap; gap:0.4rem;">' +
+                '<div class="profile-pill-list">' +
                     items.map(function (it) {
                         var nick = (it.from_user && it.from_user.nickname) || '匿名用户';
                         var amount = (typeof it.amount_usdt !== 'undefined') ? (' · ' + Number(it.amount_usdt).toFixed(2) + ' USDT') : '';
-                        return '<span style="padding:0.2rem 0.45rem; border:1px solid var(--border-color); border-radius:999px; font-size:0.8rem;">' + escapeHtml(nick) + escapeHtml(amount) + '</span>';
+                        return '<span class="profile-pill-item">' + escapeHtml(nick) + escapeHtml(amount) + '</span>';
                     }).join('') +
                 '</div>';
         } catch (_) {
-            area.innerHTML = '<div style="color:var(--text-muted);">加载失败</div>';
+            area.innerHTML = '<div class="state-error profile-inline-state">加载失败</div>';
         }
     }
 
@@ -346,19 +346,19 @@
         if (!area) return;
         var list = Array.isArray(seriesList) ? seriesList : [];
         if (!list.length) {
-            area.style.display = 'none';
+            area.hidden = true;
             area.innerHTML = '';
             return;
         }
-        area.style.display = 'block';
+        area.hidden = false;
         area.innerHTML = '' +
-            '<div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">' +
+            '<div class="profile-section-head-inline">' +
                 '<b>📚 系列 / 合集</b>' +
-                '<span style="font-size:0.78rem; color:var(--text-muted);">' + list.length + ' 个系列</span>' +
+                '<span class="profile-section-count">' + list.length + ' 个系列</span>' +
             '</div>' +
-            '<div style="display:grid; gap:0.5rem;">' +
+            '<div class="profile-series-list">' +
                 list.map(function (series) {
-                    return '<a href="/series/' + series.id + '" class="btn btn-ghost btn-sm" data-no-transition="1" style="justify-content:space-between; text-decoration:none;"><span>' + escapeHtml(series.title || '') + '</span><span style="font-size:0.74rem; color:var(--text-muted);">查看目录</span></a>';
+                    return '<a href="/series/' + series.id + '" class="btn btn-ghost btn-sm profile-series-link" data-no-transition="1"><span>' + escapeHtml(series.title || '') + '</span><span class="profile-series-link-meta">查看目录</span></a>';
                 }).join('') +
             '</div>';
     }
@@ -369,32 +369,32 @@
         var avatarHtml = '<div class="avatar-lg">' + (user.avatar || '👻') + '</div>';
         var walletAddress = ((user.wallet_address || user.address || '') + '').trim();
         var walletAddressBtn = walletAddress
-            ? '<button type="button" class="btn btn-ghost btn-sm" style="background:rgba(16,185,129,0.1); color:#10b981; border-color:rgba(16,185,129,0.4); min-height:24px; padding:2px 8px; font-size:0.72rem;" title="点击复制打赏地址" data-wallet-copy="' + escapeAttr(walletAddress) + '">打赏地址: ' + escapeHtml(walletAddress.substring(0, 6) + '...' + walletAddress.slice(-4)) + '</button>'
+            ? '<button type="button" class="btn btn-ghost btn-sm profile-wallet-copy-btn" title="点击复制打赏地址" data-wallet-copy="' + escapeAttr(walletAddress) + '">打赏地址: ' + escapeHtml(walletAddress.substring(0, 6) + '...' + walletAddress.slice(-4)) + '</button>'
             : '';
         var isMe = !!(viewingOwnProfile || sameIdentity(currentUser, user));
         var showTipThanks = !!user.show_tip_thanks;
 
         document.getElementById('profileArea').innerHTML = '' +
-            '<div class="profile-header" style="border:none; margin:0; background:transparent;">' +
+            '<div class="profile-header profile-header-shell">' +
                 avatarHtml +
-                '<div style="flex:1;">' +
-                    '<div style="display:flex; justify-content:space-between; align-items:flex-start;">' +
-                        '<h1 style="margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
+                '<div class="profile-main-col">' +
+                    '<div class="profile-header-topline">' +
+                        '<h1 class="profile-title-row">' +
                             '<span>' + escapeHtml(user.nickname) + '</span>' +
                             (user.equipped_achievement_key
-                                ? '<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ' + escapeHtml(achievementTitleByKey(user.equipped_achievement_key)) + '</span>'
+                                ? '<span class="honor-badge honor-badge-achievement">🏆 ' + escapeHtml(achievementTitleByKey(user.equipped_achievement_key)) + '</span>'
                                 : (user.honor_title ? '<span class="honor-badge">🏷 ' + escapeHtml(user.honor_title) + '</span>' : '')) +
                         '</h1>' +
-                        (isMe ? '<div style="display:flex; gap:0.5rem; flex-wrap:wrap;"><button class="btn btn-ghost btn-sm" data-profile-action="open-wall" type="button">🏆 成就墙</button><button class="btn btn-ghost btn-sm" data-profile-action="edit-profile" type="button">✏️ 编辑资料</button>' + (currentUser.username ? '<button class="btn btn-ghost btn-sm" data-profile-action="change-password" type="button">🔒 修改密码</button>' : '') + '</div>' : '') +
+                        (isMe ? '<div class="profile-header-actions"><button class="btn btn-ghost btn-sm" data-profile-action="open-wall" type="button">🏆 成就墙</button><button class="btn btn-ghost btn-sm" data-profile-action="edit-profile" type="button">✏️ 编辑资料</button>' + (currentUser.username ? '<button class="btn btn-ghost btn-sm" data-profile-action="change-password" type="button">🔒 修改密码</button>' : '') + '</div>' : '') +
                     '</div>' +
-                    '<div style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
+                    '<div class="profile-meta-row">' +
                         (user.username ? user.username + ' · ' : '') +
                         ((typeof user.id !== 'undefined') ? formatUserId(user.id, user) : '') +
                         walletAddressBtn +
                     '</div>' +
-                    (user.bio ? '<div style="margin-bottom:1rem; font-size:0.9rem; color:var(--text-primary); background:rgba(255,255,255,0.05); padding:0.5rem; border-radius:8px;">' + escapeHtml(user.bio) + '</div>' : '') +
-                    '<div style="color:var(--text-secondary); font-size:0.82rem; margin-bottom:0.8rem;">' + (user.admin_infinite_level ? '🛡️ 管理员免签到（无限等级）' : ('📅 连续签到 ' + Number(user.checkin_streak || 0) + ' 天')) + '</div>' +
-                    (isMe ? '<label style="display:flex; align-items:center; gap:0.45rem; margin-bottom:0.8rem; color:var(--text-secondary); font-size:0.82rem;"><input type="checkbox" id="showTipThanksToggle" ' + (showTipThanks ? 'checked' : '') + '> 公开展示感谢名单</label>' : '') +
+                    (user.bio ? '<div class="profile-bio-card">' + escapeHtml(user.bio) + '</div>' : '') +
+                    '<div class="profile-streak-note">' + (user.admin_infinite_level ? '🛡️ 管理员免签到（无限等级）' : ('📅 连续签到 ' + Number(user.checkin_streak || 0) + ' 天')) + '</div>' +
+                    (isMe ? '<label class="profile-tip-toggle"><input type="checkbox" id="showTipThanksToggle" ' + (showTipThanks ? 'checked' : '') + '> 公开展示感谢名单</label>' : '') +
                     '<div class="stats">' +
                         '<div class="stat-item"><div class="stat-val">' + (user.posts_count || posts.length) + '</div><div class="stat-label">发帖</div></div>' +
                         '<div class="stat-item"><div class="stat-val">' + (user.likes_count || 0) + '</div><div class="stat-label">获赞</div></div>' +
@@ -438,25 +438,25 @@
         if (displayedPosts && displayedPosts.length > 0) {
             function proofLink(post) {
                 var parts = [];
-                if (post.tx_hash) parts.push('<a href="https://bscscan.com/tx/' + post.tx_hash + '" target="_blank" rel="noopener" style="color:var(--accent-purple);">⛓ 支付凭证</a>');
-                if (post.ipfs_cid) parts.push('<a href="https://arweave.net/' + post.ipfs_cid + '" target="_blank" rel="noopener" style="color:var(--accent-gold);">💾 永存档案</a>');
-                return parts.length ? '<div style="margin-top:0.4rem; font-size:0.75rem;">链上证据: ' + parts.join(' · ') + '</div>' : '';
+                if (post.tx_hash) parts.push('<a href="https://bscscan.com/tx/' + post.tx_hash + '" target="_blank" rel="noopener" class="profile-proof-link">⛓ 支付凭证</a>');
+                if (post.ipfs_cid) parts.push('<a href="https://arweave.net/' + post.ipfs_cid + '" target="_blank" rel="noopener" class="profile-proof-link is-archive">💾 永存档案</a>');
+                return parts.length ? '<div class="profile-proof-links">链上证据: ' + parts.join(' · ') + '</div>' : '';
             }
             postsArea.innerHTML = displayedPosts.map(function (post) {
                 return '' +
                     '<div class="post-item glass" data-profile-post-id="' + post.id + '">' +
                         renderPostCover(post) +
-                        '<div style="flex:1;">' +
-                            '<div style="font-weight:bold; font-size:1.1rem; margin-bottom:0.3rem;">' + escapeHtml(post.title) + '</div>' +
-                            '<div style="color:var(--text-secondary); font-size:0.85rem; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">' + escapeHtml((post.content || '').replace(/<[^>]*>?/gm, '')) + '</div>' +
-                            '<div style="margin-top:0.5rem; font-size:0.8rem; color:var(--text-secondary);">📅 ' + new Date(post.created_at).toLocaleDateString() + ' · 💬 ' + post.comments_count + ' · ❤️ ' + post.likes_count + '</div>' +
+                        '<div class="profile-post-body">' +
+                            '<div class="profile-post-title">' + escapeHtml(post.title) + '</div>' +
+                            '<div class="profile-post-excerpt">' + escapeHtml((post.content || '').replace(/<[^>]*>?/gm, '')) + '</div>' +
+                            '<div class="profile-post-meta">📅 ' + new Date(post.created_at).toLocaleDateString() + ' · 💬 ' + post.comments_count + ' · ❤️ ' + post.likes_count + '</div>' +
                             proofLink(post) +
                         '</div>' +
                     '</div>';
             }).join('');
             wireProfileDynamicUi();
         } else {
-            postsArea.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">暂无发布记录</div>';
+            postsArea.innerHTML = '<div class="state-empty profile-state-card">暂无发布记录</div>';
         }
     }
 
@@ -496,7 +496,7 @@
         if (username == null || username === '') {
             if (softFail) {
                 var postsArea = document.getElementById('postsArea');
-                if (postsArea) postsArea.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">暂无发布记录</div>';
+                if (postsArea) postsArea.innerHTML = '<div class="state-empty profile-state-card">暂无发布记录</div>';
                 return;
             }
             showProfileError('缺少用户标识', true);
@@ -518,7 +518,7 @@
                 if (res.status === 401 && window.authState && window.authState.clear) window.authState.clear();
                 var postsAreaOnFail = document.getElementById('postsArea');
                 if (softFail) {
-                    if (postsAreaOnFail) postsAreaOnFail.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">' + escapeHtml(data.error || '加载失败') + '</div>';
+                    if (postsAreaOnFail) postsAreaOnFail.innerHTML = '<div class="state-error profile-state-card">' + escapeHtml(data.error || '加载失败') + '</div>';
                 } else {
                     showProfileError(data.error || '用户不存在或已注销', true);
                 }
@@ -533,7 +533,7 @@
         } catch (_) {
             var postsAreaOnError = document.getElementById('postsArea');
             if (softFail) {
-                if (postsAreaOnError) postsAreaOnError.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-secondary);">加载帖子失败，请刷新重试</div>';
+                if (postsAreaOnError) postsAreaOnError.innerHTML = '<div class="state-error profile-state-card">加载帖子失败，请刷新重试</div>';
             } else {
                 showProfileError('加载帖子失败', true);
             }

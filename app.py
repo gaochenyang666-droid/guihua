@@ -194,7 +194,6 @@ from services.user_progress import (
 )
 from services.posts_logic import (
     build_post_precheck as _svc_build_post_precheck,
-    normalize_tags as _svc_normalize_tags,
     extract_mention_tokens as _svc_extract_mention_tokens,
     resolve_mentioned_users as _svc_resolve_mentioned_users,
     series_can_view as _svc_series_can_view,
@@ -235,7 +234,6 @@ from services.schema_compat import (
     ensure_posts_tx_nullable as _svc_ensure_posts_tx_nullable,
     ensure_posts_pin_columns as _svc_ensure_posts_pin_columns,
     ensure_posts_special_column as _svc_ensure_posts_special_column,
-    ensure_posts_tags_column as _svc_ensure_posts_tags_column,
     ensure_posts_seo_columns as _svc_ensure_posts_seo_columns,
     backfill_posts_seo_fields as _svc_backfill_posts_seo_fields,
     ensure_notifications_columns as _svc_ensure_notifications_columns,
@@ -470,11 +468,6 @@ def _ensure_posts_special_column():
     return _svc_ensure_posts_special_column(db.session, db.engine.dialect.name)
 
 
-def _ensure_posts_tags_column():
-    """启动时确保 posts.tags 列存在。"""
-    return _svc_ensure_posts_tags_column(db.session, db.engine.dialect.name)
-
-
 def _ensure_posts_seo_columns():
     """启动时确保 posts.slug/excerpt/seo/updated_at 列存在。"""
     return _svc_ensure_posts_seo_columns(db.session, db.engine.dialect.name)
@@ -526,7 +519,6 @@ def _run_startup_tasks():
             _ensure_posts_tx_nullable,
             _ensure_posts_pin_columns,
             _ensure_posts_special_column,
-            _ensure_posts_tags_column,
             _ensure_posts_seo_columns,
             _ensure_notifications_columns,
             _ensure_reports_columns,

@@ -134,7 +134,8 @@
             renderPostCard(p, idx, append) {
                 var reduceMotion = prefersReducedMotionUi();
                 var stagger = reduceMotion ? 0 : (append ? 0 : Math.min((idx % 8) * 24, 168));
-                var itemClass = append ? 'masonry-item timeline-item-wrap' : 'masonry-item is-entering timeline-item-wrap';
+                var staggerClass = 'stagger-' + Math.min(Math.max(idx % 8, 0), 7);
+                var itemClass = append ? ('masonry-item timeline-item-wrap ' + staggerClass) : ('masonry-item is-entering timeline-item-wrap ' + staggerClass);
                 var displayImages = this.resolveDisplayImages(p);
                 var coverHtml = this.renderImageGallery(displayImages);
                 var coverClass = displayImages.length > 1
@@ -157,8 +158,8 @@
                     isPermanent ? '<span class="timeline-tag tag-permanent">已永存</span>' : ''
                 ].filter(Boolean).join('');
                 return '' +
-                    '<div class="' + itemClass + '" style="--stagger:' + stagger + 'ms;">' +
-                        '<article class="timeline-item glass" data-post-id="' + Number(p.id) + '" data-open-detail="1">' +
+                    '<div class="' + itemClass + '">' +
+                        '<article class="timeline-item glass" data-post-id="' + Number(p.id) + '" data-post-url="' + escapeAttr(p.story_url || ('/post/' + Number(p.id))) + '" data-open-detail="1">' +
                             '<div class="timeline-head">' +
                                 '<div class="timeline-author">' +
                                     this.renderAvatar(author) +
@@ -177,12 +178,12 @@
                             '<div class="timeline-body">' + (summaryHtml || '（无正文）') + '</div>' +
                             this.renderTopComment(p) +
                             (shouldCollapse ? ('<button class="timeline-expand-btn" data-expand-post-id="' + Number(p.id) + '">' + (expanded ? '收起正文' : '展开阅读') + '</button>') : '') +
-                            (displayImages.length ? ('<div class="' + coverClass + '" data-open-detail="1" data-post-id="' + Number(p.id) + '">' + coverHtml + '</div>') : '') +
+                            (displayImages.length ? ('<div class="' + coverClass + '" data-open-detail="1" data-post-id="' + Number(p.id) + '" data-post-url="' + escapeAttr(p.story_url || ('/post/' + Number(p.id))) + '">' + coverHtml + '</div>') : '') +
                             '<div class="timeline-actions">' +
                                 '<button class="btn btn-ghost btn-sm timeline-action-btn timeline-action-count" data-feed-action="like" data-post-id="' + Number(p.id) + '" title="恐惧" aria-label="恐惧">😰 <span>' + Number(p.likes_count || 0) + '</span></button>' +
                                 '<button class="btn btn-ghost btn-sm timeline-action-btn" data-feed-action="bookmark" data-post-id="' + Number(p.id) + '" title="' + (p.is_bookmarked ? '取消收藏' : '收藏') + '" aria-label="' + (p.is_bookmarked ? '取消收藏' : '收藏') + '">' + (p.is_bookmarked ? '★ <span>已收</span>' : '⭐ <span>收藏</span>') + '</button>' +
-                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="分享" aria-label="分享" data-feed-action="share" data-post-id="' + Number(p.id) + '" data-title="' + escapeAttr(titleText || '') + '">↗ <span>分享</span></button>' +
-                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="查看详情" aria-label="查看详情" data-feed-action="detail" data-post-id="' + Number(p.id) + '">💬 <span>详情</span></button>' +
+                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="分享" aria-label="分享" data-feed-action="share" data-post-id="' + Number(p.id) + '" data-story-url="' + escapeAttr(p.story_url || ('/post/' + Number(p.id))) + '" data-title="' + escapeAttr(titleText || '') + '">↗ <span>分享</span></button>' +
+                                '<button class="btn btn-ghost btn-sm timeline-action-btn" title="查看详情" aria-label="查看详情" data-feed-action="detail" data-post-id="' + Number(p.id) + '" data-post-url="' + escapeAttr(p.story_url || ('/post/' + Number(p.id))) + '">💬 <span>详情</span></button>' +
                             '</div>' +
                         '</article>' +
                     '</div>';
@@ -208,14 +209,15 @@
                         if (action === 'like') { window.Interact.like(postId); return; }
                         if (action === 'bookmark') { window.Interact.bookmark(postId); return; }
                         if (action === 'share') { window.Interact.share(actionBtn); return; }
-                        if (action === 'detail') { window.Modal.openDetail(ev, postId); return; }
+                        if (action === 'detail') { window.Modal.openDetail(ev, postId, actionBtn.getAttribute('data-post-url') || ''); return; }
                     }
                     var detailTarget = target.closest('[data-open-detail="1"]');
                     if (detailTarget) {
                         var detailHost = detailTarget.closest('[data-post-id]');
                         var detailRaw = detailTarget.getAttribute('data-post-id') || (detailHost ? detailHost.getAttribute('data-post-id') : '');
+                        var detailUrl = detailTarget.getAttribute('data-post-url') || (detailHost ? detailHost.getAttribute('data-post-url') : '');
                         var detailId = Number(detailRaw);
-                        if (Number.isFinite(detailId)) window.Modal.openDetail(ev, detailId);
+                        if (Number.isFinite(detailId)) window.Modal.openDetail(ev, detailId, detailUrl);
                     }
                 });
             },
@@ -271,8 +273,7 @@
             currentFilters: {
                 from_date: '',
                 to_date: '',
-                permanent_only: false,
-                tags: ''
+                permanent_only: false
             },
             isLoading: false,
             isFetching: false,
@@ -281,7 +282,7 @@
             revealObserver: null,
             hasAdvancedFilters() {
                 var f = this.currentFilters || {};
-                return !!((f.from_date || '').trim() || (f.to_date || '').trim() || (f.tags || '').trim() || f.permanent_only);
+                return !!((f.from_date || '').trim() || (f.to_date || '').trim() || f.permanent_only);
             },
             ensureRevealObserver() {
                 if (this.revealObserver || !('IntersectionObserver' in window)) return this.revealObserver;
@@ -381,8 +382,7 @@
                             this.currentFilters = {
                                 from_date: (params.filters.from_date || '').trim(),
                                 to_date: (params.filters.to_date || '').trim(),
-                                permanent_only: !!params.filters.permanent_only,
-                                tags: (params.filters.tags || '').trim()
+                                permanent_only: !!params.filters.permanent_only
                             };
                         }
                     }
@@ -393,7 +393,6 @@
                     if (this.currentFilters.from_date) qParams.append('from_date', this.currentFilters.from_date);
                     if (this.currentFilters.to_date) qParams.append('to_date', this.currentFilters.to_date);
                     if (this.currentFilters.permanent_only) qParams.append('permanent_only', '1');
-                    if (this.currentFilters.tags) qParams.append('tags', this.currentFilters.tags);
                     var endpoint = API_BASE + '/posts';
                     if (this.currentQuery || this.hasAdvancedFilters()) endpoint = API_BASE + '/search';
                     var result = await apiJson(endpoint + '?' + qParams.toString(), {
@@ -410,19 +409,19 @@
                             postGridEl.innerHTML = '';
                             if (data.posts.length === 0) {
                                 var emptyMsg = '这里一片荒芜，什么也没有...';
-                                var emptyBtn = this.currentQuery ? '<button class="btn btn-ghost" type="button" data-action="post-reload" style="margin-top:1rem;">返回全部</button>' : '';
+                                var emptyBtn = this.currentQuery ? '<button class="btn btn-ghost feed-empty-action-btn" type="button" data-action="post-reload">返回全部</button>' : '';
                                 if (this.currentSort === 'bookmarks') {
                                     if (!(window.authState && window.authState.hasSessionHint && window.authState.hasSessionHint())) {
                                         emptyMsg = '请先登录后查看收藏';
-                                        emptyBtn = '<button class="btn btn-primary" type="button" data-action="open-login-modal" style="margin-top:1rem;">去登录</button>';
+                                        emptyBtn = '<button class="btn btn-primary feed-empty-action-btn" type="button" data-action="open-login-modal">去登录</button>';
                                     } else {
                                         emptyMsg = '暂无收藏，去首页逛逛吧';
-                                        emptyBtn = '<button class="btn btn-ghost" type="button" data-action="nav-sort" data-sort="new" style="margin-top:1rem;">看最新</button>';
+                                        emptyBtn = '<button class="btn btn-ghost feed-empty-action-btn" type="button" data-action="nav-sort" data-sort="new">看最新</button>';
                                     }
                                 }
                                 postGridEl.innerHTML =
-                                    '<div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: var(--text-muted);">' +
-                                        '<div style="font-size: 3rem; margin-bottom: 1rem;">' + (this.currentSort === 'bookmarks' ? '⭐' : '👻') + '</div>' +
+                                    '<div class="feed-empty-state">' +
+                                        '<div class="feed-empty-icon">' + (this.currentSort === 'bookmarks' ? '⭐' : '👻') + '</div>' +
                                         '<p>' + emptyMsg + '</p>' +
                                         emptyBtn +
                                     '</div>';
@@ -438,7 +437,7 @@
                 } catch (e) {
                     if (this.currentPage === 1 && loadingEl) {
                         var errMsg = (e && e.message) || '网络异常或服务暂时不可用';
-                        loadingEl.innerHTML = '<div style="color:var(--text-muted); padding:1.5rem;">' + errMsg + '</div><button class="btn btn-ghost" type="button" data-action="post-retry" style="margin-top:0.5rem;">重试</button>';
+                        loadingEl.innerHTML = '<div class="feed-error-state">' + errMsg + '</div><button class="btn btn-ghost feed-retry-btn" type="button" data-action="post-retry">重试</button>';
                     }
                 } finally {
                     this.isLoading = false;

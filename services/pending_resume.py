@@ -21,6 +21,7 @@ from services.posts_logic import (
     series_can_edit as _svc_series_can_edit,
 )
 from utils.security import bleach_clean_post_content as _bleach_clean_post_content
+from services.seo import ensure_post_seo_fields as _ensure_post_seo_fields, build_excerpt as _build_excerpt, story_path as _story_path
 
 
 def _log_flow_event(event, **fields):
@@ -83,14 +84,6 @@ def resume_pending_publication_row(row, actor_user=None):
         return False, row.last_error, None, row
 
     try:
-        normalized_tags = []
-        try:
-            normalized_tags = json.loads(row.tags) if row.tags else []
-        except Exception:
-            normalized_tags = []
-        if not isinstance(normalized_tags, list):
-            normalized_tags = []
-
         clean_title = bleach.clean(row.title or '', strip=True)
         clean_content = _bleach_clean_post_content(row.content or '')
         if not clean_title or not clean_content.strip():
@@ -107,7 +100,6 @@ def resume_pending_publication_row(row, actor_user=None):
             payload = {
                 'title': clean_title,
                 'content': clean_content,
-                'tags': normalized_tags,
                 'author': owner.address,
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'tx_hash': row.tx_hash,
@@ -129,8 +121,8 @@ def resume_pending_publication_row(row, actor_user=None):
             title=clean_title,
             content=clean_content,
             cover_image=None,
+            excerpt=_build_excerpt(clean_content),
             images='[]',
-            tags=json.dumps(normalized_tags, ensure_ascii=False),
             author_id=owner.id,
             tx_hash=row.tx_hash,
             ipfs_cid=row.ipfs_cid,
@@ -141,6 +133,8 @@ def resume_pending_publication_row(row, actor_user=None):
             post_type=1
         )
         db.session.add(post)
+        db.session.flush()
+        _ensure_post_seo_fields(db.session, post, Post, refresh_excerpt=True)
         db.session.flush()
 
         if target_series:
@@ -161,7 +155,7 @@ def resume_pending_publication_row(row, actor_user=None):
                 comment_id=None,
                 type='mention',
                 content='在帖子中提到了你',
-                link=f"/?post={post.id}"
+                link=_story_path(post)
             ))
 
         db.session.delete(row)

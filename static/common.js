@@ -78,7 +78,7 @@
         if (!user) return '';
         var equipped = String((user.equipped_achievement_key || '').trim());
         if (equipped) {
-            return '<span class="honor-badge" style="border-color:rgba(16,185,129,0.5); color:var(--accent-green);">🏆 ' + window.escapeHtml(window.equippedTitleByKey(equipped)) + '</span>';
+            return '<span class="honor-badge honor-badge-achievement">🏆 ' + window.escapeHtml(window.equippedTitleByKey(equipped)) + '</span>';
         }
         if (!user.honor_title) return '';
         return '<span class="honor-badge">🏷 ' + window.escapeHtml(user.honor_title) + '</span>';
@@ -159,21 +159,21 @@
 
     function getLevelBadgeStyle(level, isAdmin) {
         if (isAdmin || level >= 9999) {
-            return { color: '#facc15', bg: 'rgba(120, 53, 15, 0.26)', glow: 'rgba(250, 204, 21, 0.35)' };
+            return { color: '#facc15', bg: 'rgba(120, 53, 15, 0.26)', glow: 'rgba(250, 204, 21, 0.35)', tier: 'admin' };
         }
         if (level >= 10) {
-            return { color: '#facc15', bg: 'rgba(113, 63, 18, 0.22)', glow: 'rgba(250, 204, 21, 0.28)' };
+            return { color: '#facc15', bg: 'rgba(113, 63, 18, 0.22)', glow: 'rgba(250, 204, 21, 0.28)', tier: 'gold' };
         }
         if (level >= 8) {
-            return { color: '#a78bfa', bg: 'rgba(76, 29, 149, 0.2)', glow: 'rgba(167, 139, 250, 0.24)' };
+            return { color: '#a78bfa', bg: 'rgba(76, 29, 149, 0.2)', glow: 'rgba(167, 139, 250, 0.24)', tier: 'purple' };
         }
         if (level >= 5) {
-            return { color: '#38bdf8', bg: 'rgba(8, 47, 73, 0.24)', glow: 'rgba(56, 189, 248, 0.24)' };
+            return { color: '#38bdf8', bg: 'rgba(8, 47, 73, 0.24)', glow: 'rgba(56, 189, 248, 0.24)', tier: 'blue' };
         }
         if (level >= 3) {
-            return { color: '#34d399', bg: 'rgba(6, 78, 59, 0.24)', glow: 'rgba(52, 211, 153, 0.24)' };
+            return { color: '#34d399', bg: 'rgba(6, 78, 59, 0.24)', glow: 'rgba(52, 211, 153, 0.24)', tier: 'green' };
         }
-        return { color: '#9ca3af', bg: 'rgba(31, 41, 55, 0.26)', glow: 'rgba(156, 163, 175, 0.18)' };
+        return { color: '#9ca3af', bg: 'rgba(31, 41, 55, 0.26)', glow: 'rgba(156, 163, 175, 0.18)', tier: 'gray' };
     }
 
     function getAchievementEmoji(user, level) {
@@ -285,19 +285,15 @@
         var modal = ensureIdentityBadgeModal();
         var body = document.getElementById('identityBadgeBody');
         if (!modal || !body) return;
-        var badgeStyle = '' +
-            '--badge-color:' + escapeAttr(el.getAttribute('data-badge-color') || '') + ';' +
-            '--badge-bg:' + escapeAttr(el.getAttribute('data-badge-bg') || '') + ';' +
-            '--badge-glow:' + escapeAttr(el.getAttribute('data-badge-glow') || '') + ';' +
-            'color:' + escapeAttr(el.getAttribute('data-badge-color') || '');
         var badgeText = escapeHtml(el.getAttribute('data-badge-id') || '');
         var emoji = escapeHtml(el.getAttribute('data-badge-emoji') || '👻');
+        var tier = escapeAttr(el.getAttribute('data-badge-tier') || 'gray');
         var levelLabel = escapeHtml(el.getAttribute('data-level-label') || 'Lv.1');
         var title = escapeHtml(el.getAttribute('data-identity-title') || '未佩戴成就');
         var desc = escapeHtml(el.getAttribute('data-identity-desc') || '');
         body.innerHTML = '' +
             '<div class="identity-badge-preview">' +
-                '<span class="user-id-badge" style="' + badgeStyle + '">' + emoji + ' ' + badgeText + '</span>' +
+                '<span class="user-id-badge badge-tier-' + tier + '">' + emoji + ' ' + badgeText + '</span>' +
             '</div>' +
             '<div class="identity-badge-grid">' +
                 '<div class="identity-badge-card"><div class="identity-badge-card-key">等级</div><div class="identity-badge-card-val">' + levelLabel + '</div></div>' +
@@ -318,7 +314,7 @@
     window.formatUserId = function (userId, user) {
         var idStr = String(userId);
         if (idStr.length < 10) {
-            return '<span class="user-id-badge" style="color:#9ca3af;">💀 ' + window.escapeHtml(idStr) + '</span>';
+            return '<span class="user-id-badge badge-tier-gray">💀 ' + window.escapeHtml(idStr) + '</span>';
         }
         var level = getBadgeLevel(user);
         var isAdmin = !!(user && (user.is_admin || user.admin_infinite_level));
@@ -326,7 +322,7 @@
         var emoji = getAchievementEmoji(user, level);
         var title = getAchievementTitle(user) || '未佩戴成就';
         var desc = getIdentityDescription(user, level, getAchievementTitle(user));
-        return '<span class="user-id-badge" data-user-card="1" data-badge-id="' + escapeAttr(idStr) + '" data-badge-emoji="' + escapeAttr(emoji) + '" data-badge-color="' + escapeAttr(style.color) + '" data-badge-bg="' + escapeAttr(style.bg) + '" data-badge-glow="' + escapeAttr(style.glow) + '" data-level-label="' + escapeAttr((user && user.level_label) || (isAdmin ? '∞' : ('Lv.' + level))) + '" data-identity-title="' + escapeAttr(title) + '" data-identity-desc="' + escapeAttr(desc) + '" style="--badge-color:' + style.color + '; --badge-bg:' + style.bg + '; --badge-glow:' + style.glow + '; color:' + style.color + '">' + emoji + ' ' + window.escapeHtml(idStr) + '</span>';
+        return '<span class="user-id-badge badge-tier-' + escapeAttr(style.tier || 'gray') + '" data-user-card="1" data-badge-id="' + escapeAttr(idStr) + '" data-badge-emoji="' + escapeAttr(emoji) + '" data-badge-tier="' + escapeAttr(style.tier || 'gray') + '" data-level-label="' + escapeAttr((user && user.level_label) || (isAdmin ? '∞' : ('Lv.' + level))) + '" data-identity-title="' + escapeAttr(title) + '" data-identity-desc="' + escapeAttr(desc) + '">' + emoji + ' ' + window.escapeHtml(idStr) + '</span>';
     };
 
     document.addEventListener('click', function (e) {

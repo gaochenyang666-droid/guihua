@@ -25,7 +25,6 @@ from services.posts_query import (
 )
 from services.posts_logic import (
     build_post_precheck as _build_post_precheck,
-    normalize_tags as _normalize_tags,
     extract_mention_tokens as _extract_mention_tokens,
     resolve_mentioned_users as _svc_resolve_mentioned_users,
     series_can_view as _svc_series_can_view,
@@ -192,8 +191,7 @@ def search_posts():
     from_date_raw = (request.args.get('from_date') or '').strip()
     to_date_raw = (request.args.get('to_date') or '').strip()
     permanent_only = (request.args.get('permanent_only') or request.args.get('on_chain') or '').strip().lower() in ('1', 'true', 'yes')
-    tags = _normalize_tags(request.args.get('tags') or '')
-    if not q and not from_date_raw and not to_date_raw and not permanent_only and not tags:
+    if not q and not from_date_raw and not to_date_raw and not permanent_only:
         return jsonify({'posts': [], 'total': 0, 'pages': 0, 'current_page': page})
 
     query = Post.query.filter_by(is_hidden=False)
@@ -214,14 +212,6 @@ def search_posts():
             query = query.filter(Post.created_at <= dt)
     if permanent_only:
         query = query.filter(or_(Post.tx_hash != None, Post.ipfs_cid != None, Post.is_on_chain == True, Post.post_type == 1))
-    if tags:
-        tag_filters = []
-        for tag in tags:
-            escaped = tag.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-            tag_filters.append(Post.tags.ilike(f'%"{escaped}"%', escape='\\'))
-        if tag_filters:
-            query = query.filter(or_(*tag_filters))
-
     query = query.order_by(
         Post.is_special_announcement.desc(),
         Post.is_pinned.desc(),
@@ -297,7 +287,6 @@ def retry_pending_post():
         pending_model=PendingPublication,
         user=g.current_user,
         data=request.get_json(silent=True) or {},
-        normalize_tags=_normalize_tags,
         upsert_pending_publication=_svc_upsert_pending_publication,
         resume_pending_publication=_resume_pending_publication_row,
     )
@@ -338,8 +327,7 @@ def create_post():
             'ipfs_cid': request.form.get('ipfs_cid'),
             'images': [],
             'region': region,
-            'vote_options': vote_options,
-            'tags': request.form.get('tags')
+            'vote_options': vote_options
         }
     else:
         data = request.get_json(silent=True) or {}
@@ -348,7 +336,6 @@ def create_post():
     ipfs_cid = data.get('ipfs_cid')
     region = data.get('region', '其他')
     vote_options = data.get('vote_options', [])
-    normalized_tags = _normalize_tags(data.get('tags') or data.get('tag_names'))
     series_id_raw = data.get('series_id')
     target_series = None
     if series_id_raw not in (None, '', 0, '0'):
@@ -384,7 +371,6 @@ def create_post():
     pending_payload = {
         'title': data.get('title'),
         'content': data.get('content'),
-        'tags': normalized_tags,
         'region': region,
         'series_id': getattr(target_series, 'id', None),
         'is_special_announcement': bool(data.get('is_special_announcement')) if g.current_user.is_admin else False,
@@ -429,7 +415,6 @@ def create_post():
         payload = {
             'title': data.get('title'),
             'content': clean_content,
-            'tags': normalized_tags,
             'author': g.current_user.address,
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'tx_hash': tx_hash,
@@ -482,7 +467,6 @@ def create_post():
         cover_image=cover_image,
         excerpt=_build_excerpt(clean_content),
         images=json.dumps(data.get('images', [])),
-        tags=json.dumps(normalized_tags, ensure_ascii=False),
         author_id=g.current_user.id,
         tx_hash=tx_hash,
         ipfs_cid=ipfs_cid,
@@ -996,8 +980,6 @@ def update_post(post_id):
     if content:
         post.content = _bleach_clean_post_content(content)
         post.excerpt = _build_excerpt(post.content)
-    if 'tags' in data or 'tag_names' in data:
-        post.tags = json.dumps(_normalize_tags(data.get('tags') or data.get('tag_names')), ensure_ascii=False)
     _ensure_post_seo_fields(db.session, post, Post)
         
     db.session.commit()

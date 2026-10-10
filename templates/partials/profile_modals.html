@@ -5,8 +5,8 @@
             <h3>✏️ 编辑资料</h3>
             <button class="modal-close" id="editProfileCloseBtn" type="button">&times;</button>
         </div>
-        <div class="form-group" style="text-align: center;">
-            <div id="previewAvatar" class="avatar-lg" style="margin: 0 auto 1rem auto;">👻</div>
+        <div class="form-group profile-modal-avatar-group">
+            <div id="previewAvatar" class="avatar-lg profile-modal-avatar-preview">👻</div>
             <button class="btn btn-ghost btn-sm" id="editProfileRandomAvatarBtn" type="button">🎲 随机生成鬼魂头像</button>
         </div>
         <div class="form-group">
@@ -17,7 +17,7 @@
             <label class="form-label">个人简介</label>
             <textarea class="form-input" id="editBio" maxlength="500" placeholder="写点什么..."></textarea>
         </div>
-        <button class="btn btn-primary" style="width: 100%;" id="editProfileSaveBtn" type="button">保存修改</button>
+        <button class="btn btn-primary profile-modal-submit-btn" id="editProfileSaveBtn" type="button">保存修改</button>
     </div>
 </div>
 
@@ -40,16 +40,16 @@
             <label class="form-label">确认新密码</label>
             <input type="password" class="form-input" id="cpConfirmPasswordIn" placeholder="再输入一次">
         </div>
-        <button class="btn btn-primary" style="width: 100%;" id="changePasswordSubmitBtn" type="button">确认修改</button>
+        <button class="btn btn-primary profile-modal-submit-btn" id="changePasswordSubmitBtn" type="button">确认修改</button>
     </div>
 </div>
 
-<div class="modal-overlay" id="achievementsModal" style="align-items:flex-start; overflow-y:auto; padding:calc(var(--nav-height) + 8px) 0 12px;">
-    <div class="modal glass" style="width:min(760px, 94vw); max-width:760px; max-height: calc(100vh - var(--nav-height) - 28px); overflow: hidden; display: flex; flex-direction: column; margin:0 auto;">
+<div class="modal-overlay achievements-modal-overlay" id="achievementsModal">
+    <div class="modal glass achievements-modal-shell">
         <div class="modal-header">
             <h3>🏆 成就安装墙</h3>
             <button class="modal-close" id="achievementsCloseBtn" type="button">&times;</button>
         </div>
-        <div id="achievementsWallBody" style="overflow:auto; flex:1; padding-right:0.2rem;">加载中...</div>
+        <div id="achievementsWallBody" class="achievements-wall-body">加载中...</div>
     </div>
 </div>

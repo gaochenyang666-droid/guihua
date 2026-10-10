@@ -16,7 +16,7 @@
             var res = result.res;
             var data = result.data;
             if (!res.ok) {
-                document.getElementById('seriesMeta').innerHTML = '<div style="color:var(--accent-red);">' + escapeHtml((data && data.error) || '加载失败') + '</div>';
+                document.getElementById('seriesMeta').innerHTML = '<div class="state-error">' + escapeHtml((data && data.error) || '加载失败') + '</div>';
                 document.getElementById('seriesList').innerHTML = '';
                 return;
             }
@@ -24,18 +24,18 @@
             var items = data.items || [];
             document.title = (s.title || '系列目录') + ' - 诡话';
             document.getElementById('seriesMeta').innerHTML =
-                '<h2 style="margin-bottom:0.4rem;">\ud83d\udcda ' + escapeHtml(s.title || '') + '</h2>' +
-                '<div style="color:var(--text-secondary);">' + escapeHtml(s.description || '暂无系列简介') + '</div>';
+                '<h2 class="series-page-title">📚 ' + escapeHtml(s.title || '') + '</h2>' +
+                '<div class="series-page-description">' + escapeHtml(s.description || '暂无系列简介') + '</div>';
             if (!items.length) {
-                document.getElementById('seriesList').innerHTML = '<div style="color:var(--text-muted);">该系列暂无可见帖子</div>';
+                document.getElementById('seriesList').innerHTML = '<div class="state-empty">该系列暂无可见帖子</div>';
                 return;
             }
             document.getElementById('seriesList').innerHTML =
-                '<h3 style="margin-bottom:0.8rem;">目录</h3>' +
-                '<div style="display:grid; gap:0.5rem;">' +
+                '<h3 class="series-page-section-title">目录</h3>' +
+                '<div class="series-page-list">' +
                 items.map(function (it) {
                     var p = it.post || {};
-                    return '<button class="btn btn-ghost series-open-post-btn" style="justify-content:space-between; width:100%;" data-post-id="' + p.id + '" type="button"><span>第 ' + it.order_index + ' 篇 · ' + escapeHtml(p.title || '') + '</span><span style="font-size:0.76rem; color:var(--text-muted);">查看</span></button>';
+                    return '<button class="btn btn-ghost series-open-post-btn series-open-post-btn-wide" data-post-id="' + p.id + '" type="button"><span>第 ' + it.order_index + ' 篇 · ' + escapeHtml(p.title || '') + '</span><span class="series-open-post-hint">查看</span></button>';
                 }).join('') +
                 '</div>';
             Array.prototype.forEach.call(document.querySelectorAll('.series-open-post-btn'), function (btn) {
@@ -46,7 +46,7 @@
                 });
             });
         } catch (_) {
-            document.getElementById('seriesMeta').innerHTML = '<div style="color:var(--accent-red);">网络错误</div>';
+            document.getElementById('seriesMeta').innerHTML = '<div class="state-error">网络错误</div>';
             document.getElementById('seriesList').innerHTML = '';
         }
     }

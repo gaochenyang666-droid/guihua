@@ -376,7 +376,6 @@ def main():
                     tx_hash=pending_tx_hash,
                     title="QA Admin Pending",
                     content="<p>pending</p>",
-                    tags='["qa"]',
                     status='awaiting_retry',
                     last_error='待管理员处理',
                 )

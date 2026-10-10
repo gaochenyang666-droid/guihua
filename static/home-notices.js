@@ -36,7 +36,7 @@
                 if (!list) return;
                 if (result.data.notifications && result.data.notifications.length > 0) {
                     var badgeEl = document.getElementById('notifBadge');
-                    if (badgeEl) badgeEl.style.display = result.data.notifications.some(function (n) { return !n.is_read; }) ? 'block' : 'none';
+                    if (badgeEl) badgeEl.hidden = !result.data.notifications.some(function (n) { return !n.is_read; });
                     var typeText = function (n) {
                         if (n && n.content) return n.content;
                         if (!n) return '有新动态';
@@ -49,16 +49,16 @@
                         return '有新动态';
                     };
                     list.innerHTML = result.data.notifications.map(function (n) {
-                        return '<div style="padding:0.8rem; border-bottom:1px solid var(--border-color); ' + (!n.is_read ? 'background:rgba(124,58,237,0.1);' : '') + ' cursor:pointer;" data-notification-id="' + n.id + '" data-notification-post-id="' + (n.post_id != null ? n.post_id : '') + '">' +
-                            '<div style="font-size:0.9rem; margin-bottom:0.2rem;"><b>' + escapeHtml((n.sender && n.sender.nickname) || '系统') + '</b> ' + escapeHtml(typeText(n)) + '</div>' +
-                            '<div style="font-size:0.8rem; color:var(--text-muted);">' + escapeHtml(n.post_title || '') + '</div>' +
-                            '<div style="font-size:0.7rem; color:var(--text-secondary); margin-top:0.3rem;">' + new Date(n.created_at).toLocaleString() + '</div>' +
+                        return '<div class="home-notice-item' + (!n.is_read ? ' is-unread' : '') + '" data-notification-id="' + n.id + '" data-notification-post-id="' + (n.post_id != null ? n.post_id : '') + '">' +
+                            '<div class="home-notice-title"><b>' + escapeHtml((n.sender && n.sender.nickname) || '系统') + '</b> ' + escapeHtml(typeText(n)) + '</div>' +
+                            '<div class="home-notice-post">' + escapeHtml(n.post_title || '') + '</div>' +
+                            '<div class="home-notice-time">' + new Date(n.created_at).toLocaleString() + '</div>' +
                         '</div>';
                     }).join('');
                 } else {
-                    list.innerHTML = '<div style="padding:1rem; text-align:center; color:var(--text-muted);">暂无消息</div>';
+                    list.innerHTML = '<div class="list-page-empty">暂无消息</div>';
                     var badge = document.getElementById('notifBadge');
-                    if (badge) badge.style.display = 'none';
+                    if (badge) badge.hidden = true;
                 }
             },
 

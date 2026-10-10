@@ -263,9 +263,8 @@
                 var hasAdvancedValues = function () {
                     var from = (document.getElementById('searchFromDate') || {}).value || '';
                     var to = (document.getElementById('searchToDate') || {}).value || '';
-                    var tags = (document.getElementById('searchTags') || {}).value || '';
                     var permanent = !!((document.getElementById('searchPermanentOnly') || {}).checked);
-                    return !!(from || to || tags.trim() || permanent);
+                    return !!(from || to || permanent);
                 };
                 var openAdvanced = function () {
                     if (!searchAdvancedBar) return;
@@ -281,8 +280,7 @@
                         var filters = {
                             from_date: (document.getElementById('searchFromDate') || {}).value || '',
                             to_date: (document.getElementById('searchToDate') || {}).value || '',
-                            permanent_only: !!((document.getElementById('searchPermanentOnly') || {}).checked),
-                            tags: (document.getElementById('searchTags') || {}).value || ''
+                            permanent_only: !!((document.getElementById('searchPermanentOnly') || {}).checked)
                         };
                         Post.load({ q: (searchInput || {}).value || '', filters: filters });
                         closeAdvanced(true);
@@ -293,12 +291,10 @@
                         var fromEl = document.getElementById('searchFromDate');
                         var toEl = document.getElementById('searchToDate');
                         var perEl = document.getElementById('searchPermanentOnly');
-                        var tagsEl = document.getElementById('searchTags');
                         if (fromEl) fromEl.value = '';
                         if (toEl) toEl.value = '';
                         if (perEl) perEl.checked = false;
-                        if (tagsEl) tagsEl.value = '';
-                        Post.load({ q: (searchInput || {}).value || '', filters: { from_date: '', to_date: '', permanent_only: false, tags: '' } });
+                        Post.load({ q: (searchInput || {}).value || '', filters: { from_date: '', to_date: '', permanent_only: false } });
                         closeAdvanced(true);
                     };
                 }

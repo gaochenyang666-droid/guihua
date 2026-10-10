@@ -61,7 +61,6 @@ def _story_list_item(post):
         'created_at': post.created_at,
         'updated_at': getattr(post, 'updated_at', None) or post.created_at,
         'view_count': int(getattr(post, 'view_count', 0) or 0),
-        'tags': post.to_dict().get('tags', []),
         'category': derive_category(post),
     }
 
@@ -100,20 +99,8 @@ def _seo_story_context(post):
 
 
 def _find_related_posts(post, limit=8):
-    tags = post.to_dict().get('tags', [])
     related = []
     seen = {post.id}
-    if tags:
-        tag_filters = []
-        for tag in tags[:4]:
-            escaped = str(tag).replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-            tag_filters.append(Post.tags.ilike(f'%"{escaped}"%', escape='\\'))
-        if tag_filters:
-            rows = _visible_posts_query().filter(Post.id != post.id).filter(or_(*tag_filters)).order_by(Post.created_at.desc()).limit(limit).all()
-            for row in rows:
-                if row.id not in seen:
-                    related.append(row)
-                    seen.add(row.id)
     if len(related) < limit:
         rows = _visible_posts_query().filter(Post.id != post.id, Post.region == post.region).order_by(Post.created_at.desc()).limit(limit).all()
         for row in rows:
