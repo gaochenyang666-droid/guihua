@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""在数据库中确保管理员账号 siteadmin 存在（密码 CHANGE_ME_ON_DEPLOY）。若不存在则创建，若存在则重置密码。
-用法：在项目根目录或 Render Shell 中执行
-  python3 scripts/ensure_admin.py
+"""在数据库中创建或更新管理员账号。
+
+用户名与密码从环境变量读取，禁止在代码中硬编码：
+  ADMIN_USERNAME  管理员用户名（必填）
+  ADMIN_PASSWORD  管理员密码（必填）
+
+用法：
+  ADMIN_USERNAME=xxx ADMIN_PASSWORD=yyy python3 scripts/ensure_admin.py
 """
 import os
 import sys
@@ -16,24 +21,30 @@ def main():
     from app import app, db
     from app import User
 
+    username = (os.environ.get('ADMIN_USERNAME') or '').strip()
+    password = os.environ.get('ADMIN_PASSWORD') or ''
+    if not username or not password:
+        print('错误：请先设置环境变量 ADMIN_USERNAME 与 ADMIN_PASSWORD', file=sys.stderr)
+        return 1
+
     with app.app_context():
-        u = User.query.filter_by(username='siteadmin').first()
+        u = User.query.filter_by(username=username).first()
         if not u:
             u = User(
-                username='siteadmin',
-                nickname='siteadmin',
+                username=username,
+                nickname=username,
                 is_admin=True,
                 avatar='👤',
             )
-            u.set_password('CHANGE_ME_ON_DEPLOY')
+            u.set_password(password)
             db.session.add(u)
             db.session.commit()
-            print('已创建管理员账号 siteadmin，密码：CHANGE_ME_ON_DEPLOY')
+            print('已创建管理员账号 %s' % username)
         else:
-            u.set_password('CHANGE_ME_ON_DEPLOY')
+            u.set_password(password)
             u.is_admin = True
             db.session.commit()
-            print('已重置 siteadmin 密码为：CHANGE_ME_ON_DEPLOY')
+            print('已重置 %s 的密码' % username)
     return 0
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
 
 ## 1. Render 推荐部署
 
-仓库根目录已经提供 [render.yaml](render.yaml)，默认包含：
+仓库根目录已经提供 [render.yaml](../../render.yaml)，默认包含：
 
 1. `guihua-web`
 - Web Service
